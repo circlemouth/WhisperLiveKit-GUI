@@ -58,7 +58,7 @@ def create_tokenizer(lan):
         lan
         in "as ba bo br bs fo haw hr ht jw lb ln lo mi nn oc sa sd sn so su sw tk tl tt".split()
     ):
-        logger.debug(
+        logger.warning(
             f"{lan} code is not supported by wtpsplit. Going to use None lang_code option."
         )
         lan = None
