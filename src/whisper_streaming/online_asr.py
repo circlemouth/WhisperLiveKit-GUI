@@ -166,7 +166,13 @@ class OnlineASRProcessor:
             if (
                 len(self.audio_buffer) / self.SAMPLING_RATE > self.buffer_trimming_sec
             ):  # longer than this
+                
+                logger.debug("chunking sentence")
                 self.chunk_completed_sentence()
+                
+
+            else:
+                logger.debug("not enough audio to trim as a sentence")
 
         if self.buffer_trimming_way == "segment":
             s = self.buffer_trimming_sec  # trim the completed segments longer than s,
@@ -194,7 +200,10 @@ class OnlineASRProcessor:
     def chunk_completed_sentence(self):
         if self.commited == []:
             return
-        logger.debug("COMPLETED SENTENCE: ", [s[2] for s in self.commited])
+        
+        import pdb; pdb.set_trace()
+        raw_text = self.asr.sep.join([s[2] for s in self.commited]) 
+        logger.debug(f"COMPLETED SENTENCE: {raw_text}")
         sents = self.words_to_sentences(self.commited)
         for s in sents:
             logger.debug(f"\t\tSENT: {s}")
@@ -243,7 +252,7 @@ class OnlineASRProcessor:
         """
 
         cwords = [w for w in words]
-        t = " ".join(o[2] for o in cwords)
+        t = self.asr.sep.join(o[2] for o in cwords)
         s = self.tokenize(t)
         out = []
         while s:
@@ -269,7 +278,7 @@ class OnlineASRProcessor:
         """
         o = self.transcript_buffer.complete()
         f = self.to_flush(o)
-        logger.debug(f"last, noncommited: {f}")
+        logger.debug(f"last, noncommited: {f[0]*1000:.0f}-{f[1]*1000:.0f}: {f[2]}")
         self.buffer_time_offset += len(self.audio_buffer) / 16000
         return f
 
@@ -391,7 +400,7 @@ class VACOnlineASRProcessor(OnlineASRProcessor):
             ret = self.online.process_iter()
             return ret
         else:
-            logger.debug("no online update, only VAD", self.status)
+            #logger.debug("no online update, only VAD")#self.status)
             return (None, None, "")
 
     def finish(self):
