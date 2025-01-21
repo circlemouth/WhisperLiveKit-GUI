@@ -125,7 +125,7 @@ if __name__ == "__main__":
             now = time.time() - start
         if o[0] is not None:
 
-            log_string = "%1.4f %1.0f %1.0f %s" % (now * 1000, o[0] * 1000, o[1] * 1000, o[2])
+            log_string = f"{now*1000:1.0f}, {o[0]*1000:1.0f}-{o[1]*1000:1.0f} ({(now-o[1]):+1.0f}s): {o[2]}"
 
             print(
                 log_string,
@@ -159,7 +159,7 @@ if __name__ == "__main__":
             now = None
         elif args.comp_unaware:  # computational unaware mode
             end = beg + min_chunk
-            while continue_transcribing:
+            while True:
                 a = load_audio_chunk(audio_path, beg, end)
                 online.insert_audio_chunk(a)
                 try:
@@ -185,7 +185,7 @@ if __name__ == "__main__":
 
         else:  # online = simultaneous mode
             end = 0
-            while continue_transcribing:
+            while True:
                 now = time.time() - start
                 if now < end + min_chunk:
                     time.sleep(min_chunk + end - now)
