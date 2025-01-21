@@ -10,6 +10,7 @@ from src.whisper_streaming.online_asr import OnlineASRProcessor, VACOnlineASRPro
 
 from pathlib import Path
 from src.translation.translation import TranslationPipeline
+import signal
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +62,7 @@ if __name__ == "__main__":
         help="Computationally unaware simulation.",
     )
 
+
     args = parser.parse_args()
 
     # reset to store stderr to different file stream, e.g. open(os.devnull,"w")
@@ -97,6 +99,9 @@ if __name__ == "__main__":
     translation_pipeline = TranslationPipeline("fr",["en","uk","de"],#output_folder=translation_output_folder
                                    )
     translation_pipeline.start()
+
+
+
 
     ###
 
@@ -140,68 +145,79 @@ if __name__ == "__main__":
             # No text, so no output
             pass
 
-    if args.offline:  ## offline mode processing (for testing/debugging)
-        a = load_audio(audio_path)
-        online.insert_audio_chunk(a)
-        try:
-            o = online.process_iter()
-        except AssertionError as e:
-            logger.error(f"assertion error: {repr(e)}")
-        else:
-            output_transcript(o)
-        now = None
-    elif args.comp_unaware:  # computational unaware mode
-        end = beg + min_chunk
-        while True:
-            a = load_audio_chunk(audio_path, beg, end)
+    try:
+
+        if args.offline:  ## offline mode processing (for testing/debugging)
+            a = load_audio(audio_path)
             online.insert_audio_chunk(a)
             try:
                 o = online.process_iter()
             except AssertionError as e:
                 logger.error(f"assertion error: {repr(e)}")
-                pass
-            else:
-                output_transcript(o, now=end)
-
-            logger.debug(f"## last processed {end:.2f}s")
-
-            if end >= duration:
-                break
-
-            beg = end
-
-            if end + min_chunk > duration:
-                end = duration
-            else:
-                end += min_chunk
-        now = duration
-
-    else:  # online = simultaneous mode
-        end = 0
-        while True:
-            now = time.time() - start
-            if now < end + min_chunk:
-                time.sleep(min_chunk + end - now)
-            end = time.time() - start
-            a = load_audio_chunk(audio_path, beg, end)
-            beg = end
-            online.insert_audio_chunk(a)
-
-            try:
-                o = online.process_iter()
-            except AssertionError as e:
-                logger.error(f"assertion error: {e}")
-                pass
             else:
                 output_transcript(o)
-            now = time.time() - start
-            logger.debug(
-                f"## last processed {end:.2f} s, now is {now:.2f}, the latency is {now-end:.2f}"
-            )
+            now = None
+        elif args.comp_unaware:  # computational unaware mode
+            end = beg + min_chunk
+            while continue_transcribing:
+                a = load_audio_chunk(audio_path, beg, end)
+                online.insert_audio_chunk(a)
+                try:
+                    o = online.process_iter()
+                except AssertionError as e:
+                    logger.error(f"assertion error: {repr(e)}")
+                    pass
+                else:
+                    output_transcript(o, now=end)
 
-            if end >= duration:
-                break
-        now = None
+                logger.debug(f"## last processed {end:.2f}s")
 
-    o = online.finish()
-    output_transcript(o, now=now)
+                if end >= duration:
+                    break
+
+                beg = end
+
+                if end + min_chunk > duration:
+                    end = duration
+                else:
+                    end += min_chunk
+            now = duration
+
+        else:  # online = simultaneous mode
+            end = 0
+            while continue_transcribing:
+                now = time.time() - start
+                if now < end + min_chunk:
+                    time.sleep(min_chunk + end - now)
+                end = time.time() - start
+                a = load_audio_chunk(audio_path, beg, end)
+                beg = end
+                online.insert_audio_chunk(a)
+
+                try:
+                    o = online.process_iter()
+                except AssertionError as e:
+                    logger.error(f"assertion error: {e}")
+                    pass
+                else:
+                    output_transcript(o)
+                now = time.time() - start
+                logger.debug(
+                    f"## last processed {end:.2f} s, now is {now:.2f}, the latency is {now-end:.2f}"
+                )
+
+                if end >= duration:
+                    break
+            now = None
+
+        
+            o = online.finish()
+            output_transcript(o, now=now)
+
+            translation_pipeline.stop()
+
+            logger.info("Finished processing audio")
+
+    except KeyboardInterrupt:
+        logger.info("Interrupted by user")
+        translation_pipeline.stop()

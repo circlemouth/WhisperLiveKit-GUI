@@ -157,7 +157,7 @@ class TranslationPipeline():
 
     def __init__(self,src_lang,target_languages: List[str],output_folder: Optional[Path | str ] = None):
 
-        signal.signal(signal.SIGINT, lambda s, f: self.stop())
+        
 
         # Load model
         
