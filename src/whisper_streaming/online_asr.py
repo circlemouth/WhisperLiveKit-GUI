@@ -87,11 +87,20 @@ class OnlineASRProcessor:
         buffer_trimming=("segment", 15),
         logfile=sys.stderr,
     ):
-        """asr: WhisperASR object
-        tokenize_method: sentence tokenizer function for the target language. Must be a callable and behaves like the one of MosesTokenizer. It can be None, if "segment" buffer trimming option is used, then tokenizer is not used at all.
-        ("segment", 15)
-        buffer_trimming: a pair of (option, seconds), where option is either "sentence" or "segment", and seconds is a number. Buffer is trimmed if it is longer than "seconds" threshold. Default is the most recommended option.
-        logfile: where to store the log.
+        """
+        Initialize OnlineASRProcessor.
+
+        Args:
+            asr: WhisperASR object
+            tokenize_method: Sentence tokenizer function for the target language.
+            Must be a function that takes a list of text as input like MosesSentenceSplitter.
+            Can be None if using "segment" buffer trimming option.
+            buffer_trimming: Tuple of (option, seconds) where:
+            - option: Either "sentence" or "segment"
+            - seconds: Number of seconds threshold for buffer trimming
+            Default is ("segment", 15)
+            logfile: File to store logs
+
         """
         self.asr = asr
         self.tokenize = tokenize_method
@@ -200,24 +209,25 @@ class OnlineASRProcessor:
     def chunk_completed_sentence(self):
         if self.commited == []:
             return
-        
-        raw_text = self.asr.sep.join([s[2] for s in self.commited]) 
-        logger.debug(f"[Sentence-segmentation] Raw Text: {raw_text}")
 
         sents = self.words_to_sentences(self.commited)
 
 
 
-        for s in sents:
-            logger.debug(f"[Sentence-segmentation] completed sentence: {s}")
         if len(sents) < 2:
+            logger.debug(f"[Sentence-segmentation] no sentence segmented.")
             return
-        while len(sents) > 2:
-            sents.pop(0)
+        
+
+
+        identified_sentence= "\n    - ".join([f"{s[0]*1000:.0f}-{s[1]*1000:.0f} {s[2]}" for s in sents])
+        logger.debug(f"[Sentence-segmentation] identified sentences:\n    - {identified_sentence}")
+       
+
         # we will continue with audio processing at this timestamp
         chunk_at = sents[-2][1]
 
-        logger.debug(f"[Sentence-segmentation]: sentence chunked at {chunk_at:2.2f}")
+        logger.debug(f"[Sentence-segmentation]: sentence will be chunked at {chunk_at:2.2f}")
         self.chunk_at(chunk_at)
 
     def chunk_completed_segment(self, res):
@@ -256,7 +266,8 @@ class OnlineASRProcessor:
 
         cwords = [w for w in words]
         t = self.asr.sep.join(o[2] for o in cwords)
-        s = self.tokenize(t)
+        logger.debug(f"[Sentence-segmentation] Raw Text: {t}")
+        s = self.tokenize([t])
         out = []
         while s:
             beg = None

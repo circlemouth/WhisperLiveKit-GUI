@@ -49,16 +49,16 @@ def create_tokenizer(lan):
         lan
         in "as bn ca cs de el en es et fi fr ga gu hi hu is it kn lt lv ml mni mr nl or pa pl pt ro ru sk sl sv ta te yue zh".split()
     ):
-        from mosestokenizer import MosesTokenizer
+        from mosestokenizer import MosesSentenceSplitter        
 
-        return MosesTokenizer(lan)
+        return MosesSentenceSplitter(lan)
 
     # the following languages are in Whisper, but not in wtpsplit:
     if (
         lan
         in "as ba bo br bs fo haw hr ht jw lb ln lo mi nn oc sa sd sn so su sw tk tl tt".split()
     ):
-        logger.warning(
+        logger.debug(
             f"{lan} code is not supported by wtpsplit. Going to use None lang_code option."
         )
         lan = None
@@ -204,6 +204,7 @@ def backend_factory(args):
 
     # Create the tokenizer
     if args.buffer_trimming == "sentence":
+
         tokenizer = create_tokenizer(tgt_language)
     else:
         tokenizer = None
