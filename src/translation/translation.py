@@ -120,7 +120,6 @@ class OnlineTranslator():
 
     def translate_tokenized_text(self, tokenized_text: torch.Tensor) -> str:
         try:
-            logger.debug(f"Translating text to {self.tgt_lang}")
             generated_tokens = self.model.generate(**tokenized_text,
                                                     **self.inference_kwargs)
             

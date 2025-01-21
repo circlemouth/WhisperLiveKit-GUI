@@ -10,7 +10,7 @@ from src.whisper_streaming.online_asr import OnlineASRProcessor, VACOnlineASRPro
 
 from pathlib import Path
 from src.translation.translation import TranslationPipeline
-import signal
+
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +23,7 @@ def load_audio(fname):
 
 
 
-def set_logging(args, main_logger, other_loggers= ["src.translation.translation"]):
+def set_logging(args, main_logger, other_loggers= ["src.translation.translation","src.whisper_streaming.online_asr"]):
     logging.basicConfig(format="%(levelname)s\t%(message)s")  # format='%(name)s
     main_logger.setLevel(args.log_level)
     for other in other_loggers:
@@ -202,9 +202,9 @@ if __name__ == "__main__":
                 else:
                     output_transcript(o)
                 now = time.time() - start
-                logger.debug(
-                    f"## last processed {end:.2f} s, now is {now:.2f}, the latency is {now-end:.2f}"
-                )
+                # logger.debug(
+                #     f"## last processed {end:.2f} s, now is {now:.2f}, the latency is {now-end:.2f}"
+                # )
 
                 if end >= duration:
                     break
