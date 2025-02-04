@@ -227,6 +227,9 @@ async def websocket_endpoint(websocket: WebSocket):
                         "speaker": "0"
                         })
                     
+
+                    logger.debug(f"Receved new transcription: {trans}")
+
                     full_transcription += trans
                     if args.vac:
                         buffer = online.online.concatenate_tsw(
