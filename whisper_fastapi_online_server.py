@@ -75,6 +75,7 @@ def setup_logging():
 
     logger = logging.getLogger(__name__)
     logger.info("I will log to {log_file} and to the console")
+    return logger
     
 
 logger= setup_logging()
