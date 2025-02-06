@@ -194,12 +194,13 @@ async def websocket_endpoint(websocket: WebSocket):
         loop = asyncio.get_event_loop()
         full_transcription = ""
         beg = time()
+        start_of_recording = beg
 
 
         def calculate_delay(t):
             if t is None:
                 return np.nan
-            return time() - beg - t
+            return time() - start_of_recording - t
 
         
         chunk_history = []  # Will store dicts: {beg, end, text, speaker}
@@ -270,8 +271,8 @@ async def websocket_endpoint(websocket: WebSocket):
        
 
                     buffer = uncommitted[2]
-                    if (
-                        buffer in full_transcription
+                    if ( (buffer!="") and
+                        (buffer in full_transcription)
                     ):  # With VAC, the buffer is not updated until the next chunk is processed
                         logger.warning(
                             "The uncommitted text is already in the full transcription."
@@ -290,10 +291,7 @@ async def websocket_endpoint(websocket: WebSocket):
                         diarization.assign_speakers_to_chunks(chunk_history)
 
 
-                    # # Old
-                    # await websocket.send_json(
-                    #     {"transcription": committed[2], "buffer": buffer}
-                    # )
+                    ### This is very cumbersume, if no dirization is used
 
                     for ch in chunk_history:
                         if args.diarization and ch["speaker"] and ch["speaker"][-1] != lines[-1]["speaker"]:
