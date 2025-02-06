@@ -79,8 +79,10 @@ def setup_logging():
     logging.config.dictConfig(logging_config)
 
     logger = logging.getLogger(__name__)
+
     logger.info(f"I will log to {log_file} and to the console")
     return logger
+
     
 
 logger= setup_logging()
@@ -117,10 +119,23 @@ parser.add_argument(
     dest="warmup_file",
     help="The path to a speech audio wav file to warm up Whisper so that the very first chunk processing is fast. It can be e.g. https://github.com/ggerganov/whisper.cpp/raw/master/samples/jfk.wav .",
 )
+
+parser.add_argument(
+    "--diarization",
+    type=bool,
+    default=False,
+    help="Whether to enable speaker diarization.",
+)
+
+
 add_shared_args(parser)
 args = parser.parse_args()
 
 asr, tokenizer = backend_factory(args)
+
+if args.diarization:
+    from src.diarization.diarization_online import DiartDiarization
+
 
 # Load demo HTML for the root endpoint
 with open("src/web/live_transcription.html", "r", encoding="utf-8") as f:
@@ -158,6 +173,7 @@ async def start_ffmpeg_decoder():
     return process
 
 
+
 @app.websocket("/asr")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
@@ -169,6 +185,9 @@ async def websocket_endpoint(websocket: WebSocket):
     online = online_factory(args, asr, tokenizer)
     print("Online loaded.")
 
+    if args.diarization:
+        diarization = DiartDiarization(SAMPLE_RATE)
+
     # Continuously read decoded PCM from ffmpeg stdout in a background task
     async def ffmpeg_stdout_reader():
         nonlocal pcm_buffer
@@ -176,10 +195,15 @@ async def websocket_endpoint(websocket: WebSocket):
         full_transcription = ""
         beg = time()
 
+
         def calculate_delay(t):
             if t is None:
                 return np.nan
             return time() - beg - t
+
+        
+        chunk_history = []  # Will store dicts: {beg, end, text, speaker}
+        
 
         while True:
             try:
@@ -209,11 +233,12 @@ async def websocket_endpoint(websocket: WebSocket):
                     pcm_buffer = bytearray()
                     online.insert_audio_chunk(pcm_array)
 
+
                     committed,uncommitted = online.process_iter()
            
                     delay = calculate_delay(committed[1])
                     logger.debug(f"New committed (Delay {delay:.2f}s): {committed[2]}")
-                    full_transcription += committed[2]
+                    
                     
         
                     delay = calculate_delay(uncommitted[1])
@@ -229,6 +254,21 @@ async def websocket_endpoint(websocket: WebSocket):
                     #     ]  # We need to access the underlying online object to get the buffer
                     # else:
                     #     buffer = online.concatenate_tsw(online.transcript_buffer.buffer)[2]
+
+
+                    beg_trans, end_trans, trans = committed
+                    
+                    if trans:
+                        chunk_history.append({
+                        "beg": beg_trans,
+                        "end": end_trans,
+                        "text": trans,
+                        "speaker": "0"
+                        })
+                    
+                    full_transcription += trans
+       
+
                     buffer = uncommitted[2]
                     if (
                         buffer in full_transcription
@@ -237,12 +277,39 @@ async def websocket_endpoint(websocket: WebSocket):
                             "The uncommitted text is already in the full transcription."
                         )
                         buffer = ""
-
-
+                                        
+                    lines = [
+                        {
+                            "speaker": "0",
+                            "text": "",
+                        }
+                    ]
                     
-                    await websocket.send_json(
-                        {"transcription": committed[2], "buffer": buffer}
-                    )
+                    if args.diarization:
+                        await diarization.diarize(pcm_array)
+                        diarization.assign_speakers_to_chunks(chunk_history)
+
+
+                    # # Old
+                    # await websocket.send_json(
+                    #     {"transcription": committed[2], "buffer": buffer}
+                    # )
+
+                    for ch in chunk_history:
+                        if args.diarization and ch["speaker"] and ch["speaker"][-1] != lines[-1]["speaker"]:
+                            lines.append(
+                                {
+                                    "speaker": ch["speaker"][-1],
+                                    "text": ch['text'],
+                                }
+                            )
+                        else:
+                            lines[-1]["text"] += ch['text']
+
+                    response = {"lines": lines, "buffer": buffer}
+                    await websocket.send_json(response)
+                    
+
             except Exception as e:
                 logger.critical(f"Exception in ffmpeg_stdout_reader: {e}")
                 break
@@ -278,6 +345,11 @@ async def websocket_endpoint(websocket: WebSocket):
 
         ffmpeg_process.wait()
         del online
+        
+        if args.diarization:
+            # Stop Diart
+            diarization.close()
+
 
 
 
