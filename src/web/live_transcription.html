@@ -78,11 +78,58 @@
     #linesTranscript strong {
       color: #333;
     }
-    /* Grey buffer styling */
+    #speaker {
+      background-color: #dcefff;
+      border-radius: 30px;
+      padding: 2px 10px;
+      font-size: 14px;
+    }
+    #timeInfo {
+      color: #666;
+      margin-left: 10px;
+    }
+    .textcontent {
+      font-size: 16px;
+      margin-left: 10px;
+      padding-left: 10px;
+      border-left: 2px  solid #dcefff;
+      margin-bottom: 10px;
+    }
     .buffer {
       color: rgb(180, 180, 180);
       font-style: italic;
       margin-left: 4px;
+    }
+    .spinner {
+        display: inline-block;
+        width: 8px;
+        height: 8px;
+        border: 2px solid rgba(0, 0, 0, 0.2);
+        border-top: 2px solid #333;
+        border-radius: 50%;
+        animation: spin 0.6s linear infinite;
+        vertical-align: middle;
+        margin-bottom: 2px;
+        }
+
+        @keyframes spin {
+        to {
+            transform: rotate(360deg);
+        }
+        }
+    .silence {
+      color: #666;
+      background-color: #f3f3f3;
+      font-size: 13px;
+      border-radius: 30px;
+      padding: 2px 10px;
+    }
+    .loading {
+      color: #666;
+      background-color: #eff9ff;
+      font-size: 14px;
+      border-radius: 30px;
+      padding: 2px 10px;
     }
   </style>
 </head>
@@ -188,7 +235,7 @@
             }
           */
           const { lines = [], buffer = "" } = data;
-          renderLinesWithBuffer(lines, buffer);
+          renderLinesWithBuffer( lines, buffer);
         };
       });
     }
@@ -199,27 +246,36 @@
         linesTranscriptDiv.innerHTML = "";
         return;
       }
+
+
+
       const linesHtml = lines.map((item, idx) => {
-        let speakerLabel = "";
-        if (item.speaker === -2) {
-          speakerLabel = "No speaker";
-        } else if (item.speaker !== -1) {
-          speakerLabel = `Speaker ${item.speaker}`;
-        }
-        
         let timeInfo = "";
         if (item.beg !== undefined && item.end !== undefined) {
-          timeInfo = ` [${item.beg}, ${item.end}]`;
+          timeInfo = ` ${item.beg} - ${item.end}`;
         }
+
+        let speakerLabel = "";
+        if (item.speaker === -2) {
+          speakerLabel = `<span class="silence">Silence<span id='timeInfo'>${timeInfo}</span></span>`;
+        } else if (item.speaker == -1) {
+          speakerLabel = `<span class='loading'> <span class="spinner"></span><span id='timeInfo'>${item.diff} second(s) of audio are undergoing diarization</span></span>`;
+        } else if (item.speaker == -3) {
+          speakerLabel = `<span id="speaker"><span id='timeInfo'>${timeInfo}</span>`;
+        } else if (item.speaker !== -1) {
+          speakerLabel = `<span id="speaker">Speaker ${item.speaker}<span id='timeInfo'>${timeInfo}</span></span>`;
+        } 
+        
+
         
         let textContent = item.text;
         if (idx === lines.length - 1 && buffer) {
           textContent += `<span class="buffer">${buffer}</span>`;
         }
         
-        return speakerLabel
-          ? `<p><strong>${speakerLabel}${timeInfo}</strong> ${textContent}</p>`
-          : `<p>${textContent}</p>`;
+        return textContent
+          ? `<p>${speakerLabel}<br/><div class='textcontent'>${textContent}</div></p>`
+          : `<p >${speakerLabel}<br/></p>`;
       }).join("");
 
       linesTranscriptDiv.innerHTML = linesHtml;
