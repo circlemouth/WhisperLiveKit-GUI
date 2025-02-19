@@ -179,8 +179,9 @@
             The server might send:
             {
               "lines": [
-                {"speaker": 0, "text": "Hello."},
-                {"speaker": 1, "text": "Bonjour."},
+                {"speaker": 0, "text": "Hello.", "beg": "00:00", "end": "00:01"},
+                {"speaker": -2, "text": "Hi, no speaker here.", "beg": "00:01", "end": "00:02"},
+                {"speaker": -1, "text": "...", "beg": "00:02", "end": "00:03" },
                 ...
               ],
               "buffer": "..."
@@ -198,14 +199,27 @@
         linesTranscriptDiv.innerHTML = "";
         return;
       }
-      // Build the HTML
-      // The buffer is appended to the last line if it's non-empty
       const linesHtml = lines.map((item, idx) => {
+        let speakerLabel = "";
+        if (item.speaker === -2) {
+          speakerLabel = "No speaker";
+        } else if (item.speaker !== -1) {
+          speakerLabel = `Speaker ${item.speaker}`;
+        }
+        
+        let timeInfo = "";
+        if (item.beg !== undefined && item.end !== undefined) {
+          timeInfo = ` [${item.beg}, ${item.end}]`;
+        }
+        
         let textContent = item.text;
         if (idx === lines.length - 1 && buffer) {
           textContent += `<span class="buffer">${buffer}</span>`;
         }
-        return `<p><strong>Speaker ${item.speaker}:</strong> ${textContent}</p>`;
+        
+        return speakerLabel
+          ? `<p><strong>${speakerLabel}${timeInfo}</strong> ${textContent}</p>`
+          : `<p>${textContent}</p>`;
       }).join("");
 
       linesTranscriptDiv.innerHTML = linesHtml;
