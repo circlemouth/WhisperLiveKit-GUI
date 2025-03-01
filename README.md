@@ -1,3 +1,36 @@
+# My experience
+
+Even using `--diarization False`, it still required to install and accept hf gated repo.
+
+1.  [Accept user conditions](https://huggingface.co/pyannote/segmentation) for the `pyannote/segmentation` model
+2.  [Accept user conditions](https://huggingface.co/pyannote/segmentation-3.0) for the newest `pyannote/segmentation-3.0` model
+3.  [Accept user conditions](https://huggingface.co/pyannote/embedding) for the `pyannote/embedding` model
+4.  Install [huggingface-cli](https://huggingface.co/docs/huggingface_hub/quick-start#install-the-hub-library) and [log in](https://huggingface.co/docs/huggingface_hub/quick-start#login) with your user access token (or provide it manually in diart CLI or API).
+
+- https://huggingface.co/settings/tokens<br>
+- WhisperStreamingWeb: Read access to contents of all public gated repos you can access<br>
+- `huggingface-cli login`
+- Keyin WhisperStreamingWeb token.
+
+```cmd
+pip install librosa soundfile
+pip install fastapi ffmpeg-python
+pip install faster-whisper
+pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
+pip install uvicorn[standard]
+pip install diart
+python whisper_fastapi_online_server.py --host 0.0.0.0 --port 8000 --model tiny --lan zh --diarization False
+--vac --vad
+# --diarization False
+```
+http://localhost:8000
+
+It hangs on 8 to 20 seconds.
+
+```cmd
+python whisper_noserver_test.py --audio_path "D:\Projects\GitHub\Cloned\whisper_streaming\audio\whisper_streaming_normalized.wav" --model tiny --lan zh
+```
+
 # Whisper Streaming Web: Real-time Speech-to-Text with FastAPI WebSocket
 
 This project is based on [Whisper Streaming](https://github.com/ufal/whisper_streaming) and lets you transcribe audio directly from your browser. Simply launch the local server and grant microphone access. Everything runs locally on your machine ✨
