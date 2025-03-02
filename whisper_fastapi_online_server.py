@@ -49,7 +49,7 @@ parser.add_argument(
 parser.add_argument(
     "--diarization",
     type=bool,
-    default=True,
+    default=False,
     help="Whether to enable speaker diarization.",
 )
 
@@ -329,7 +329,7 @@ async def results_formatter(shared_state, websocket):
                         "speaker": 1,
                         "text": "",
                         "beg": format_time(0),
-                        "end": format_time(0), #format_time(token.end) if token else format_time(0),
+                        "end": format_time(token.end) if token else format_time(0),
                         "diff": 0
                 }],
                     "buffer_transcription": buffer_transcription,
