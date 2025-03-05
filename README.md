@@ -3,29 +3,24 @@
 This project is based on [Whisper Streaming](https://github.com/ufal/whisper_streaming) and lets you transcribe audio directly from your browser. Simply launch the local server and grant microphone access. Everything runs locally on your machine ✨
 
 <p align="center">
-  <img src="web/demo.png" alt="Demo Screenshot" width="600">
+  <img src="web/demo.png" alt="Demo Screenshot" width="730">
 </p>
 
 ### Differences from [Whisper Streaming](https://github.com/ufal/whisper_streaming)
 
 #### ⚙️ **Core Improvements**  
-- **Buffering Preview** – Displays unvalidated transcription segments for immediate feedback.  
-- **Multi-User Support** – Handles multiple users simultaneously without conflicts.  
+- **Buffering Preview** – Displays unvalidated transcription segments
+- **Multi-User Support** – Handles multiple users simultaneously by decoupling backend and online asr
 - **MLX Whisper Backend** – Optimized for Apple Silicon for faster local processing.  
-- **Enhanced Sentence Segmentation** – Improved buffer trimming for better accuracy across languages.  
 - **Confidence validation** – Immediately validate high-confidence tokens for faster inference
 
 #### 🎙️ **Speaker Identification**  
-- **Real-Time Diarization** – Identify different speakers in real time using [Diart](https://github.com/juanmc2005/diart).
+- **Real-Time Diarization** – Identify different speakers in real time using [Diart](https://github.com/juanmc2005/diart)
 
 #### 🌐 **Web & API**  
-- **Built-in Web UI** – Simple browser interface with no frontend setup required
+- **Built-in Web UI** – Simple raw html browser interface with no frontend setup required
 - **FastAPI WebSocket Server** – Real-time speech-to-text processing with async FFmpeg streaming.  
 - **JavaScript Client** – Ready-to-use MediaRecorder implementation for seamless client-side integration.
-
-#### 🚀 **Coming Soon**
-
-- **Enhanced Diarization Performance** – Optimize speaker identification by implementing longer steps for Diart processing and leveraging language-specific segmentation patterns to improve speaker boundary detection
 
 
 ## Installation
@@ -86,6 +81,8 @@ This project is based on [Whisper Streaming](https://github.com/ufal/whisper_str
     python whisper_fastapi_online_server.py --host 0.0.0.0 --port 8000
     ```
 
+    **Parameters**
+   
     All [Whisper Streaming](https://github.com/ufal/whisper_streaming) parameters are supported.  
     Additional parameters:
     - `--host` and `--port` let you specify the server’s IP/port. 
@@ -94,7 +91,7 @@ This project is based on [Whisper Streaming](https://github.com/ufal/whisper_str
     - `--diarization`: Enable/disable speaker diarization (default: False)
     - `--confidence-validation`: Use confidence scores for faster validation. Transcription will be faster but punctuation might be less accurate (default: True)
 
-4. **Open the Provided HTML**:
+5. **Open the Provided HTML**:
 
     - By default, the server root endpoint `/` serves a simple `live_transcription.html` page.  
     - Open your browser at `http://localhost:8000` (or replace `localhost` and `8000` with whatever you specified).  
