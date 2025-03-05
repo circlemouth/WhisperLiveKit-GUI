@@ -13,22 +13,25 @@
         }
 
         #recordButton {
-            width: 80px;
-            height: 80px;
+            width: 50px;
+            height: 50px;
             border: none;
             border-radius: 50%;
             background-color: white;
             cursor: pointer;
-            transition: background-color 0.3s ease, transform 0.2s ease;
+            transition: all 0.3s ease;
             border: 1px solid rgb(233, 233, 233);
             display: flex;
             align-items: center;
             justify-content: center;
+            position: relative;
         }
 
         #recordButton.recording {
-            border: 1px solid rgb(216, 182, 182);
-            color: white;
+            width: 180px;
+            border-radius: 40px;
+            justify-content: flex-start;
+            padding-left: 20px;
         }
 
         #recordButton:active {
@@ -37,26 +40,59 @@
 
         /* Shape inside the button */
         .shape-container {
-            width: 40px;
-            height: 40px;
+            width: 25px;
+            height: 25px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+
+        .shape {
+            width: 25px;
+            height: 25px;
+            background-color: rgb(209, 61, 53);
+            border-radius: 50%;
+            transition: all 0.3s ease;
+        }
+
+        #recordButton.recording .shape {
+            border-radius: 5px;
+            width: 25px;
+            height: 25px;
+        }
+
+        /* Recording elements */
+        .recording-info {
+            display: none;
+            align-items: center;
+            margin-left: 15px;
+            flex-grow: 1;
+        }
+
+        #recordButton.recording .recording-info {
+            display: flex;
+        }
+
+        .wave-container {
+            width: 60px;
+            height: 30px;
+            position: relative;
             display: flex;
             align-items: center;
             justify-content: center;
         }
 
-        .shape {
-            width: 40px;
-            height: 40px;
-            background-color: rgb(209, 61, 53);
-            border-radius: 50%;
-            transition: border-radius 0.3s ease, background-color 0.3s ease;
+        #waveCanvas {
+            width: 100%;
+            height: 100%;
         }
 
-        #recordButton.recording .shape {
-            border-radius: 10px;
-            width: 30px;
-            height: 30px;
-
+        .timer {
+            font-size: 14px;
+            font-weight: 500;
+            color: #333;
+            margin-left: 10px;
         }
 
         #status {
@@ -107,7 +143,7 @@
         /* Speaker-labeled transcript area */
         #linesTranscript {
             margin: 20px auto;
-            max-width: 600px;
+            max-width: 700px;
             text-align: left;
             font-size: 16px;
         }
@@ -132,6 +168,8 @@
             border-radius: 8px 8px 8px 8px;
             padding: 2px 10px;
             margin-left: 10px;
+            display: inline-block;
+            white-space: nowrap;
             font-size: 14px;
             margin-bottom: 0px;
             color: rgb(134, 134, 134)
@@ -141,10 +179,12 @@
             background-color: #ffffff66;
             border-radius: 8px 8px 8px 8px;
             padding: 2px 10px;
+            display: inline-block;
+            white-space: nowrap;
             margin-left: 10px;
             font-size: 14px;
             margin-bottom: 0px;
-            color: #7474746f
+            color: #000000
         }
 
         #timeInfo {
@@ -168,7 +208,7 @@
         }
 
         .buffer_transcription {
-            color: #7474746f;
+            color: #7474748c;
             margin-left: 4px;
         }
 
@@ -207,7 +247,6 @@
             padding: 2px 10px;
             font-size: 14px;
             margin-bottom: 0px;
-
         }
     </style>
 </head>
@@ -218,6 +257,12 @@
         <button id="recordButton">
             <div class="shape-container">
                 <div class="shape"></div>
+            </div>
+            <div class="recording-info">
+                <div class="wave-container">
+                    <canvas id="waveCanvas"></canvas>
+                </div>
+                <div class="timer">00:00</div>
             </div>
         </button>
         <div class="settings">
@@ -251,12 +296,24 @@
         let chunkDuration = 1000;
         let websocketUrl = "ws://localhost:8000/asr";
         let userClosing = false;
+        let startTime = null;
+        let timerInterval = null;
+        let audioContext = null;
+        let analyser = null;
+        let microphone = null;
+        let waveCanvas = document.getElementById("waveCanvas");
+        let waveCtx = waveCanvas.getContext("2d");
+        let animationFrame = null;
+        waveCanvas.width = 60 * (window.devicePixelRatio || 1);
+        waveCanvas.height = 30 * (window.devicePixelRatio || 1);
+        waveCtx.scale(window.devicePixelRatio || 1, window.devicePixelRatio || 1);
 
         const statusText = document.getElementById("status");
         const recordButton = document.getElementById("recordButton");
         const chunkSelector = document.getElementById("chunkSelector");
         const websocketInput = document.getElementById("websocketInput");
         const linesTranscriptDiv = document.getElementById("linesTranscript");
+        const timerElement = document.querySelector(".timer");
 
         chunkSelector.addEventListener("change", () => {
             chunkDuration = parseInt(chunkSelector.value);
@@ -344,14 +401,17 @@
                 }
 
                 let textContent = item.text;
+                if (idx === lines.length - 1) {
+                    speakerLabel += `<span class="label_transcription"><span class="spinner"></span>Transcription lag <span id='timeInfo'>${remaining_time_transcription}s</span></span>`
+                }
                 if (idx === lines.length - 1 && buffer_diarization) {
                     speakerLabel += `<span class="label_diarization"><span class="spinner"></span>Diarization lag<span id='timeInfo'>${remaining_time_diarization}s</span></span>`
                     textContent += `<span class="buffer_diarization">${buffer_diarization}</span>`;
                 }
-                if (idx === lines.length - 1 && buffer_transcription) {
-                    speakerLabel += `<span class="label_transcription"><span class="spinner"></span>Transcription lag <span id='timeInfo'>${remaining_time_transcription}s</span></span>`
+                if (idx === lines.length - 1) {
                     textContent += `<span class="buffer_transcription">${buffer_transcription}</span>`;
                 }
+                
 
                 return textContent
                     ? `<p>${speakerLabel}<br/><div class='textcontent'>${textContent}</div></p>`
@@ -361,9 +421,59 @@
             linesTranscriptDiv.innerHTML = linesHtml;
         }
 
+        function updateTimer() {
+            if (!startTime) return;
+            
+            const elapsed = Math.floor((Date.now() - startTime) / 1000);
+            const minutes = Math.floor(elapsed / 60).toString().padStart(2, "0");
+            const seconds = (elapsed % 60).toString().padStart(2, "0");
+            timerElement.textContent = `${minutes}:${seconds}`;
+        }
+
+        function drawWaveform() {
+            if (!analyser) return;
+            
+            const bufferLength = analyser.frequencyBinCount;
+            const dataArray = new Uint8Array(bufferLength);
+            analyser.getByteTimeDomainData(dataArray);
+            
+            waveCtx.clearRect(0, 0, waveCanvas.width / (window.devicePixelRatio || 1), waveCanvas.height / (window.devicePixelRatio || 1));
+            waveCtx.lineWidth = 1;
+            waveCtx.strokeStyle = 'rgb(0, 0, 0)';
+            waveCtx.beginPath();
+            
+            const sliceWidth = (waveCanvas.width / (window.devicePixelRatio || 1)) / bufferLength;
+            let x = 0;
+            
+            for (let i = 0; i < bufferLength; i++) {
+                const v = dataArray[i] / 128.0;
+                const y = v * (waveCanvas.height / (window.devicePixelRatio || 1)) / 2;
+                
+                if (i === 0) {
+                    waveCtx.moveTo(x, y);
+                } else {
+                    waveCtx.lineTo(x, y);
+                }
+                
+                x += sliceWidth;
+            }
+            
+            waveCtx.lineTo(waveCanvas.width / (window.devicePixelRatio || 1), waveCanvas.height / (window.devicePixelRatio || 1) / 2);
+            waveCtx.stroke();
+            
+            animationFrame = requestAnimationFrame(drawWaveform);
+        }
+
         async function startRecording() {
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                analyser = audioContext.createAnalyser();
+                analyser.fftSize = 256;
+                microphone = audioContext.createMediaStreamSource(stream);
+                microphone.connect(analyser);
+                
                 recorder = new MediaRecorder(stream, { mimeType: "audio/webm" });
                 recorder.ondataavailable = (e) => {
                     if (websocket && websocket.readyState === WebSocket.OPEN) {
@@ -371,10 +481,16 @@
                     }
                 };
                 recorder.start(chunkDuration);
+                
+                startTime = Date.now();
+                timerInterval = setInterval(updateTimer, 1000);
+                drawWaveform();
+                
                 isRecording = true;
                 updateUI();
             } catch (err) {
                 statusText.textContent = "Error accessing microphone. Please allow microphone access.";
+                console.error(err);
             }
         }
 
@@ -384,6 +500,37 @@
                 recorder.stop();
                 recorder = null;
             }
+            
+            if (microphone) {
+                microphone.disconnect();
+                microphone = null;
+            }
+            
+            if (analyser) {
+                analyser = null;
+            }
+            
+            if (audioContext && audioContext.state !== 'closed') {
+                try {
+                    audioContext.close();
+                } catch (e) {
+                    console.warn("Could not close audio context:", e);
+                }
+                audioContext = null;
+            }
+            
+            if (animationFrame) {
+                cancelAnimationFrame(animationFrame);
+                animationFrame = null;
+            }
+            
+            if (timerInterval) {
+                clearInterval(timerInterval);
+                timerInterval = null;
+            }            
+            timerElement.textContent = "00:00";
+            startTime = null;
+            
             isRecording = false;
 
             if (websocket) {
@@ -402,6 +549,7 @@
                     await startRecording();
                 } catch (err) {
                     statusText.textContent = "Could not connect to WebSocket or access mic. Aborted.";
+                    console.error(err);
                 }
             } else {
                 stopRecording();
