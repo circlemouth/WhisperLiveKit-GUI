@@ -329,7 +329,7 @@ async def results_formatter(shared_state, websocket):
                         "speaker": 1,
                         "text": "",
                         "beg": format_time(0),
-                        "end": format_time(token.end) if token else format_time(0),
+                        "end": format_time(tokens[-1].end) if tokens else format_time(0),
                         "diff": 0
                 }],
                     "buffer_transcription": buffer_transcription,
@@ -416,14 +416,14 @@ async def websocket_endpoint(websocket: WebSocket):
 
                 # Read chunk with timeout
                 try:
-                    print("wait for ffmpeg stdout read")
+                    logger.info("wait for ffmpeg stdout read")
                     chunk = await asyncio.wait_for(
                         loop.run_in_executor(
                             None, ffmpeg_process.stdout.read, ffmpeg_buffer_from_duration
                         ),
                         timeout=5.0
                     )
-                    print("wait over for ffmpeg stdout read")
+                    logger.info(f"wait over for ffmpeg stdout read, chunk length: {len(chunk)}")
                 except asyncio.TimeoutError:
                     logger.warning("FFmpeg read timeout. Restarting...")
                     await restart_ffmpeg()
@@ -470,11 +470,11 @@ async def websocket_endpoint(websocket: WebSocket):
             # Receive incoming WebM audio chunks from the client
             message = await websocket.receive_bytes()
             try:
-                print("write to ffmpeg")
+                logger.info(f"write to ffmpeg, message length: {len(message)}")
                 ffmpeg_process.stdin.write(message)
-                print("write to ffmpeg done")
+                logger.info("write to ffmpeg done")
                 ffmpeg_process.stdin.flush()
-                print("ffmpeg flush done")
+                logger.info("ffmpeg flush done")
             except (BrokenPipeError, AttributeError) as e:
                 logger.warning(f"Error writing to FFmpeg: {e}. Restarting...")
                 await restart_ffmpeg()
