@@ -619,5 +619,5 @@ if __name__ == "__main__":
 
     uvicorn.run(
         "whisper_fastapi_online_server:app", host=args.host, port=args.port, reload=True,
-        log_level="info"
+        log_level=args.log_level.lower()
     )
