@@ -16,14 +16,16 @@ class HypothesisBuffer:
       - buffer: the last hypothesis that is not yet committed
       - new: new tokens coming from the recognizer
     """
-    def __init__(self, logfile=sys.stderr, confidence_validation=False):
+    def __init__(self, sep: str, logfile=sys.stderr, confidence_validation=False):
+        self.sep = sep
         self.confidence_validation = confidence_validation
-        self.committed_in_buffer: TimedList = TimedList([]) 
-        self.buffer: TimedList = TimedList([])
-        self.new: TimedList = TimedList([])
+        self.committed_in_buffer: TimedList = TimedList([],sep=sep) 
+        self.buffer: TimedList = TimedList([],sep=sep)
+        self.new: TimedList = TimedList([],sep=sep)
         self.last_committed_time = 0.0
         self.last_committed_word: Optional[str] = None
         self.logfile = logfile
+        
 
     def insert(self, new_tokens: TimedList, offset: float):
         """
@@ -33,9 +35,10 @@ class HypothesisBuffer:
         """
         # Apply the offset to each token.
         new_tokens.shift(offset)
-        sep= new_tokens.sep
+        if self.sep != new_tokens.sep:
+            logger.warning(f"Separator mismatch: {self.sep} != {new_tokens.sep}")
         # Only keep tokens that are roughly “new”
-        self.new = TimedList([token for token in new_tokens if token.start > self.last_committed_time - 0.1],sep= sep)
+        self.new = TimedList([token for token in new_tokens if token.start > self.last_committed_time - 0.1],sep= self.sep)
 
         if self.new:
             first_token = self.new[0]
@@ -46,10 +49,10 @@ class HypothesisBuffer:
                     # Try to match 1 to 5 consecutive tokens
                     max_ngram = min(min(committed_len, new_len), 5)
                     for i in range(1, max_ngram + 1):
-                        committed_ngram = self.committed_in_buffer[-i:].get_text(sep=sep)
-                        new_ngram = self.new[:i].get_text(sep=sep)
+                        committed_ngram = self.committed_in_buffer[-i:].get_text(sep=self.sep)
+                        new_ngram = self.new[:i].get_text(sep=self.sep)
                         if committed_ngram == new_ngram:
-                            removed = self.new[:i].get_text(sep=sep)
+                            removed = self.new[:i].get_text(sep=self.sep)
                             self.new = self.new[i:]
                             logger.debug(f"Removing last {i} words: {removed}")
                             break
@@ -59,7 +62,7 @@ class HypothesisBuffer:
         Returns the committed chunk, defined as the longest common prefix
         between the previous hypothesis and the new tokens.
         """
-        committed: TimedList = TimedList([])
+        committed: TimedList = TimedList([],sep=self.sep)
         while self.new:
             current_new = self.new[0]
             if self.confidence_validation and current_new.probability and current_new.probability > 0.95:
@@ -79,7 +82,7 @@ class HypothesisBuffer:
             else:
                 break
         self.buffer = self.new
-        self.new = TimedList([])
+        self.new = TimedList([],sep=self.sep)
         self.committed_in_buffer.extend(committed)
         return committed
 
@@ -137,7 +140,7 @@ class OnlineASRProcessor:
     def init(self, offset: Optional[float] = None):
         """Initialize or reset the processing buffers."""
         self.audio_buffer = np.array([], dtype=np.float32)
-        self.transcript_buffer = HypothesisBuffer(logfile=self.logfile, confidence_validation=self.confidence_validation)
+        self.transcript_buffer = HypothesisBuffer(sep=self.asr.sep,logfile=self.logfile, confidence_validation=self.confidence_validation)
         self.buffer_time_offset = offset if offset is not None else 0.0
         self.transcript_buffer.last_committed_time = self.buffer_time_offset
         self.committed: TimedList = TimedList([],sep=self.asr.sep)
