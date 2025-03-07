@@ -177,7 +177,7 @@ class OnlineASRProcessor:
         return self.transcript_buffer.buffer.concatenate(sep=self.asr.sep)
         
 
-    def process_iter(self) -> Transcript:
+    def process_iter(self) -> TimedList:
         """
         Processes the current audio buffer.
 
@@ -269,15 +269,14 @@ class OnlineASRProcessor:
 
 
 
-    def finish(self) -> Transcript:
+    def finish(self) -> TimedList:
         """
         Flush the remaining transcript when processing ends.
         """
         remaining_tokens = self.transcript_buffer.buffer
-        final_transcript = remaining_tokens.concatenate(sep=self.asr.sep)
-        logger.debug(f"Final non-committed transcript: {final_transcript.text}")
+        logger.debug(f"Final non-committed transcript: {remaining_tokens}")
         self.buffer_time_offset += len(self.audio_buffer) / self.SAMPLING_RATE
-        return final_transcript
+        return remaining_tokens
 
 
 
@@ -365,7 +364,7 @@ class VACOnlineASRProcessor:
                 self.buffer_offset += max(0, len(self.audio_buffer) - self.SAMPLING_RATE)
                 self.audio_buffer = self.audio_buffer[-self.SAMPLING_RATE:]
 
-    def process_iter(self) -> Transcript:
+    def process_iter(self) -> TimedList:
         """
         Depending on the VAD status and the amount of accumulated audio,
         process the current audio chunk.
@@ -377,9 +376,9 @@ class VACOnlineASRProcessor:
             return self.online.process_iter()
         else:
             logger.debug("No online update, only VAD")
-            return Transcript(None, None, "")
+            return TimedList([],sep=self.online.asr.sep)
 
-    def finish(self) -> Transcript:
+    def finish(self) -> TimedList:
         """Finish processing by flushing any remaining text."""
         result = self.online.finish()
         self.current_online_chunk_buffer_size = 0
