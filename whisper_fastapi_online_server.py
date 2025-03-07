@@ -243,7 +243,7 @@ async def transcription_processor(shared_state, pcm_queue, transcriber):
         try:
             pcm_array = await pcm_queue.get()
             
-            logger.info(f"{len(transcriber.audio_buffer) / transcriber.SAMPLING_RATE} seconds of audio will be processed by the model.")
+            logger.info(f"{len(transcriber.audio_buffer) / transcriber.SAMPLING_RATE:5.3f} seconds are in the audio buffer.")
             
             # Process transcription
             transcriber.insert_audio_chunk(pcm_array)
