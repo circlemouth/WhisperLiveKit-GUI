@@ -279,6 +279,8 @@ class OnlineASRProcessor:
         remaining_tokens = self.transcript_buffer.buffer
         logger.debug(f"Final non-committed transcript: {remaining_tokens}")
         self.buffer_time_offset += len(self.audio_buffer) / self.SAMPLING_RATE
+        self.audio_buffer = np.array([], dtype=np.float32)
+
         return remaining_tokens
 
 
@@ -335,6 +337,10 @@ class VACOnlineASRProcessor:
             if "start" in res and "end" not in res:
                 self.status = "voice"
                 send_audio = self.audio_buffer[frame:]
+
+                if len(self.online.audio_buffer) > 0:
+                    logger.critical(f"Re-init translator, when previous audio_buffer is not finished!")
+                
                 self.online.init(offset=(frame + self.buffer_offset) / self.SAMPLING_RATE)
                 self.online.insert_audio_chunk(send_audio)
                 self.current_online_chunk_buffer_size += len(send_audio)
