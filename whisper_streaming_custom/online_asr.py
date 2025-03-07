@@ -220,13 +220,13 @@ class OnlineASRProcessor:
 
         sentences = self.committed.split_to_sentences(self.tokenize)
         for sentence in sentences:
-            logger.debug(f"\tSentence: {sentence.text}")
+            logger.debug(f"\tSentence: {sentence}")
         if len(sentences) < 2:
             return
         # Keep the last two sentences.
         while len(sentences) > 2:
             sentences.pop(0)
-        chunk_time = sentences[-2].end
+        chunk_time = sentences[-2][-1].end
         logger.debug(f"--- Sentence chunked at {chunk_time:.2f}")
         self.chunk_at(chunk_time)
 
