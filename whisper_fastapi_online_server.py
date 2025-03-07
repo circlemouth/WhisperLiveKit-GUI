@@ -239,6 +239,21 @@ async def transcription_processor(shared_state, pcm_queue, transcriber):
 
     logger.info("Transcription processor started.")
     
+    full_transcription = ""
+    
+    # TODO: simplify and use sep from TimedList
+    try:
+        sep = transcriber.asr.sep
+    except AttributeError:
+        try:
+            sep = transcriber.online.asr.sep
+        except AttributeError:
+            logger.warning("No separator found for transcription. Using default separator.' '")
+            sep = " "
+
+
+    logger.info("Transcription processor started.")
+    
     transcription_is_running = True
     while transcription_is_running:
         try:
