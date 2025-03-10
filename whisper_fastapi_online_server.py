@@ -11,7 +11,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from whisper_streaming_custom.whisper_online import backend_factory, online_factory, add_shared_args
-from timed_objects import ASRToken
+from timed_objects import ASRToken, TimedList
 
 import math
 import logging 
@@ -160,17 +160,21 @@ class SharedState:
                 "remaining_time_diarization": remaining_time_diarization
             }
             
-    async def reset(self):
-        """Reset the state. Clears the full transcript"""
+    async def reset(self,reset_content=True):
+        """Reset the state.
+        If reset_content is True, clears the full transcript.
+        If reset_content is False, keeps the full transcript.
+        """
         async with self.lock:
             self.tokens = []
             self.buffer_transcription = ""
             self.buffer_diarization = ""
             self.end_buffer = 0
-            self.end_attributed_speaker = 0
-            self.full_transcription = ""
             self.beg_loop = time()
             self.last_response_content = ""
+            if reset_content:
+                self.full_transcription = ""
+                self.end_attributed_speaker = 0
 
 ##### LOAD APP #####
 
@@ -292,6 +296,8 @@ async def transcription_processor(shared_state, pcm_queue, transcriber):
             pcm_queue.task_done()
 
     logger.info("Transcription processor finished.")
+    # Update the transcription state with the final transcription, Signals the end of the transcription
+    await shared_state.update_transcription(TimedList([],sep=sep), "", 0, full_transcription, sep)
 
 async def diarization_processor(shared_state, pcm_queue, diarization_obj):
     buffer_diarization = ""
@@ -304,10 +310,11 @@ async def diarization_processor(shared_state, pcm_queue, diarization_obj):
             if type(pcm_array) == str and pcm_array == "stop":
                 logger.info("Diarization processor received stop signal.")
                 diarization_is_running = False
-                pcm_queue.task_done()
-                break;
+                await shared_state.update_diarization(0, "")
+                break
             
             # Process diarization
+            logger.debug(f"Diarization processor received {len(pcm_array)/SAMPLE_RATE:.2f} seconds of audio")
             await diarization_obj.diarize(pcm_array)
             
             # Get current state
@@ -320,12 +327,13 @@ async def diarization_processor(shared_state, pcm_queue, diarization_obj):
                 end_attributed_speaker, tokens)
             
             await shared_state.update_diarization(new_end_attributed_speaker, buffer_diarization)
-            
+                
         except Exception as e:
             logger.warning(f"Exception in diarization_processor: {e}")
             logger.warning(f"Traceback: {traceback.format_exc()}")
         finally:
             pcm_queue.task_done()
+
     logger.info("Diarization processor finished.")
 
 async def results_formatter(shared_state, websocket):
@@ -340,6 +348,8 @@ async def results_formatter(shared_state, websocket):
             remaining_time_transcription = state["remaining_time_transcription"]
             remaining_time_diarization = state["remaining_time_diarization"]
             sep = state["sep"]
+
+
             
             # If diarization is enabled but no transcription, add dummy tokens periodically
             if not tokens and not args.transcription and args.diarization:
@@ -419,6 +429,7 @@ async def results_formatter(shared_state, websocket):
                     await websocket.send_json(response)
                     shared_state.last_response_content = response_content
             
+
             # Add a small delay to avoid overwhelming the client
             await asyncio.sleep(0.1)
             
@@ -607,6 +618,8 @@ async def websocket_endpoint(websocket: WebSocket):
             
             await asyncio.gather(*processor_tasks, return_exceptions=True)
 
+            logger.debug("Finished transcription/diarization. Resetting state.")
+            await shared_state.reset(reset_content=False)
             # Send final updates to client
             await results_formatter(shared_state, websocket)
 
