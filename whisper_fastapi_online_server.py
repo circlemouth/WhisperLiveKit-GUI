@@ -5,7 +5,6 @@ import numpy as np
 import ffmpeg
 from time import time, sleep
 from contextlib import asynccontextmanager
-import json
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
@@ -248,7 +247,7 @@ async def transcription_processor(shared_state, pcm_queue, transcriber):
 
             if type(pcm_array) == str and pcm_array == "stop":
                 logger.info("Transcription processor received stop signal.")
-                new_tokens = transcriber.finalize()
+                new_tokens = transcriber.finish()
                 transcription_is_running = False
             else:
                 logger.info(f"{len(transcriber.audio_buffer) / transcriber.SAMPLING_RATE} seconds of audio will be processed by the model.")
@@ -495,8 +494,9 @@ async def websocket_endpoint(websocket: WebSocket):
                 if chunk:
                     pcm_buffer.extend(chunk)
                 else:
-                    logger.info("FFmpeg stdout closed.")
                     receiving_audio = False
+                    logger.error("FFmpeg din't read any data. Exiting.")
+                    break;
                 
                     
                 if len(pcm_buffer) >= BYTES_PER_SEC or not receiving_audio:
@@ -527,11 +527,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 break
             finally:
                 logger.info("Exiting ffmpeg_stdout_reader...")
-                # Signal completion to processing queues
-                if args.transcription and transcription_queue:
-                    await transcription_queue.put(None)
-                if args.diarization and diarization_queue:
-                    await diarization_queue.put(None)
+
 
 
 
