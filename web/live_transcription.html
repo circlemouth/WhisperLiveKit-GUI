@@ -373,8 +373,9 @@
                     // Check for status messages
                     if (data.type === "ready_to_stop") {
                         waitingForStop = false;
+                        console.log("Ready to stop");
 
-                        // Only close WebSocket after processing is complete
+                        //Now we can close the WebSocket
                         if (websocket) {
                             websocket.close();
                             websocket = null;
