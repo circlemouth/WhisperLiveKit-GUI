@@ -180,18 +180,27 @@ class OnlineASRProcessor:
         return self.transcript_buffer.buffer.concatenate(sep=self.asr.sep)
         
 
-    def process_iter(self) -> TimedList:
+    def transcribe_audio_buffer(self) -> TimedList:
         """
-        Processes the current audio buffer.
-
-        Returns a Transcript object representing the committed transcript.
+        Transcribe the current audio buffer.
         """
         prompt_text, _ = self.prompt()
         logger.debug(
             f"Transcribing {len(self.audio_buffer)/self.SAMPLING_RATE:.2f} seconds from {self.buffer_time_offset:.2f}"
         )
         res = self.asr.transcribe(self.audio_buffer, init_prompt=prompt_text)
+        return res
+
+    def process_iter(self) -> TimedList:
+        """
+        Processes the current audio buffer.
+
+        Returns a Transcript object representing the committed transcript.
+        """
+        
+        res = self.transcribe_audio_buffer()
         tokens = self.asr.ts_words(res)  # Expecting TimedList  
+
         self.transcript_buffer.insert(tokens, self.buffer_time_offset)
         committed_tokens = self.transcript_buffer.flush()
         self.committed.extend(committed_tokens)
@@ -276,12 +285,25 @@ class OnlineASRProcessor:
         """
         Flush the remaining transcript when processing ends.
         """
+        res = self.transcribe_audio_buffer()
+        tokens = self.asr.ts_words(res)
+        self.transcript_buffer.insert(tokens, self.buffer_time_offset)
+        committed_tokens = self.transcript_buffer.flush()
+        # self.committed.extend(committed_tokens)  
+        logger.debug(f">>>> COMPLETE NOW: {committed_tokens.get_text()}")
+        
         remaining_tokens = self.transcript_buffer.buffer
+        # self.committed.extend(remaining_tokens)
+
         logger.debug(f"Final non-committed transcript: {remaining_tokens}")
+
+        
+
         self.buffer_time_offset += len(self.audio_buffer) / self.SAMPLING_RATE
         self.audio_buffer = np.array([], dtype=np.float32)
+        self.committed= TimedList([],sep=self.asr.sep)
 
-        return remaining_tokens
+        return committed_tokens+remaining_tokens
 
 
 
