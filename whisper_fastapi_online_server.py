@@ -542,30 +542,23 @@ async def websocket_endpoint(websocket: WebSocket):
     try:
         main_loop_running = True
         while main_loop_running:
-            message = await websocket.receive()
+            audio_bytes = await websocket.receive_bytes()
             
-            if message.type == "text":
-                data = json.loads(message.data)
-                if data.get("type") == "stop":
+            try:
+                if len(audio_bytes) == 0:
+                    # Empty audio data means stop signal
                     logger.info("Stop signal received.")
                     main_loop_running = False
-
-                else:
-                    logger.warning(f"I ignore unknown message type: {message.type} message: {message.data}")
                     continue
-
-                
                     
-            else:
-                # Binary audio data
-                try:
-                    ffmpeg_process.stdin.write(message.bytes)
-                    ffmpeg_process.stdin.flush()
-                except (BrokenPipeError, AttributeError) as e:
-                    logger.warning(f"Error writing to FFmpeg: {e}. Restarting...")
-                    await restart_ffmpeg()
-                    ffmpeg_process.stdin.write(message.bytes)
-                    ffmpeg_process.stdin.flush()
+                # Normal audio processing
+                ffmpeg_process.stdin.write(audio_bytes)
+                ffmpeg_process.stdin.flush()
+            except (BrokenPipeError, AttributeError) as e:
+                logger.warning(f"Error writing to FFmpeg: {e}. Restarting...")
+                await restart_ffmpeg()
+                ffmpeg_process.stdin.write(audio_bytes)
+                ffmpeg_process.stdin.flush()
 
     except WebSocketDisconnect:
         logger.warning("WebSocket disconnected.")

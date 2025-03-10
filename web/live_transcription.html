@@ -516,7 +516,14 @@
 
         async function stopRecording() {
             userClosing = true;
-            waitingForStop = true;  // Set the flag when stopping
+            waitingForStop = true;
+            
+            if (websocket && websocket.readyState === WebSocket.OPEN) {
+                // Send empty audio buffer as stop signal
+                const emptyBlob = new Blob([], { type: 'audio/webm' });
+                websocket.send(emptyBlob);
+                statusText.textContent = "Recording stopped. Processing final audio...";
+            }
             
             if (recorder) {
                 recorder.stop();
