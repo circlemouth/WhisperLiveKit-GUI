@@ -5,6 +5,7 @@ import numpy as np
 import ffmpeg
 from time import time, sleep
 from contextlib import asynccontextmanager
+import json
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
@@ -14,7 +15,7 @@ from whisper_streaming_custom.whisper_online import backend_factory, online_fact
 from timed_objects import ASRToken
 
 import math
-import logging
+import logging 
 from datetime import timedelta
 import traceback
 
@@ -161,7 +162,7 @@ class SharedState:
             }
             
     async def reset(self):
-        """Reset the state."""
+        """Reset the state. Clears the full transcript"""
         async with self.lock:
             self.tokens = []
             self.buffer_transcription = ""
@@ -239,16 +240,24 @@ async def transcription_processor(shared_state, pcm_queue, transcriber):
 
     logger.info("Transcription processor started.")
     
-    while True:
+    transcription_is_running = True
+    while transcription_is_running:
         try:
             pcm_array = await pcm_queue.get()
+
+
+            if type(pcm_array) == str and pcm_array == "stop":
+                logger.info("Transcription processor received stop signal.")
+                new_tokens = transcriber.finalize()
+                transcription_is_running = False
+            else:
+                logger.info(f"{len(transcriber.audio_buffer) / transcriber.SAMPLING_RATE} seconds of audio will be processed by the model.")
             
-            logger.info(f"{len(transcriber.audio_buffer) / transcriber.SAMPLING_RATE} seconds of audio will be processed by the model.")
-            
-            # Process transcription
-            transcriber.insert_audio_chunk(pcm_array)
-            new_tokens = transcriber.process_iter()
-            
+                # Process transcription
+                transcriber.insert_audio_chunk(pcm_array)
+                new_tokens = transcriber.process_iter()
+
+
             if new_tokens:
                 full_transcription += new_tokens.get_text(sep=sep)
                 
@@ -268,12 +277,21 @@ async def transcription_processor(shared_state, pcm_queue, transcriber):
         finally:
             pcm_queue.task_done()
 
+    logger.info("Transcription processor finished.")
+
 async def diarization_processor(shared_state, pcm_queue, diarization_obj):
     buffer_diarization = ""
     
-    while True:
+    diarization_is_running = True
+    while diarization_is_running:
         try:
             pcm_array = await pcm_queue.get()
+
+            if type(pcm_array) == str and pcm_array == "stop":
+                logger.info("Diarization processor received stop signal.")
+                diarization_is_running = False
+                pcm_queue.task_done()
+                break;
             
             # Process diarization
             await diarization_obj.diarize(pcm_array)
@@ -294,6 +312,7 @@ async def diarization_processor(shared_state, pcm_queue, diarization_obj):
             logger.warning(f"Traceback: {traceback.format_exc()}")
         finally:
             pcm_queue.task_done()
+    logger.info("Diarization processor finished.")
 
 async def results_formatter(shared_state, websocket):
     while True:
@@ -394,6 +413,8 @@ async def results_formatter(shared_state, websocket):
             logger.warning(f"Traceback: {traceback.format_exc()}")
             await asyncio.sleep(0.5)  # Back off on error
 
+
+
 ##### ENDPOINTS #####
 
 @app.get("/")
@@ -450,7 +471,8 @@ async def websocket_endpoint(websocket: WebSocket):
         loop = asyncio.get_event_loop()
         beg = time()
         
-        while True:
+        receiving_audio = True
+        while receiving_audio:
             try:
                 elapsed_time = math.floor((time() - beg) * 10) / 10 # Round to 0.1 sec
                 ffmpeg_buffer_from_duration = max(int(32000 * elapsed_time), 4096)
@@ -470,11 +492,14 @@ async def websocket_endpoint(websocket: WebSocket):
                     beg = time()
                     continue  # Skip processing and read from new process
 
-                if not chunk:
+                if chunk:
+                    pcm_buffer.extend(chunk)
+                else:
                     logger.info("FFmpeg stdout closed.")
-                    break
-                pcm_buffer.extend(chunk)
-                if len(pcm_buffer) >= BYTES_PER_SEC:
+                    receiving_audio = False
+                
+                    
+                if len(pcm_buffer) >= BYTES_PER_SEC or not receiving_audio:
                     if len(pcm_buffer) > MAX_BYTES_PER_SEC:
                         logger.warning(
                             f"""Audio buffer is too large: {len(pcm_buffer) / BYTES_PER_SEC:.2f} seconds.
@@ -500,39 +525,104 @@ async def websocket_endpoint(websocket: WebSocket):
                 logger.warning(f"Exception in ffmpeg_stdout_reader: {e}")
                 logger.warning(f"Traceback: {traceback.format_exc()}")
                 break
+            finally:
+                logger.info("Exiting ffmpeg_stdout_reader...")
+                # Signal completion to processing queues
+                if args.transcription and transcription_queue:
+                    await transcription_queue.put(None)
+                if args.diarization and diarization_queue:
+                    await diarization_queue.put(None)
 
-        logger.info("Exiting ffmpeg_stdout_reader...")
+
 
     stdout_reader_task = asyncio.create_task(ffmpeg_stdout_reader())
     tasks.append(stdout_reader_task)    
+    
+    ## Main loop
     try:
-        while True:
-            # Receive incoming WebM audio chunks from the client
-            message = await websocket.receive_bytes()
-            try:
-                ffmpeg_process.stdin.write(message)
-                ffmpeg_process.stdin.flush()
-            except (BrokenPipeError, AttributeError) as e:
-                logger.warning(f"Error writing to FFmpeg: {e}. Restarting...")
-                await restart_ffmpeg()
-                ffmpeg_process.stdin.write(message)
-                ffmpeg_process.stdin.flush()
+        main_loop_running = True
+        while main_loop_running:
+            message = await websocket.receive()
+            
+            if message.type == "text":
+                data = json.loads(message.data)
+                if data.get("type") == "stop":
+                    logger.info("Stop signal received.")
+                    main_loop_running = False
+
+                else:
+                    logger.warning(f"I ignore unknown message type: {message.type} message: {message.data}")
+                    continue
+
+                
+                    
+            else:
+                # Binary audio data
+                try:
+                    ffmpeg_process.stdin.write(message.bytes)
+                    ffmpeg_process.stdin.flush()
+                except (BrokenPipeError, AttributeError) as e:
+                    logger.warning(f"Error writing to FFmpeg: {e}. Restarting...")
+                    await restart_ffmpeg()
+                    ffmpeg_process.stdin.write(message.bytes)
+                    ffmpeg_process.stdin.flush()
+
     except WebSocketDisconnect:
         logger.warning("WebSocket disconnected.")
     finally:
+        
+
+        # 1. Close FFmpeg's input
+        if ffmpeg_process and ffmpeg_process.stdin:
+            ffmpeg_process.stdin.close()
+
+
+        if not main_loop_running:
+            # controlled stop
+
+            # Wait for FFmpeg to finish processing remaining audio
+            await asyncio.get_event_loop().run_in_executor(None, ffmpeg_process.wait)
+
+
+            # Send stop signal to processors
+            if transcription_queue:
+                await transcription_queue.put("stop")
+            if diarization_queue:
+                await diarization_queue.put("stop")
+
+            # Send acknowledgment to client that we received stop signal
+            # await websocket.send_json({"type": "stop_acknowledged"})
+
+            # 4. wait for processor tasks
+            logger.info("Waiting for transcription/diarization to finish... this can take a while")
+            processor_tasks = []
+            for task in tasks[:]:  # Create a copy for iteration
+                if "diarization_processor" in str(task) or "transcription_processor" in str(task):
+                    processor_tasks.append(task)
+                    tasks.remove(task)  # Remove from original list
+            
+            await asyncio.gather(*processor_tasks, return_exceptions=True)
+
+            # Send final updates to client
+            await results_formatter(shared_state, websocket)
+
+            # Send signal to client that we are ready to stop/disconnect
+            await websocket.send_json({"type": "ready_to_stop"})
+            # disconnect  or not client might want to restart
+            # await websocket.close()
+        
+
+        ## Cleanup
         for task in tasks:
             task.cancel()
-            
-        try:
-            await asyncio.gather(*tasks, return_exceptions=True)
-            ffmpeg_process.stdin.close()
-            ffmpeg_process.wait()
-        except Exception as e:
-            logger.warning(f"Error during cleanup: {e}")
         
+        await asyncio.gather(*tasks, return_exceptions=True) 
+        
+        # Close diarization if enabled
         if args.diarization and diarization:
             diarization.close()
-        
+                
+
         logger.info("WebSocket endpoint cleaned up.")
 
 if __name__ == "__main__":

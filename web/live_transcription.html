@@ -304,6 +304,7 @@
         let waveCanvas = document.getElementById("waveCanvas");
         let waveCtx = waveCanvas.getContext("2d");
         let animationFrame = null;
+        let waitingForStop = false;
         waveCanvas.width = 60 * (window.devicePixelRatio || 1);
         waveCanvas.height = 30 * (window.devicePixelRatio || 1);
         waveCtx.scale(window.devicePixelRatio || 1, window.devicePixelRatio || 1);
@@ -346,10 +347,16 @@
 
                 websocket.onclose = () => {
                     if (userClosing) {
-                        statusText.textContent = "WebSocket closed by user.";
+                        if (!statusText.textContent.includes("Recording stopped. Processing final audio")) { // This is a bit of a hack. We should have a better way to handle this. eg. using a status code.
+                            statusText.textContent = "Finished processing audio! Ready to record again.";
+                        }
+                        waitingForStop = false;
                     } else {
                         statusText.textContent =
                             "Disconnected from the WebSocket server. (Check logs if model is loading.)";
+                        if (isRecording) {
+                            stopRecording();
+                        }
                     }
                     userClosing = false;
                 };
@@ -363,6 +370,19 @@
                 websocket.onmessage = (event) => {
                     const data = JSON.parse(event.data);
                     
+                    // Check for status messages
+                    if (data.type === "ready_to_stop") {
+                        waitingForStop = false;
+
+                        // Only close WebSocket after processing is complete
+                        if (websocket) {
+                            websocket.close();
+                            websocket = null;
+                        }
+                        return;
+                    }
+                    
+                    // Handle normal transcription updates
                     const { 
                         lines = [], 
                         buffer_transcription = "", 
@@ -494,8 +514,10 @@
             }
         }
 
-        function stopRecording() {
+        async function stopRecording() {
             userClosing = true;
+            waitingForStop = true;  // Set the flag when stopping
+            
             if (recorder) {
                 recorder.stop();
                 recorder = null;
@@ -531,22 +553,41 @@
             timerElement.textContent = "00:00";
             startTime = null;
             
-            isRecording = false;
-
-            if (websocket) {
-                websocket.close();
-                websocket = null;
+            if (websocket && websocket.readyState === WebSocket.OPEN) {
+                try {
+                    await websocket.send(JSON.stringify({
+                        type: "stop",
+                        message: "User stopped recording"
+                    }));
+                    statusText.textContent = "Recording stopped. Processing final audio...";
+                } catch (e) {
+                    console.error("Could not send stop message:", e);
+                    statusText.textContent = "Recording stopped. Error during final audio processing.";
+                    websocket.close();
+                    websocket = null;
+                }
             }
-
+            
+            isRecording = false;
             updateUI();	
         }
 
         async function toggleRecording() {
             if (!isRecording) {
-                linesTranscriptDiv.innerHTML = "";
+                if (waitingForStop) {
+                    statusText.textContent = "Please wait for processing to complete...";
+                    return;
+                }
+                
                 try {
-                    await setupWebSocket();
-                    await startRecording();
+                    // If we have an active WebSocket that's still processing, just restart audio capture
+                    if (websocket && websocket.readyState === WebSocket.OPEN) {
+                        await startRecording();
+                    } else {
+                        // If no active WebSocket or it's closed, create new one
+                        await setupWebSocket();
+                        await startRecording();
+                    }
                 } catch (err) {
                     statusText.textContent = "Could not connect to WebSocket or access mic. Aborted.";
                     console.error(err);
