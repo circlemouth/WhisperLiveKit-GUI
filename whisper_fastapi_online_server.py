@@ -140,14 +140,15 @@ class SharedState:
     async def get_current_state(self):
         async with self.lock:
             
-
             if self.beg_loop is not None:
                 expected_recording_duration = time() - self.beg_loop
                 input_lag = max(expected_recording_duration - self.recorded_seconds, 0)
-                logger.debug(f"Input lag: {input_lag}")
-  
+            else:
+                input_lag = 0
+
+                
             # Calculate remaining time for transcription buffer
-            transcription_lag = max(0, round(input_lag - self.end_buffer+input_lag, 2))
+            transcription_lag = max(0, round(self.recorded_seconds - self.end_buffer + input_lag, 2))
             
             # Calculate remaining time for diarization
             diarization_lag = max(0, round(self.recorded_seconds - self.end_attributed_speaker + input_lag, 2))
@@ -183,6 +184,13 @@ class SharedState:
         async with self.lock:
             self.recorded_seconds = 0
             self.beg_loop = time()
+        logger.debug("Start recording")
+
+    async def stop_recording(self):
+        async with self.lock:
+            self.beg_loop = None
+
+        logger.debug("Stop recording")
 
     async def update_audio_duration(self,n_seconds):
         async with self.lock:
@@ -315,8 +323,7 @@ async def transcription_processor(shared_state, pcm_queue, transcriber):
             pcm_queue.task_done()
 
     logger.info("Transcription processor finished.")
-    # Update the transcription state with the final transcription, Signals the end of the transcription
-    await shared_state.update_transcription(TimedList([],sep=sep), "", 0, full_transcription, sep)
+
 
 async def diarization_processor(shared_state, pcm_queue, diarization_obj):
     buffer_diarization = ""
@@ -326,16 +333,16 @@ async def diarization_processor(shared_state, pcm_queue, diarization_obj):
         try:
             pcm_array = await pcm_queue.get()
 
+
             if type(pcm_array) == str and pcm_array == "stop":
                 logger.info("Diarization processor received stop signal.")
                 diarization_is_running = False
-                await shared_state.update_diarization(0, "")
-                break
-            
-            # Process diarization
-            logger.debug(f"Diarization processor received {len(pcm_array)/SAMPLE_RATE:.2f} seconds of audio")
-            await diarization_obj.diarize(pcm_array)
-            
+                
+            else:
+                # Process diarization
+                logger.debug(f"Diarization processor received {len(pcm_array)/SAMPLE_RATE:.2f} seconds of audio")
+                await diarization_obj.diarize(pcm_array)
+                
             # Get current state
             state = await shared_state.get_current_state()
             tokens = state["tokens"]
@@ -353,11 +360,14 @@ async def diarization_processor(shared_state, pcm_queue, diarization_obj):
         finally:
             pcm_queue.task_done()
 
+
+
     logger.info("Diarization processor finished.")
 
 async def results_formatter(shared_state, websocket):
     while True:
         try:
+
             # Get the current state
             state = await shared_state.get_current_state()
             tokens = state["tokens"]
@@ -511,6 +521,7 @@ async def websocket_endpoint(websocket: WebSocket):
     formatter_task = asyncio.create_task(results_formatter(shared_state, websocket))
     tasks.append(formatter_task)
 
+    ## Input reader
     async def ffmpeg_stdout_reader():
         nonlocal ffmpeg_process, pcm_buffer
         loop = asyncio.get_event_loop()
@@ -544,6 +555,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 else:
                     receiving_audio = False
                     logger.error("FFmpeg din't read any data. Exiting.")
+                    
                     break;
                 
                     
@@ -580,6 +592,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 break
             finally:
                 logger.info("Exiting ffmpeg_stdout_reader...")
+                
 
 
 
@@ -598,7 +611,7 @@ async def websocket_endpoint(websocket: WebSocket):
                     # Empty audio data means stop signal
                     logger.info("Stop signal received.")
                     main_loop_running = False
-                    continue
+                    break
                     
                 # Normal audio processing
                 ffmpeg_process.stdin.write(audio_bytes)
@@ -621,6 +634,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
         if not main_loop_running:
             # controlled stop
+            await shared_state.stop_recording()
 
             # Wait for FFmpeg to finish processing remaining audio
             await asyncio.get_event_loop().run_in_executor(None, ffmpeg_process.wait)
@@ -629,34 +643,33 @@ async def websocket_endpoint(websocket: WebSocket):
             # Send stop signal to processors
             if transcription_queue:
                 await transcription_queue.put("stop")
+                logger.info("Waiting for transcription to finish... this can take a while")
+
+                for task in tasks:
+                    if "transcription_processor" in str(task):
+                        await asyncio.gather(task,return_exceptions=True)
+                        tasks.remove(task)
             if diarization_queue:
                 await diarization_queue.put("stop")
+                logger.info("Waiting for diarization to finish... this can take a while")
+
+                for task in tasks:
+                    if "diarization_processor" in str(task):
+                        await asyncio.gather(task,return_exceptions=True)
+                        tasks.remove(task)
+
 
             # Send acknowledgment to client that we received stop signal
             # await websocket.send_json({"type": "stop_acknowledged"})
-
-            # 4. wait for processor tasks
-            logger.info("Waiting for transcription/diarization to finish... this can take a while")
-            processor_tasks = []
-            for task in tasks[:]:  # Create a copy for iteration
-                if "diarization_processor" in str(task) or "transcription_processor" in str(task):
-                    processor_tasks.append(task)
-                    tasks.remove(task)  # Remove from original list
-            
-            await asyncio.gather(*processor_tasks, return_exceptions=True)
-
-            logger.debug("Finished transcription/diarization. Resetting state.")
-            await shared_state.reset(reset_content=False)
-            # Send final updates to client
-            await results_formatter(shared_state, websocket)
-
-            # Send signal to client that we are ready to stop/disconnect
+            logger.debug("Finished transcription/diarization. Send ready to stop signal to client.")
             await websocket.send_json({"type": "ready_to_stop"})
             # disconnect  or not client might want to restart
             # await websocket.close()
+            
         
 
         ## Cleanup
+        logger.debug("Cancelling tasks...")
         for task in tasks:
             task.cancel()
         
