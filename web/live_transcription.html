@@ -373,7 +373,7 @@
                     // Check for status messages
                     if (data.type === "ready_to_stop") {
                         waitingForStop = false;
-                        console.log("Ready to stop");
+                        console.log("Ready to stop, closing WebSocket");
 
                         //Now we can close the WebSocket
                         if (websocket) {
@@ -583,8 +583,7 @@
         async function toggleRecording() {
             if (!isRecording) {
                 if (waitingForStop) {
-                    statusText.textContent = "Please wait for processing to complete...";
-                    return;
+                    return;  // Early return, UI is already updated
                 }
                 
                 try {
@@ -607,7 +606,17 @@
 
         function updateUI() {
             recordButton.classList.toggle("recording", isRecording);
-            statusText.textContent = isRecording ? "Recording..." : "Click to start transcription";
+            
+            if (waitingForStop) {
+                statusText.textContent = "Please wait for processing to complete...";
+                recordButton.disabled = true;  // Optionally disable the button while waiting
+            } else if (isRecording) {
+                statusText.textContent = "Recording...";
+                recordButton.disabled = false;
+            } else {
+                statusText.textContent = "Click to start transcription";
+                recordButton.disabled = false;
+            }
         }
 
         recordButton.addEventListener("click", toggleRecording);
