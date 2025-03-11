@@ -110,6 +110,7 @@ class SharedState:
         self.beg_loop = time()
         self.sep = " "  # Default separator
         self.last_response_content = ""  # To track changes in response
+        self.recorded_seconds = 0
         
     async def update_transcription(self, new_tokens, buffer, end_buffer, full_transcription, sep):
         async with self.lock:
@@ -138,16 +139,18 @@ class SharedState:
             
     async def get_current_state(self):
         async with self.lock:
-            current_time = time()
-            remaining_time_transcription = 0
-            remaining_time_diarization = 0
             
+
+            if self.beg_loop is not None:
+                expected_recording_duration = time() - self.beg_loop
+                input_lag = max(expected_recording_duration - self.recorded_seconds, 0)
+                logger.debug(f"Input lag: {input_lag}")
+  
             # Calculate remaining time for transcription buffer
-            if self.end_buffer > 0:
-                remaining_time_transcription = max(0, round(current_time - self.beg_loop - self.end_buffer, 2))
-                
+            transcription_lag = max(0, round(input_lag - self.end_buffer+input_lag, 2))
+            
             # Calculate remaining time for diarization
-            remaining_time_diarization = max(0, round(max(self.end_buffer, self.tokens[-1].end if self.tokens else 0) - self.end_attributed_speaker, 2))
+            diarization_lag = max(0, round(self.recorded_seconds - self.end_attributed_speaker + input_lag, 2))
                 
             return {
                 "tokens": self.tokens.copy(),
@@ -156,8 +159,8 @@ class SharedState:
                 "end_buffer": self.end_buffer,
                 "end_attributed_speaker": self.end_attributed_speaker,
                 "sep": self.sep,
-                "remaining_time_transcription": remaining_time_transcription,
-                "remaining_time_diarization": remaining_time_diarization
+                "transcription_lag": transcription_lag,
+                "diarization_lag": diarization_lag
             }
             
     async def reset(self,reset_content=True):
@@ -170,11 +173,27 @@ class SharedState:
             self.buffer_transcription = ""
             self.buffer_diarization = ""
             self.end_buffer = 0
-            self.beg_loop = time()
             self.last_response_content = ""
             if reset_content:
                 self.full_transcription = ""
                 self.end_attributed_speaker = 0
+
+    async def start_recording(self):
+        await self.reset(reset_content=False)
+        async with self.lock:
+            self.recorded_seconds = 0
+            self.beg_loop = time()
+
+    async def update_audio_duration(self,n_seconds):
+        async with self.lock:
+            self.recorded_seconds += n_seconds
+
+
+
+
+
+
+
 
 ##### LOAD APP #####
 
@@ -345,8 +364,8 @@ async def results_formatter(shared_state, websocket):
             buffer_transcription = state["buffer_transcription"]
             buffer_diarization = state["buffer_diarization"]
             end_attributed_speaker = state["end_attributed_speaker"]
-            remaining_time_transcription = state["remaining_time_transcription"]
-            remaining_time_diarization = state["remaining_time_diarization"]
+            transcription_lag = state["transcription_lag"]
+            diarization_lag = state["diarization_lag"]
             sep = state["sep"]
 
 
@@ -403,8 +422,8 @@ async def results_formatter(shared_state, websocket):
                     "lines": lines, 
                     "buffer_transcription": buffer_transcription,
                     "buffer_diarization": buffer_diarization,
-                    "remaining_time_transcription": remaining_time_transcription,
-                    "remaining_time_diarization": remaining_time_diarization
+                    "transcription_lag": transcription_lag,
+                    "diarization_lag": diarization_lag
                 }
             else:
                 response = {
@@ -417,8 +436,8 @@ async def results_formatter(shared_state, websocket):
                 }],
                     "buffer_transcription": buffer_transcription,
                     "buffer_diarization": buffer_diarization,
-                    "remaining_time_transcription": remaining_time_transcription,
-                    "remaining_time_diarization": remaining_time_diarization
+                    "transcription_lag": transcription_lag,
+                    "diarization_lag": diarization_lag
 
                 }
             
@@ -454,6 +473,7 @@ async def websocket_endpoint(websocket: WebSocket):
     ffmpeg_process = None
     pcm_buffer = bytearray()
     shared_state = SharedState()
+    await shared_state.start_recording()
     
     transcription_queue = asyncio.Queue() if args.transcription else None
     diarization_queue = asyncio.Queue() if args.diarization else None
@@ -519,6 +539,8 @@ async def websocket_endpoint(websocket: WebSocket):
 
                 if chunk:
                     pcm_buffer.extend(chunk)
+
+
                 else:
                     receiving_audio = False
                     logger.error("FFmpeg din't read any data. Exiting.")
@@ -529,14 +551,19 @@ async def websocket_endpoint(websocket: WebSocket):
                     if len(pcm_buffer) > MAX_BYTES_PER_SEC:
                         logger.warning(
                             f"""Audio buffer is too large: {len(pcm_buffer) / BYTES_PER_SEC:.2f} seconds.
+                            I process only 5 seconds of audio at a time.
                             The model probably struggles to keep up. Consider using a smaller model.
                             """)
+                        pcm_buffer = pcm_buffer[MAX_BYTES_PER_SEC:]
+
                     # Convert int16 -> float32
                     pcm_array = (
                         np.frombuffer(pcm_buffer[:MAX_BYTES_PER_SEC], dtype=np.int16).astype(np.float32)
                         / 32768.0
                     )
-                    pcm_buffer = pcm_buffer[MAX_BYTES_PER_SEC:]
+
+                    await shared_state.update_audio_duration(len(pcm_buffer) / BYTES_PER_SEC)
+                   
                     
                     if args.transcription and transcription_queue:
                         await transcription_queue.put(pcm_array.copy())

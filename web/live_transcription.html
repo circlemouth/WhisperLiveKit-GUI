@@ -388,22 +388,22 @@
                         lines = [], 
                         buffer_transcription = "", 
                         buffer_diarization = "",
-                        remaining_time_transcription = 0,
-                        remaining_time_diarization = 0
+                        transcription_lag = 0,
+                        diarization_lag = 0
                     } = data;
                     
                     renderLinesWithBuffer(
                         lines, 
                         buffer_diarization, 
                         buffer_transcription, 
-                        remaining_time_diarization,
-                        remaining_time_transcription
+                        diarization_lag,
+                        transcription_lag
                     );
                 };
             });
         }
 
-        function renderLinesWithBuffer(lines, buffer_diarization, buffer_transcription, remaining_time_diarization, remaining_time_transcription) {
+        function renderLinesWithBuffer(lines, buffer_diarization, buffer_transcription, diarization_lag, transcription_lag) {
             const linesHtml = lines.map((item, idx) => {
                 let timeInfo = "";
                 if (item.beg !== undefined && item.end !== undefined) {
@@ -414,7 +414,7 @@
                 if (item.speaker === -2) {
                     speakerLabel = `<span class="silence">Silence<span id='timeInfo'>${timeInfo}</span></span>`;
                 } else if (item.speaker == 0) {
-                    speakerLabel = `<span class='loading'><span class="spinner"></span><span id='timeInfo'>${remaining_time_diarization} second(s) of audio are undergoing diarization</span></span>`;
+                    speakerLabel = `<span class='loading'><span class="spinner"></span><span id='timeInfo'>${diarization_lag} second(s) of audio are undergoing diarization</span></span>`;
                 } else if (item.speaker == -1) {
                     speakerLabel = `<span id="speaker"><span id='timeInfo'>${timeInfo}</span></span>`;
                 } else if (item.speaker !== -1) {
@@ -423,10 +423,10 @@
 
                 let textContent = item.text;
                 if (idx === lines.length - 1) {
-                    speakerLabel += `<span class="label_transcription"><span class="spinner"></span>Transcription lag <span id='timeInfo'>${remaining_time_transcription}s</span></span>`
+                    speakerLabel += `<span class="label_transcription"><span class="spinner"></span>Transcription lag <span id='timeInfo'>${transcription_lag}s</span></span>`
                 }
                 if (idx === lines.length - 1 && buffer_diarization) {
-                    speakerLabel += `<span class="label_diarization"><span class="spinner"></span>Diarization lag<span id='timeInfo'>${remaining_time_diarization}s</span></span>`
+                    speakerLabel += `<span class="label_diarization"><span class="spinner"></span>Diarization lag<span id='timeInfo'>${diarization_lag}s</span></span>`
                     textContent += `<span class="buffer_diarization">${buffer_diarization}</span>`;
                 }
                 if (idx === lines.length - 1) {
