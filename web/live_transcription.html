@@ -56,6 +56,10 @@
             transition: all 0.3s ease;
         }
 
+        #recordButton:disabled .shape {
+            background-color: #6e6d6d;
+        }
+
         #recordButton.recording .shape {
             border-radius: 5px;
             width: 25px;
@@ -372,14 +376,21 @@
                     
                     // Check for status messages
                     if (data.type === "ready_to_stop") {
-                        waitingForStop = false;
                         console.log("Ready to stop, closing WebSocket");
+
+                        // signal that we are not waiting for stop anymore
+                        waitingForStop = false;
+                        recordButton.disabled = false; // this should be elsewhere
+                        console.log("Record button enabled");
 
                         //Now we can close the WebSocket
                         if (websocket) {
                             websocket.close();
                             websocket = null;
                         }
+
+
+                        
                         return;
                     }
                     
@@ -583,9 +594,10 @@
         async function toggleRecording() {
             if (!isRecording) {
                 if (waitingForStop) {
+                    console.log("Waiting for stop, early return");
                     return;  // Early return, UI is already updated
                 }
-                
+                console.log("Connecting to WebSocket");
                 try {
                     // If we have an active WebSocket that's still processing, just restart audio capture
                     if (websocket && websocket.readyState === WebSocket.OPEN) {
@@ -600,6 +612,7 @@
                     console.error(err);
                 }
             } else {
+                console.log("Stopping recording");
                 stopRecording();
             }
         }
@@ -610,12 +623,15 @@
             if (waitingForStop) {
                 statusText.textContent = "Please wait for processing to complete...";
                 recordButton.disabled = true;  // Optionally disable the button while waiting
+                console.log("Record button disabled");
             } else if (isRecording) {
                 statusText.textContent = "Recording...";
                 recordButton.disabled = false;
+                console.log("Record button enabled");
             } else {
                 statusText.textContent = "Click to start transcription";
                 recordButton.disabled = false;
+                console.log("Record button enabled");
             }
         }
 
