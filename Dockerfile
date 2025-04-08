@@ -1,16 +1,27 @@
-FROM python:3.9-slim
+FROM nvidia/cuda:12.8.1-cudnn-runtime-ubuntu22.04
 
-# Ensure that Python logs/prints are flushed immediately
+ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
 ARG EXTRAS
+ARG HF_PRECACHE_DIR
+ARG HF_TOKEN_FILE
 
 # Install system dependencies
+#RUN apt-get update && \
+#    apt-get install -y ffmpeg git && \
+#    apt-get clean && \
+#    rm -rf /var/lib/apt/lists/*
+
+# 2) Install system dependencies + Python + pip
 RUN apt-get update && \
-    apt-get install -y ffmpeg git && \
-    apt-get clean && \
+    apt-get install -y --no-install-recommends \
+        python3 \
+        python3-pip \
+        ffmpeg \
+        git && \
     rm -rf /var/lib/apt/lists/*
 
 COPY . .
@@ -40,7 +51,6 @@ VOLUME ["/root/.cache/huggingface/hub"]
 #    WARNING: This will copy ALL files in the pre-cache location.
 
 # Conditionally copy a cache directory if provided
-ARG HF_PRECACHE_DIR
 RUN if [ -n "$HF_PRECACHE_DIR" ]; then \
       echo "Copying Hugging Face cache from $HF_PRECACHE_DIR"; \
       mkdir -p /root/.cache/huggingface/hub && \
@@ -50,11 +60,11 @@ RUN if [ -n "$HF_PRECACHE_DIR" ]; then \
     fi
 
 # Conditionally copy a Hugging Face token if provided
-ARG HF_TOKEN
-RUN if [ -n "$HF_TOKEN" ]; then \
-      echo "Copying Hugging Face token from $HF_TOKEN"; \
+
+RUN if [ -n "$HF_TOKEN_FILE" ]; then \
+      echo "Copying Hugging Face token from $HF_TOKEN_FILE"; \
       mkdir -p /root/.cache/huggingface && \
-      cp $HF_TOKEN /root/.cache/huggingface/token; \
+      cp $HF_TOKEN_FILE /root/.cache/huggingface/token; \
     else \
       echo "No Hugging Face token file specified, skipping token setup"; \
     fi
