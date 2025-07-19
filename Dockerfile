@@ -47,7 +47,7 @@ RUN if [ -n "$EXTRAS" ]; then \
 #    Note: This only persists for a single, named container. This is 
 #          only for convenience at de/test stage. 
 #          For prod, it is better to use a named volume via host mount/k8s.
-VOLUME ["/root/.cache/huggingface/hub"]
+# VOLUME ["/root/.cache/huggingface/hub"]
 
 # or
 # B) Conditionally copy a local pre-cache from the build context to the 
