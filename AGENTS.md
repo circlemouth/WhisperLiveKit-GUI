@@ -14,7 +14,6 @@
 
 ## ディレクトリと命名
 - 仕様書（正）：`README-FOR-WRAPPER.md`
-  - 既存の `README-FOR-RAPPER.md` は互換・参照用として残置。新規記述は WRAPPER 版に集約する。
 - 開発ログ：`WRAPPER-DEV-LOG.md`
 - 実装ルート：`wrapper/`
   - 例）`wrapper/cli/`（CLI エントリ）、`wrapper/app/`（UI/サービス層）、`wrapper/config/`（設定・テンプレート）
