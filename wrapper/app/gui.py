@@ -5,7 +5,7 @@ import sys
 import time
 import webbrowser
 import tkinter as tk
-from tkinter import ttk, filedialog
+from tkinter import ttk, filedialog, simpledialog
 import audioop
 import json
 import queue
@@ -13,6 +13,42 @@ import threading
 from pathlib import Path
 import shutil
 from platformdirs import user_config_path
+
+
+def _load_whisper_models() -> list[str]:
+    models_file = Path(__file__).resolve().parents[2] / "available_models.md"
+    models: list[str] = []
+    try:
+        with open(models_file, "r", encoding="utf-8") as f:
+            collecting = False
+            for line in f:
+                line = line.strip()
+                if line.startswith("- "):
+                    models.append(line[2:].split()[0])
+                    collecting = True
+                elif collecting and not line:
+                    break
+    except Exception:
+        models = [
+            "tiny.en",
+            "tiny",
+            "base.en",
+            "base",
+            "small.en",
+            "small",
+            "medium.en",
+            "medium",
+            "large-v1",
+            "large-v2",
+            "large-v3",
+            "large-v3-turbo",
+        ]
+    return models
+
+
+WHISPER_MODELS = _load_whisper_models()
+SEGMENTATION_MODELS = ["pyannote/segmentation-3.0", "pyannote/segmentation"]
+EMBEDDING_MODELS = ["pyannote/embedding", "speechbrain/spkrec-ecapa-voxceleb"]
 
 
 CONFIG_DIR = user_config_path("WhisperLiveKit", "wrapper")
@@ -44,6 +80,15 @@ class WrapperGUI:
             a_port = str(self._find_free_port(exclude={int(b_port)}))
         self.api_port = tk.StringVar(value=a_port)
         self.auto_start = tk.BooleanVar(value=os.getenv("WRAPPER_API_AUTOSTART") == "1")
+
+        self.model = tk.StringVar(value=os.getenv("WRAPPER_MODEL", "large-v3"))
+        self.diarization = tk.BooleanVar(value=os.getenv("WRAPPER_DIARIZATION") == "1")
+        self.segmentation_model = tk.StringVar(
+            value=os.getenv("WRAPPER_SEGMENTATION_MODEL", "pyannote/segmentation-3.0")
+        )
+        self.embedding_model = tk.StringVar(
+            value=os.getenv("WRAPPER_EMBEDDING_MODEL", "pyannote/embedding")
+        )
 
         self.web_endpoint = tk.StringVar()
         self.ws_endpoint = tk.StringVar()
@@ -88,6 +133,38 @@ class WrapperGUI:
         ttk.Entry(config_frame, textvariable=self.api_port, width=15).grid(row=r, column=1, sticky="ew")
         r += 1
         ttk.Checkbutton(config_frame, text="Auto-start API on launch", variable=self.auto_start).grid(row=r, column=0, columnspan=2, sticky=tk.W)
+        r += 1
+        ttk.Label(config_frame, text="Whisper model").grid(row=r, column=0, sticky=tk.W)
+        self.model_combo = ttk.Combobox(
+            config_frame,
+            textvariable=self.model,
+            values=WHISPER_MODELS,
+            state="readonly",
+            width=20,
+        )
+        self.model_combo.grid(row=r, column=1, sticky="ew")
+        r += 1
+        ttk.Checkbutton(config_frame, text="Enable diarization", variable=self.diarization, command=self._update_diarization_fields).grid(row=r, column=0, columnspan=2, sticky=tk.W)
+        r += 1
+        ttk.Label(config_frame, text="Segmentation model").grid(row=r, column=0, sticky=tk.W)
+        self.seg_model_combo = ttk.Combobox(
+            config_frame,
+            textvariable=self.segmentation_model,
+            values=SEGMENTATION_MODELS,
+            width=20,
+        )
+        self.seg_model_combo.grid(row=r, column=1, sticky="ew")
+        r += 1
+        ttk.Label(config_frame, text="Embedding model").grid(row=r, column=0, sticky=tk.W)
+        self.emb_model_combo = ttk.Combobox(
+            config_frame,
+            textvariable=self.embedding_model,
+            values=EMBEDDING_MODELS,
+            width=20,
+        )
+        self.emb_model_combo.grid(row=r, column=1, sticky="ew")
+        r += 1
+        ttk.Button(config_frame, text="Hugging Face Login", command=self.login_hf).grid(row=r, column=0, columnspan=2, sticky=tk.W)
         r += 1
         start_stop = ttk.Frame(config_frame)
         start_stop.grid(row=r, column=0, columnspan=2, sticky=tk.W)
@@ -157,6 +234,8 @@ class WrapperGUI:
         self.backend_proc: subprocess.Popen | None = None
         self.api_proc: subprocess.Popen | None = None
 
+        self._update_diarization_fields()
+
         for var in [self.backend_host, self.backend_port, self.api_host, self.api_port]:
             var.trace_add("write", self.update_endpoints)
         self.update_endpoints()
@@ -177,17 +256,28 @@ class WrapperGUI:
         env["WRAPPER_API_HOST"] = a_host
         env["WRAPPER_API_PORT"] = a_port
 
-        self.backend_proc = subprocess.Popen(
-            [
-                sys.executable,
-                "-m",
-                "whisperlivekit.basic_server",
-                "--host",
-                b_host,
-                "--port",
-                b_port,
-            ]
-        )
+        backend_cmd = [
+            sys.executable,
+            "-m",
+            "whisperlivekit.basic_server",
+            "--host",
+            b_host,
+            "--port",
+            b_port,
+        ]
+        model = self.model.get().strip()
+        if model:
+            backend_cmd += ["--model", model]
+        if self.diarization.get():
+            backend_cmd.append("--diarization")
+            seg = self.segmentation_model.get().strip()
+            if seg:
+                backend_cmd += ["--segmentation-model", seg]
+            emb = self.embedding_model.get().strip()
+            if emb:
+                backend_cmd += ["--embedding-model", emb]
+
+        self.backend_proc = subprocess.Popen(backend_cmd)
         time.sleep(2)
         try:
             webbrowser.open(f"http://{b_host}:{b_port}")
@@ -271,6 +361,28 @@ class WrapperGUI:
         text.insert("1.0", content)
         text.config(state="disabled")
 
+    def login_hf(self) -> None:
+        token = simpledialog.askstring("Hugging Face Login", "Enter token", show="*")
+        if token:
+            threading.Thread(target=self._run_hf_login, args=(token,), daemon=True).start()
+
+    def _run_hf_login(self, token: str) -> None:
+        try:
+            subprocess.run(
+                ["huggingface-cli", "login", "--token", token],
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self.master.after(0, lambda: self.status_var.set("Hugging Face login succeeded"))
+        except Exception as e:  # pragma: no cover - external command
+            self.master.after(0, lambda: self.status_var.set(f"Hugging Face login failed: {e}"))
+
+    def _update_diarization_fields(self, *_: object) -> None:
+        state = tk.NORMAL if self.diarization.get() else tk.DISABLED
+        self.seg_model_combo.config(state=state)
+        self.emb_model_combo.config(state=state)
+
     def _load_settings(self) -> None:
         if not CONFIG_FILE.exists() and OLD_CONFIG_FILE.exists():
             try:
@@ -287,6 +399,10 @@ class WrapperGUI:
         self.api_host.set(data.get("api_host", self.api_host.get()))
         self.api_port.set(data.get("api_port", self.api_port.get()))
         self.auto_start.set(data.get("auto_start", self.auto_start.get()))
+        self.model.set(data.get("model", self.model.get()))
+        self.diarization.set(data.get("diarization", self.diarization.get()))
+        self.segmentation_model.set(data.get("segmentation_model", self.segmentation_model.get()))
+        self.embedding_model.set(data.get("embedding_model", self.embedding_model.get()))
         self.ws_url.set(data.get("ws_url", self.ws_url.get()))
         self.save_path.set(data.get("save_path", self.save_path.get()))
 
@@ -297,6 +413,10 @@ class WrapperGUI:
             "api_host": self.api_host.get(),
             "api_port": self.api_port.get(),
             "auto_start": self.auto_start.get(),
+            "model": self.model.get(),
+            "diarization": self.diarization.get(),
+            "segmentation_model": self.segmentation_model.get(),
+            "embedding_model": self.embedding_model.get(),
             "ws_url": self.ws_url.get(),
             "save_path": self.save_path.get(),
         }
