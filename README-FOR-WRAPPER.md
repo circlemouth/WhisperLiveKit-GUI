@@ -23,7 +23,7 @@
 
 ## 5. インターフェース
 - CLI/GUI：
-    - `python -m wrapper.cli.main` で設定 GUI を起動。GUI は起動時に空きポートを自動選択して入力欄に表示し、必要に応じて編集できる。`Start API` でサービスを起動、`Stop API` で停止できる。`Auto-start API on launch` を有効にすると起動時に自動開始する。起動後は Backend Web UI・WebSocket `/asr`・ファイル文字起こし API の各エンドポイントと用途が表示され、隣の `Copy` ボタンでクリップボードにコピーできる。
+    - `python -m wrapper.cli.main` で設定 GUI を起動。GUI は起動時に空きポートを自動選択して入力欄に表示し、必要に応じて編集できる。`Start API` でサービスを起動、`Stop API` で停止できる。`Auto-start API on launch` を有効にすると起動時に自動開始する。起動後は Backend Web UI・WebSocket `/asr`・ファイル文字起こし API の各エンドポイントと用途が表示され、隣の `Copy` ボタンでクリップボードにコピーできる。レイアウトはサーバー設定・エンドポイント・録音・保存・トランスクリプトの各セクションに分かれており、ウィンドウのリサイズに応じて入力欄やテキスト領域が自動調整される。`clam` テーマを適用し視認性を向上させた。
     - さらに WebSocket 用の入力欄と録音コントロールを備え、`Start Recording` でマイク入力を `/asr` にストリーミングして文字起こし結果をリアルタイム表示できる。録音中は音量レベルと経過時間を表示し、`Stop Recording` で終了する。文字起こし結果の保存先指定欄を提供し、録音終了時に指定ファイルへ自動保存できる。
     - `Open Web GUI` ボタンでブラウザから元の Web GUI を開ける。`License` ボタンで本リポジトリ同梱の `LICENSE` ファイルを新規ウィンドウに表示する。
 - API：
