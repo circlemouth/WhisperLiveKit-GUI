@@ -1,0 +1,9 @@
+{
+  "backend_host": "127.0.0.1",
+  "backend_port": "",
+  "api_host": "127.0.0.1",
+  "api_port": "",
+  "auto_start": false,
+  "ws_url": "",
+  "save_path": ""
+}

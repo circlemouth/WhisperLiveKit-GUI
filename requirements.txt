@@ -1,0 +1,6 @@
+fastapi
+uvicorn
+websockets
+sounddevice
+platformdirs
+whisperlivekit
