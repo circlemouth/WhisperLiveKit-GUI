@@ -4,6 +4,10 @@
   "api_host": "127.0.0.1",
   "api_port": "",
   "auto_start": false,
+  "model": "large-v3",
+  "diarization": false,
+  "segmentation_model": "pyannote/segmentation-3.0",
+  "embedding_model": "pyannote/embedding",
   "ws_url": "",
   "save_path": ""
 }
