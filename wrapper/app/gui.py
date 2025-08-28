@@ -207,6 +207,15 @@ class WrapperGUI:
         self.hf_login_btn = ttk.Button(config_frame, text="Hugging Face Login", command=self.login_hf)
         self.hf_login_btn.grid(row=r, column=0, columnspan=2, sticky=tk.W)
         r += 1
+        # Hint about diarization requiring HF login
+        self.hf_hint = tk.Label(
+            config_frame,
+            text="話者分離（Diarization）を有効化するには Hugging Face へのログインが必要です。",
+            wraplength=460,
+            justify="left",
+        )
+        self.hf_hint.grid(row=r, column=0, columnspan=2, sticky=tk.W)
+        r += 1
         start_stop = ttk.Frame(config_frame)
         start_stop.grid(row=r, column=0, columnspan=2, sticky=tk.W)
         self.start_btn = ttk.Button(start_stop, text="Start API", command=self.start_api)
@@ -221,7 +230,9 @@ class WrapperGUI:
         r = 0
         ttk.Label(endpoints_frame, text="Backend Web UI").grid(row=r, column=0, sticky=tk.W)
         ttk.Entry(endpoints_frame, textvariable=self.web_endpoint, width=40, state="readonly").grid(row=r, column=1, sticky="ew")
-        ttk.Button(endpoints_frame, text="Copy", command=lambda: self.copy_to_clipboard(self.web_endpoint.get())).grid(row=r, column=2, padx=5)
+        # Move Open Web GUI button here instead of Copy
+        self.open_web_btn = ttk.Button(endpoints_frame, text="Open Web GUI", command=self.open_web_gui, state=tk.DISABLED)
+        self.open_web_btn.grid(row=r, column=2, padx=5)
         r += 1
         ttk.Label(endpoints_frame, text="Streaming WebSocket /asr").grid(row=r, column=0, sticky=tk.W)
         ttk.Entry(endpoints_frame, textvariable=self.ws_endpoint, width=40, state="readonly").grid(row=r, column=1, sticky="ew")
@@ -272,8 +283,6 @@ class WrapperGUI:
         bottom = ttk.Frame(master)
         bottom.grid(row=row, column=0, sticky="ew", padx=10, pady=5)
         bottom.columnconfigure(0, weight=1)
-        self.open_web_btn = ttk.Button(bottom, text="Open Web GUI", command=self.open_web_gui, state=tk.DISABLED)
-        self.open_web_btn.grid(row=0, column=0, sticky=tk.W)
         ttk.Button(bottom, text="License", command=self.show_license).grid(row=0, column=1, sticky=tk.E)
 
         self.backend_proc: subprocess.Popen | None = None
@@ -727,13 +736,36 @@ class WrapperGUI:
                 self.api_host.set("0.0.0.0")
 
     def _init_check_hf_login(self) -> None:
+        # Prefer local token presence over online whoami to avoid network dependency
+        logged = False
         try:
-            res = subprocess.run(["huggingface-cli", "whoami"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            logged = res.returncode == 0
-        except Exception:
-            logged = False
-        self.hf_logged_in = logged
-        self.master.after(0, self._apply_hf_login_state)
+            # Check common env vars first
+            for k in ("HF_TOKEN", "HUGGINGFACEHUB_API_TOKEN", "HUGGING_FACE_HUB_TOKEN"):
+                if os.getenv(k):
+                    logged = True
+                    break
+            if not logged:
+                try:
+                    from huggingface_hub import HfFolder  # type: ignore
+                    token = HfFolder.get_token()
+                    if token:
+                        logged = True
+                except Exception:
+                    pass
+            # Fallback to CLI whoami if still undetermined
+            if not logged:
+                try:
+                    res = subprocess.run(
+                        ["huggingface-cli", "whoami"],
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                    )
+                    logged = res.returncode == 0
+                except Exception:
+                    pass
+        finally:
+            self.hf_logged_in = logged
+            self.master.after(0, self._apply_hf_login_state)
 
     def _apply_hf_login_state(self) -> None:
         # Force-disable diarization if not logged in
