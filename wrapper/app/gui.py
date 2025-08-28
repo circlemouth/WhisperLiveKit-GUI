@@ -80,6 +80,11 @@ class WrapperGUI:
             a_port = str(self._find_free_port(exclude={int(b_port)}))
         self.api_port = tk.StringVar(value=a_port)
         self.auto_start = tk.BooleanVar(value=os.getenv("WRAPPER_API_AUTOSTART") == "1")
+        # Allow external connections (bind 0.0.0.0)
+        self.allow_external = tk.BooleanVar(value=os.getenv("WRAPPER_ALLOW_EXTERNAL") == "1")
+        # Keep last local-only hosts to restore when toggled off
+        self._last_local_backend_host = "127.0.0.1"
+        self._last_local_api_host = "127.0.0.1"
 
         self.model = tk.StringVar(value=os.getenv("WRAPPER_MODEL", "large-v3"))
         self.diarization = tk.BooleanVar(value=os.getenv("WRAPPER_DIARIZATION") == "1")
@@ -93,6 +98,8 @@ class WrapperGUI:
         self.web_endpoint = tk.StringVar()
         self.ws_endpoint = tk.StringVar()
         self.api_endpoint = tk.StringVar()
+        # HF login state (for diarization gating)
+        self.hf_logged_in: bool = False
 
         # Recording-related variables
         self.ws_url = tk.StringVar()
@@ -101,38 +108,65 @@ class WrapperGUI:
         self.timer_var = tk.StringVar(value="00:00")
         self.level_var = tk.DoubleVar(value=0.0)
         self.save_path = tk.StringVar()
+        self.save_enabled = tk.BooleanVar(value=False)
 
         self._load_settings()
 
         style = ttk.Style()
         try:
-            style.theme_use("clam")
+            style.theme_use("vista")
         except tk.TclError:
-            pass
+            try:
+                style.theme_use("winnative")
+            except tk.TclError:
+                style.theme_use("clam")
+        # Modern-ish styling tweaks
         style.configure("TLabel", padding=4)
-        style.configure("TButton", padding=6)
-        style.configure("TLabelframe", padding=8)
+        style.configure("TButton", padding=8)
+        style.configure("TLabelframe", padding=10)
+        style.configure("Header.TLabel", font=("Segoe UI", 14, "bold"))
+        try:
+            master.option_add("*Font", ("Segoe UI", 10))
+        except Exception:
+            pass
 
         master.columnconfigure(0, weight=1)
 
         row = 0
+        # App header
+        ttk.Label(master, text="WhisperLiveKit Wrapper", style="Header.TLabel").grid(row=row, column=0, sticky="w", padx=10, pady=(8,0))
+        row += 1
         config_frame = ttk.Labelframe(master, text="Server Settings")
         config_frame.grid(row=row, column=0, sticky="ew", padx=10, pady=5)
         config_frame.columnconfigure(1, weight=1)
         r = 0
         ttk.Label(config_frame, text="Backend host").grid(row=r, column=0, sticky=tk.W)
-        ttk.Entry(config_frame, textvariable=self.backend_host, width=15).grid(row=r, column=1, sticky="ew")
+        self.backend_host_entry = ttk.Entry(config_frame, textvariable=self.backend_host, width=15)
+        self.backend_host_entry.grid(row=r, column=1, sticky="ew")
         r += 1
         ttk.Label(config_frame, text="Backend port").grid(row=r, column=0, sticky=tk.W)
-        ttk.Entry(config_frame, textvariable=self.backend_port, width=15).grid(row=r, column=1, sticky="ew")
+        self.backend_port_entry = ttk.Entry(config_frame, textvariable=self.backend_port, width=15)
+        self.backend_port_entry.grid(row=r, column=1, sticky="ew")
         r += 1
         ttk.Label(config_frame, text="API host").grid(row=r, column=0, sticky=tk.W)
-        ttk.Entry(config_frame, textvariable=self.api_host, width=15).grid(row=r, column=1, sticky="ew")
+        self.api_host_entry = ttk.Entry(config_frame, textvariable=self.api_host, width=15)
+        self.api_host_entry.grid(row=r, column=1, sticky="ew")
         r += 1
         ttk.Label(config_frame, text="API port").grid(row=r, column=0, sticky=tk.W)
-        ttk.Entry(config_frame, textvariable=self.api_port, width=15).grid(row=r, column=1, sticky="ew")
+        self.api_port_entry = ttk.Entry(config_frame, textvariable=self.api_port, width=15)
+        self.api_port_entry.grid(row=r, column=1, sticky="ew")
         r += 1
-        ttk.Checkbutton(config_frame, text="Auto-start API on launch", variable=self.auto_start).grid(row=r, column=0, columnspan=2, sticky=tk.W)
+        self.auto_start_chk = ttk.Checkbutton(config_frame, text="Auto-start API on launch", variable=self.auto_start)
+        self.auto_start_chk.grid(row=r, column=0, columnspan=2, sticky=tk.W)
+        r += 1
+        # External connections toggle
+        self.allow_external_chk = ttk.Checkbutton(
+            config_frame,
+            text="Allow external connections (0.0.0.0)",
+            variable=self.allow_external,
+            command=self._toggle_allow_external,
+        )
+        self.allow_external_chk.grid(row=r, column=0, columnspan=2, sticky=tk.W)
         r += 1
         ttk.Label(config_frame, text="Whisper model").grid(row=r, column=0, sticky=tk.W)
         self.model_combo = ttk.Combobox(
@@ -144,7 +178,13 @@ class WrapperGUI:
         )
         self.model_combo.grid(row=r, column=1, sticky="ew")
         r += 1
-        ttk.Checkbutton(config_frame, text="Enable diarization", variable=self.diarization, command=self._update_diarization_fields).grid(row=r, column=0, columnspan=2, sticky=tk.W)
+        self.diarization_chk = ttk.Checkbutton(
+            config_frame,
+            text="Enable diarization",
+            variable=self.diarization,
+            command=self._on_diarization_toggle,
+        )
+        self.diarization_chk.grid(row=r, column=0, columnspan=2, sticky=tk.W)
         r += 1
         ttk.Label(config_frame, text="Segmentation model").grid(row=r, column=0, sticky=tk.W)
         self.seg_model_combo = ttk.Combobox(
@@ -164,12 +204,15 @@ class WrapperGUI:
         )
         self.emb_model_combo.grid(row=r, column=1, sticky="ew")
         r += 1
-        ttk.Button(config_frame, text="Hugging Face Login", command=self.login_hf).grid(row=r, column=0, columnspan=2, sticky=tk.W)
+        self.hf_login_btn = ttk.Button(config_frame, text="Hugging Face Login", command=self.login_hf)
+        self.hf_login_btn.grid(row=r, column=0, columnspan=2, sticky=tk.W)
         r += 1
         start_stop = ttk.Frame(config_frame)
         start_stop.grid(row=r, column=0, columnspan=2, sticky=tk.W)
-        ttk.Button(start_stop, text="Start API", command=self.start_api).grid(row=0, column=0, padx=(0, 5))
-        ttk.Button(start_stop, text="Stop API", command=self.stop_api).grid(row=0, column=1)
+        self.start_btn = ttk.Button(start_stop, text="Start API", command=self.start_api)
+        self.start_btn.grid(row=0, column=0, padx=(0, 5))
+        self.stop_btn = ttk.Button(start_stop, text="Stop API", command=self.stop_api)
+        self.stop_btn.grid(row=0, column=1)
         row += 1
 
         endpoints_frame = ttk.Labelframe(master, text="Endpoints")
@@ -190,38 +233,39 @@ class WrapperGUI:
         row += 1
 
         record_frame = ttk.Labelframe(master, text="Recorder")
-        record_frame.grid(row=row, column=0, sticky="ew", padx=10, pady=5)
+        record_frame.grid(row=row, column=0, sticky="nsew", padx=10, pady=5)
         record_frame.columnconfigure(1, weight=1)
+        # Recording controls
         r = 0
-        ttk.Label(record_frame, text="Recorder WebSocket").grid(row=r, column=0, sticky=tk.W)
-        ttk.Entry(record_frame, textvariable=self.ws_url).grid(row=r, column=1, sticky="ew")
-        ttk.Button(record_frame, text="Copy", command=lambda: self.copy_to_clipboard(self.ws_url.get())).grid(row=r, column=2, padx=5)
-        r += 1
         self.record_btn = ttk.Button(record_frame, text="Start Recording", command=self.toggle_recording)
         self.record_btn.grid(row=r, column=0, sticky=tk.W)
         ttk.Label(record_frame, textvariable=self.status_var).grid(row=r, column=1, sticky=tk.W)
         r += 1
         ttk.Label(record_frame, textvariable=self.timer_var).grid(row=r, column=0, sticky=tk.W)
         ttk.Progressbar(record_frame, variable=self.level_var, maximum=1.0).grid(row=r, column=1, columnspan=2, sticky="ew")
-        row += 1
-
-        save_frame = ttk.Labelframe(master, text="Save Options")
-        save_frame.grid(row=row, column=0, sticky="ew", padx=10, pady=5)
-        save_frame.columnconfigure(1, weight=1)
-        ttk.Label(save_frame, text="Save transcript to").grid(row=0, column=0, sticky=tk.W)
-        ttk.Entry(save_frame, textvariable=self.save_path).grid(row=0, column=1, sticky="ew")
-        ttk.Button(save_frame, text="Browse", command=self.choose_save_path).grid(row=0, column=2, padx=5)
-        row += 1
-
-        trans_frame = ttk.Labelframe(master, text="Transcript")
-        trans_frame.grid(row=row, column=0, sticky="nsew", padx=10, pady=5)
+        r += 1
+        # Save options within Recorder
+        self.save_enabled_chk = ttk.Checkbutton(record_frame, text="Save transcript to file", variable=self.save_enabled, command=self._update_save_widgets)
+        self.save_enabled_chk.grid(row=r, column=0, columnspan=2, sticky=tk.W)
+        r += 1
+        ttk.Label(record_frame, text="Save path").grid(row=r, column=0, sticky=tk.W)
+        self.save_entry = ttk.Entry(record_frame, textvariable=self.save_path)
+        self.save_entry.grid(row=r, column=1, sticky="ew")
+        self.save_browse_btn = ttk.Button(record_frame, text="Browse", command=self.choose_save_path)
+        self.save_browse_btn.grid(row=r, column=2, padx=5)
+        r += 1
+        # Transcript area inside Recorder
+        trans_frame = ttk.Labelframe(record_frame, text="Transcript")
+        trans_frame.grid(row=r, column=0, columnspan=3, sticky="nsew", pady=(5,0))
         trans_frame.columnconfigure(0, weight=1)
         trans_frame.rowconfigure(0, weight=1)
+        record_frame.rowconfigure(r, weight=1)
         self.transcript_box = tk.Text(trans_frame, state="disabled")
         self.transcript_box.grid(row=0, column=0, sticky="nsew")
         scroll = ttk.Scrollbar(trans_frame, orient="vertical", command=self.transcript_box.yview)
         scroll.grid(row=0, column=1, sticky="ns")
         self.transcript_box.configure(yscrollcommand=scroll.set)
+        # Allow main window to expand Recorder section
         master.rowconfigure(row, weight=1)
         row += 1
 
@@ -238,9 +282,21 @@ class WrapperGUI:
 
         for var in [self.backend_host, self.backend_port, self.api_host, self.api_port]:
             var.trace_add("write", self.update_endpoints)
+        # Update endpoints also when external toggle changes
+        self.allow_external.trace_add("write", self.update_endpoints)
+        # Save enable toggle should update widgets
+        self.save_enabled.trace_add("write", lambda *_: self._update_save_widgets())
         self.update_endpoints()
+        # Apply initial save widgets state
+        self._update_save_widgets()
 
         master.protocol("WM_DELETE_WINDOW", self.on_close)
+        # Initialize external toggle effect
+        self._apply_allow_external_initial()
+        # Ensure initial lock state reflects not running
+        self._set_running_state(False)
+        # Async check of HF login state
+        threading.Thread(target=self._init_check_hf_login, daemon=True).start()
 
     def start_api(self):
         if self.api_proc or self.backend_proc:
@@ -268,7 +324,7 @@ class WrapperGUI:
         model = self.model.get().strip()
         if model:
             backend_cmd += ["--model", model]
-        if self.diarization.get():
+        if self.diarization.get() and self.hf_logged_in:
             backend_cmd.append("--diarization")
             seg = self.segmentation_model.get().strip()
             if seg:
@@ -297,6 +353,7 @@ class WrapperGUI:
             ],
             env=env,
         )
+        self._set_running_state(True)
 
     def stop_api(self):
         for proc in [self.api_proc, self.backend_proc]:
@@ -308,6 +365,7 @@ class WrapperGUI:
                     proc.kill()
         self.api_proc = None
         self.backend_proc = None
+        self._set_running_state(False)
 
     def on_close(self):
         self.stop_api()
@@ -331,12 +389,21 @@ class WrapperGUI:
         b_port = self.backend_port.get()
         a_host = self.api_host.get()
         a_port = self.api_port.get()
-        self.web_endpoint.set(f"http://{b_host}:{b_port}/")
-        ws = f"ws://{b_host}:{b_port}/asr"
+        # In external mode, show LAN IP for convenience
+        display_b_host = b_host
+        display_a_host = a_host
+        if self.allow_external.get():
+            ips = self._get_local_ips()
+            if ips:
+                display_b_host = ips[0]
+                display_a_host = ips[0]
+        self.web_endpoint.set(f"http://{display_b_host}:{b_port}/")
+        ws = f"ws://{display_b_host}:{b_port}/asr"
         self.ws_endpoint.set(ws)
-        if not self.ws_url.get():
-            self.ws_url.set(ws)
-        self.api_endpoint.set(f"http://{a_host}:{a_port}/v1/audio/transcriptions")
+        # Recorder follows the backend WebSocket endpoint
+        self.ws_url.set(ws)
+        self.api_endpoint.set(f"http://{display_a_host}:{a_port}/v1/audio/transcriptions")
+        # Note: in external mode, endpoints already display LAN IPs directly
 
     def open_web_gui(self) -> None:
         url = self.web_endpoint.get()
@@ -374,14 +441,42 @@ class WrapperGUI:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
             )
-            self.master.after(0, lambda: self.status_var.set("Hugging Face login succeeded"))
+            def _ok():
+                self.status_var.set("Hugging Face login succeeded")
+                self.hf_logged_in = True
+                self._apply_hf_login_state()
+            self.master.after(0, _ok)
         except Exception as e:  # pragma: no cover - external command
-            self.master.after(0, lambda: self.status_var.set(f"Hugging Face login failed: {e}"))
+            def _ng():
+                self.status_var.set(f"Hugging Face login failed: {e}")
+                self.hf_logged_in = False
+                self._apply_hf_login_state()
+            self.master.after(0, _ng)
 
     def _update_diarization_fields(self, *_: object) -> None:
-        state = tk.NORMAL if self.diarization.get() else tk.DISABLED
+        # Only active when diarization is toggled AND HF is logged in
+        state = tk.NORMAL if (self.diarization.get() and self.hf_logged_in) else tk.DISABLED
         self.seg_model_combo.config(state=state)
         self.emb_model_combo.config(state=state)
+
+    def _on_diarization_toggle(self) -> None:
+        if self.diarization.get() and not self.hf_logged_in:
+            # Revert and notify
+            self.diarization.set(False)
+            self.status_var.set("Diarization requires Hugging Face login")
+        self._update_diarization_fields()
+
+    def _toggle_allow_external(self) -> None:
+        # Save current local hosts when enabling
+        if self.allow_external.get():
+            self._last_local_backend_host = self.backend_host.get()
+            self._last_local_api_host = self.api_host.get()
+            self.backend_host.set("0.0.0.0")
+            self.api_host.set("0.0.0.0")
+        else:
+            # Restore previous local-only hosts
+            self.backend_host.set(self._last_local_backend_host or "127.0.0.1")
+            self.api_host.set(self._last_local_api_host or "127.0.0.1")
 
     def _load_settings(self) -> None:
         if not CONFIG_FILE.exists() and OLD_CONFIG_FILE.exists():
@@ -405,6 +500,8 @@ class WrapperGUI:
         self.embedding_model.set(data.get("embedding_model", self.embedding_model.get()))
         self.ws_url.set(data.get("ws_url", self.ws_url.get()))
         self.save_path.set(data.get("save_path", self.save_path.get()))
+        self.save_enabled.set(data.get("save_enabled", False))
+        self.allow_external.set(data.get("allow_external", self.allow_external.get()))
 
     def _save_settings(self) -> None:
         data = {
@@ -419,6 +516,8 @@ class WrapperGUI:
             "embedding_model": self.embedding_model.get(),
             "ws_url": self.ws_url.get(),
             "save_path": self.save_path.get(),
+            "save_enabled": self.save_enabled.get(),
+            "allow_external": self.allow_external.get(),
         }
         try:
             CONFIG_DIR.mkdir(parents=True, exist_ok=True)
@@ -518,7 +617,7 @@ class WrapperGUI:
         self.record_btn.config(text="Start Recording")
         self.status_var.set("stopped")
         path = self.save_path.get().strip()
-        if path:
+        if self.save_enabled.get() and path:
             try:
                 with open(path, "w", encoding="utf-8") as f:
                     f.write(self.transcript_box.get("1.0", tk.END))
@@ -535,6 +634,86 @@ class WrapperGUI:
             if exclude and port in exclude:
                 continue
             return port
+
+    @staticmethod
+    def _get_local_ips() -> list[str]:
+        ips: set[str] = set()
+        # Method 1: primary outbound interface (UDP no-send)
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+                s.connect(("8.8.8.8", 80))
+                ip = s.getsockname()[0]
+                if ip and not ip.startswith("127."):
+                    ips.add(ip)
+        except Exception:
+            pass
+        # Method 2: hostname resolution
+        try:
+            hostname = socket.gethostname()
+            for res in socket.getaddrinfo(hostname, None, socket.AF_INET, socket.SOCK_STREAM):
+                ip = res[4][0]
+                if ip and not ip.startswith("127."):
+                    ips.add(ip)
+        except Exception:
+            pass
+        # Prefer sorted stability
+        return sorted(ips)
+
+    def _set_running_state(self, running: bool) -> None:
+        # Lock settings that affect server process while running
+        state_entry = tk.DISABLED if running else tk.NORMAL
+        # Entries
+        self.backend_host_entry.config(state=state_entry)
+        self.backend_port_entry.config(state=state_entry)
+        self.api_host_entry.config(state=state_entry)
+        self.api_port_entry.config(state=state_entry)
+        # Checkbuttons
+        self.auto_start_chk.config(state=state_entry)
+        # Diarization also gated by HF login
+        self.diarization_chk.config(state=(tk.DISABLED if running or not self.hf_logged_in else tk.NORMAL))
+        self.allow_external_chk.config(state=state_entry)
+        # Comboboxes
+        self.model_combo.config(state="disabled" if running else "readonly")
+        # Respect diarization toggle for related combos
+        if running:
+            self.seg_model_combo.config(state="disabled")
+            self.emb_model_combo.config(state="disabled")
+        else:
+            self._update_diarization_fields()
+        # Buttons
+        self.hf_login_btn.config(state=state_entry)
+        self.start_btn.config(state=tk.DISABLED if running else tk.NORMAL)
+        self.stop_btn.config(state=tk.NORMAL if running else tk.DISABLED)
+
+    def _update_save_widgets(self) -> None:
+        state = tk.NORMAL if self.save_enabled.get() else tk.DISABLED
+        self.save_entry.config(state=state)
+        self.save_browse_btn.config(state=state)
+
+    def _apply_allow_external_initial(self) -> None:
+        # Apply initial allow_external state to hosts without losing user's explicit values
+        if self.allow_external.get():
+            # Only override when current hosts look like localhost
+            if self.backend_host.get() in {"127.0.0.1", "localhost"}:
+                self.backend_host.set("0.0.0.0")
+            if self.api_host.get() in {"127.0.0.1", "localhost"}:
+                self.api_host.set("0.0.0.0")
+
+    def _init_check_hf_login(self) -> None:
+        try:
+            res = subprocess.run(["huggingface-cli", "whoami"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            logged = res.returncode == 0
+        except Exception:
+            logged = False
+        self.hf_logged_in = logged
+        self.master.after(0, self._apply_hf_login_state)
+
+    def _apply_hf_login_state(self) -> None:
+        # Force-disable diarization if not logged in
+        if not self.hf_logged_in and self.diarization.get():
+            self.diarization.set(False)
+        # Update controls with current running state
+        self._set_running_state(self.api_proc is not None or self.backend_proc is not None)
 
 
 def main():
