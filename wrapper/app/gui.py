@@ -59,65 +59,100 @@ class WrapperGUI:
 
         self._load_settings()
 
-        # Layout
+        style = ttk.Style()
+        try:
+            style.theme_use("clam")
+        except tk.TclError:
+            pass
+        style.configure("TLabel", padding=4)
+        style.configure("TButton", padding=6)
+        style.configure("TLabelframe", padding=8)
+
+        master.columnconfigure(0, weight=1)
+
         row = 0
-        ttk.Label(master, text="Backend host").grid(column=0, row=row, sticky=tk.W)
-        ttk.Entry(master, textvariable=self.backend_host, width=15).grid(column=1, row=row)
+        config_frame = ttk.Labelframe(master, text="Server Settings")
+        config_frame.grid(row=row, column=0, sticky="ew", padx=10, pady=5)
+        config_frame.columnconfigure(1, weight=1)
+        r = 0
+        ttk.Label(config_frame, text="Backend host").grid(row=r, column=0, sticky=tk.W)
+        ttk.Entry(config_frame, textvariable=self.backend_host, width=15).grid(row=r, column=1, sticky="ew")
+        r += 1
+        ttk.Label(config_frame, text="Backend port").grid(row=r, column=0, sticky=tk.W)
+        ttk.Entry(config_frame, textvariable=self.backend_port, width=15).grid(row=r, column=1, sticky="ew")
+        r += 1
+        ttk.Label(config_frame, text="API host").grid(row=r, column=0, sticky=tk.W)
+        ttk.Entry(config_frame, textvariable=self.api_host, width=15).grid(row=r, column=1, sticky="ew")
+        r += 1
+        ttk.Label(config_frame, text="API port").grid(row=r, column=0, sticky=tk.W)
+        ttk.Entry(config_frame, textvariable=self.api_port, width=15).grid(row=r, column=1, sticky="ew")
+        r += 1
+        ttk.Checkbutton(config_frame, text="Auto-start API on launch", variable=self.auto_start).grid(row=r, column=0, columnspan=2, sticky=tk.W)
+        r += 1
+        start_stop = ttk.Frame(config_frame)
+        start_stop.grid(row=r, column=0, columnspan=2, sticky=tk.W)
+        ttk.Button(start_stop, text="Start API", command=self.start_api).grid(row=0, column=0, padx=(0, 5))
+        ttk.Button(start_stop, text="Stop API", command=self.stop_api).grid(row=0, column=1)
         row += 1
-        ttk.Label(master, text="Backend port").grid(column=0, row=row, sticky=tk.W)
-        ttk.Entry(master, textvariable=self.backend_port, width=15).grid(column=1, row=row)
-        row += 1
-        ttk.Label(master, text="API host").grid(column=0, row=row, sticky=tk.W)
-        ttk.Entry(master, textvariable=self.api_host, width=15).grid(column=1, row=row)
-        row += 1
-        ttk.Label(master, text="API port").grid(column=0, row=row, sticky=tk.W)
-        ttk.Entry(master, textvariable=self.api_port, width=15).grid(column=1, row=row)
-        row += 1
-        ttk.Checkbutton(master, text="Auto-start API on launch", variable=self.auto_start).grid(column=0, row=row, columnspan=2, sticky=tk.W)
-        row += 1
-        ttk.Button(master, text="Start API", command=self.start_api).grid(column=0, row=row)
-        ttk.Button(master, text="Stop API", command=self.stop_api).grid(column=1, row=row)
 
+        endpoints_frame = ttk.Labelframe(master, text="Endpoints")
+        endpoints_frame.grid(row=row, column=0, sticky="ew", padx=10, pady=5)
+        endpoints_frame.columnconfigure(1, weight=1)
+        r = 0
+        ttk.Label(endpoints_frame, text="Backend Web UI").grid(row=r, column=0, sticky=tk.W)
+        ttk.Entry(endpoints_frame, textvariable=self.web_endpoint, width=40, state="readonly").grid(row=r, column=1, sticky="ew")
+        ttk.Button(endpoints_frame, text="Copy", command=lambda: self.copy_to_clipboard(self.web_endpoint.get())).grid(row=r, column=2, padx=5)
+        r += 1
+        ttk.Label(endpoints_frame, text="Streaming WebSocket /asr").grid(row=r, column=0, sticky=tk.W)
+        ttk.Entry(endpoints_frame, textvariable=self.ws_endpoint, width=40, state="readonly").grid(row=r, column=1, sticky="ew")
+        ttk.Button(endpoints_frame, text="Copy", command=lambda: self.copy_to_clipboard(self.ws_endpoint.get())).grid(row=r, column=2, padx=5)
+        r += 1
+        ttk.Label(endpoints_frame, text="File transcription API").grid(row=r, column=0, sticky=tk.W)
+        ttk.Entry(endpoints_frame, textvariable=self.api_endpoint, width=40, state="readonly").grid(row=r, column=1, sticky="ew")
+        ttk.Button(endpoints_frame, text="Copy", command=lambda: self.copy_to_clipboard(self.api_endpoint.get())).grid(row=r, column=2, padx=5)
         row += 1
-        ttk.Label(master, text="Backend Web UI").grid(column=0, row=row, sticky=tk.W)
-        ttk.Entry(master, textvariable=self.web_endpoint, width=40, state="readonly").grid(column=1, row=row)
-        ttk.Button(master, text="Copy", command=lambda: self.copy_to_clipboard(self.web_endpoint.get())).grid(column=2, row=row)
-        row += 1
-        ttk.Label(master, text="Streaming WebSocket /asr").grid(column=0, row=row, sticky=tk.W)
-        ttk.Entry(master, textvariable=self.ws_endpoint, width=40, state="readonly").grid(column=1, row=row)
-        ttk.Button(master, text="Copy", command=lambda: self.copy_to_clipboard(self.ws_endpoint.get())).grid(column=2, row=row)
-        row += 1
-        ttk.Label(master, text="File transcription API").grid(column=0, row=row, sticky=tk.W)
-        ttk.Entry(master, textvariable=self.api_endpoint, width=40, state="readonly").grid(column=1, row=row)
-        ttk.Button(master, text="Copy", command=lambda: self.copy_to_clipboard(self.api_endpoint.get())).grid(column=2, row=row)
 
+        record_frame = ttk.Labelframe(master, text="Recorder")
+        record_frame.grid(row=row, column=0, sticky="ew", padx=10, pady=5)
+        record_frame.columnconfigure(1, weight=1)
+        r = 0
+        ttk.Label(record_frame, text="Recorder WebSocket").grid(row=r, column=0, sticky=tk.W)
+        ttk.Entry(record_frame, textvariable=self.ws_url).grid(row=r, column=1, sticky="ew")
+        ttk.Button(record_frame, text="Copy", command=lambda: self.copy_to_clipboard(self.ws_url.get())).grid(row=r, column=2, padx=5)
+        r += 1
+        self.record_btn = ttk.Button(record_frame, text="Start Recording", command=self.toggle_recording)
+        self.record_btn.grid(row=r, column=0, sticky=tk.W)
+        ttk.Label(record_frame, textvariable=self.status_var).grid(row=r, column=1, sticky=tk.W)
+        r += 1
+        ttk.Label(record_frame, textvariable=self.timer_var).grid(row=r, column=0, sticky=tk.W)
+        ttk.Progressbar(record_frame, variable=self.level_var, maximum=1.0).grid(row=r, column=1, columnspan=2, sticky="ew")
         row += 1
-        ttk.Label(master, text="Recorder WebSocket").grid(column=0, row=row, sticky=tk.W)
-        ttk.Entry(master, textvariable=self.ws_url, width=40).grid(column=1, row=row)
-        ttk.Button(master, text="Copy", command=lambda: self.copy_to_clipboard(self.ws_url.get())).grid(column=2, row=row)
 
+        save_frame = ttk.Labelframe(master, text="Save Options")
+        save_frame.grid(row=row, column=0, sticky="ew", padx=10, pady=5)
+        save_frame.columnconfigure(1, weight=1)
+        ttk.Label(save_frame, text="Save transcript to").grid(row=0, column=0, sticky=tk.W)
+        ttk.Entry(save_frame, textvariable=self.save_path).grid(row=0, column=1, sticky="ew")
+        ttk.Button(save_frame, text="Browse", command=self.choose_save_path).grid(row=0, column=2, padx=5)
         row += 1
-        self.record_btn = ttk.Button(master, text="Start Recording", command=self.toggle_recording)
-        self.record_btn.grid(column=0, row=row, sticky=tk.W)
-        ttk.Label(master, textvariable=self.status_var).grid(column=1, row=row, sticky=tk.W)
-        row += 1
-        ttk.Label(master, textvariable=self.timer_var).grid(column=0, row=row, sticky=tk.W)
-        ttk.Progressbar(master, variable=self.level_var, maximum=1.0, length=150).grid(column=1, row=row, columnspan=2, sticky=tk.W)
 
+        trans_frame = ttk.Labelframe(master, text="Transcript")
+        trans_frame.grid(row=row, column=0, sticky="nsew", padx=10, pady=5)
+        trans_frame.columnconfigure(0, weight=1)
+        trans_frame.rowconfigure(0, weight=1)
+        self.transcript_box = tk.Text(trans_frame, state="disabled")
+        self.transcript_box.grid(row=0, column=0, sticky="nsew")
+        scroll = ttk.Scrollbar(trans_frame, orient="vertical", command=self.transcript_box.yview)
+        scroll.grid(row=0, column=1, sticky="ns")
+        self.transcript_box.configure(yscrollcommand=scroll.set)
+        master.rowconfigure(row, weight=1)
         row += 1
-        ttk.Label(master, text="Save transcript to").grid(column=0, row=row, sticky=tk.W)
-        ttk.Entry(master, textvariable=self.save_path, width=40).grid(column=1, row=row)
-        ttk.Button(master, text="Browse", command=self.choose_save_path).grid(column=2, row=row)
 
-        row += 1
-        ttk.Label(master, text="Transcript").grid(column=0, row=row, sticky=tk.W)
-        row += 1
-        self.transcript_box = tk.Text(master, height=8, width=60, state="disabled")
-        self.transcript_box.grid(column=0, row=row, columnspan=3, sticky=tk.W)
-
-        row += 1
-        ttk.Button(master, text="Open Web GUI", command=self.open_web_gui).grid(column=0, row=row, sticky=tk.W)
-        ttk.Button(master, text="License", command=self.show_license).grid(column=1, row=row, sticky=tk.W)
+        bottom = ttk.Frame(master)
+        bottom.grid(row=row, column=0, sticky="ew", padx=10, pady=5)
+        bottom.columnconfigure(0, weight=1)
+        ttk.Button(bottom, text="Open Web GUI", command=self.open_web_gui).grid(row=0, column=0, sticky=tk.W)
+        ttk.Button(bottom, text="License", command=self.show_license).grid(row=0, column=1, sticky=tk.E)
 
         self.backend_proc: subprocess.Popen | None = None
         self.api_proc: subprocess.Popen | None = None
