@@ -30,11 +30,13 @@
     - 録音コントロール（Recorder）：`Start Recording` でマイク入力を `/asr` にストリーミングし、Transcript にリアルタイム表示。録音中は音量レベルと経過時間を表示し、`Stop Recording` で終了する。`Save transcript to file` をオンにすると保存先入力と `Browse` が有効になり、録音終了時に自動保存される。
     - 話者分離（Diarization）：Hugging Face ログインが成功している場合にのみ有効化できる。未ログイン時は有効化できず、関連モデル選択もロックされる。
     - `Open Web GUI` ボタンでブラウザから元の Web GUI を開ける。`License` ボタンで本リポジトリ同梱の `LICENSE` ファイルを新規ウィンドウに表示する。
+      - `Open Web GUI` ボタンはバックエンドが起動中のみ有効化される。
+      - `License` ウィンドウには upstream リポジトリ [QuentinFuxa/WhisperLiveKit](https://github.com/QuentinFuxa/WhisperLiveKit) へのリンクと「このアプリはこのレポジトリのラッパーです」の注記を表示する。
 - API：
   - `POST /v1/audio/transcriptions`（multipart/form-data, field=`file`） → `{ "text": "..." }`
   - ffmpeg が見つからない場合 `500 ffmpeg_not_found` を返却。
 - 設定：
-    - 入力された設定は環境変数 `WRAPPER_BACKEND_HOST`/`WRAPPER_BACKEND_PORT` と `WRAPPER_API_HOST`/`WRAPPER_API_PORT` としてサブプロセスに渡される。`WRAPPER_API_AUTOSTART=1` を指定すると GUI 起動時に自動で API を開始する。ポート番号を指定しなかった場合は空きポートが自動的に割り当てられる。
+    - 入力された設定は環境変数 `WRAPPER_BACKEND_HOST`/`WRAPPER_BACKEND_PORT` と `WRAPPER_API_HOST`/`WRAPPER_API_PORT` としてサブプロセスに渡される。GUI は既定でバックエンドと API を自動起動する（設定 `Auto-start API on launch` のデフォルトはオン）。環境変数 `WRAPPER_API_AUTOSTART=0` もしくはチェックボックスをオフにすると自動起動を無効化できる。ポート番号を指定しなかった場合は空きポートが自動的に割り当てられる。
     - `Allow external connections` をオンにするとホスト値は `0.0.0.0` に設定され、オフに戻した場合は直前のローカル用ホスト（例：`127.0.0.1`）を復元する。設定は `settings.json` に `allow_external` として永続化される。
     - Whisper 関連の設定は `model`、`diarization`、`segmentation_model`、`embedding_model` として保存され、未指定の場合は既定値が適用される。旧形式の設定ファイルは存在すれば自動読み込みされ、新項目はデフォルト値で補完される。
     - GUI 上で編集した設定は各 OS のユーザー設定ディレクトリ（例：`%LOCALAPPDATA%\\WhisperLiveKit\\wrapper\\settings.json`）に保存され、次回起動時に読み込まれる。保存に関わる設定（`save_enabled`、`save_path`）もここに保持される。初回起動時に旧 `~/.whisperlivekit-wrapper.json` が存在すれば自動的に移行される。フォーマット例は `wrapper/config/settings.example.json` を参照。
@@ -42,7 +44,7 @@
 ## 6. 実行・セットアップ手順
 1. 必要要件：Python 3.11 以降、ffmpeg、インターネット接続。
 2. セットアップ：`pip install -r requirements.txt` で `fastapi`, `uvicorn`, `websockets`, `sounddevice`, `platformdirs` などの依存ライブラリを導入。
-3. 実行例：`python -m wrapper.cli.main` を実行すると設定 GUI が起動する。必要に応じてホストやポートを変更し、`Start API` で WhisperLiveKit とラッパー API を開始する。`Auto-start API on launch` を有効にするか、環境変数 `WRAPPER_API_AUTOSTART=1` を指定すると GUI 起動と同時に自動で API が開始される。録音を行う場合は WebSocket URL を確認し、必要なら保存先ファイルを設定してから `Start Recording` ボタンでマイク入力を送信する。
+3. 実行例：`python -m wrapper.cli.main` を実行すると設定 GUI が起動する。必要に応じてホストやポートを変更し、`Start API` で WhisperLiveKit とラッパー API を開始する。GUI は初期状態でバックエンドと API を自動開始する（環境変数 `WRAPPER_API_AUTOSTART=0` もしくは設定で無効化可能）。録音を行う場合は WebSocket URL を確認し、必要なら保存先ファイルを設定してから `Start Recording` ボタンでマイク入力を送信する。
 
 ## 7. エラーハンドリングとログ／テレメトリ
 - 例外分類・リトライ方針、ユーザー通知方法

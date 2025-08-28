@@ -5,7 +5,7 @@ import sys
 import time
 import webbrowser
 import tkinter as tk
-from tkinter import ttk, filedialog, simpledialog
+from tkinter import ttk, filedialog, simpledialog, font
 import audioop
 import json
 import queue
@@ -79,7 +79,7 @@ class WrapperGUI:
         else:
             a_port = str(self._find_free_port(exclude={int(b_port)}))
         self.api_port = tk.StringVar(value=a_port)
-        self.auto_start = tk.BooleanVar(value=os.getenv("WRAPPER_API_AUTOSTART") == "1")
+        self.auto_start = tk.BooleanVar(value=os.getenv("WRAPPER_API_AUTOSTART", "1") == "1")
         # Allow external connections (bind 0.0.0.0)
         self.allow_external = tk.BooleanVar(value=os.getenv("WRAPPER_ALLOW_EXTERNAL") == "1")
         # Keep last local-only hosts to restore when toggled off
@@ -272,7 +272,8 @@ class WrapperGUI:
         bottom = ttk.Frame(master)
         bottom.grid(row=row, column=0, sticky="ew", padx=10, pady=5)
         bottom.columnconfigure(0, weight=1)
-        ttk.Button(bottom, text="Open Web GUI", command=self.open_web_gui).grid(row=0, column=0, sticky=tk.W)
+        self.open_web_btn = ttk.Button(bottom, text="Open Web GUI", command=self.open_web_gui, state=tk.DISABLED)
+        self.open_web_btn.grid(row=0, column=0, sticky=tk.W)
         ttk.Button(bottom, text="License", command=self.show_license).grid(row=0, column=1, sticky=tk.E)
 
         self.backend_proc: subprocess.Popen | None = None
@@ -428,6 +429,26 @@ class WrapperGUI:
         text.insert("1.0", content)
         text.config(state="disabled")
 
+        link_frame = ttk.Frame(top)
+        link_frame.pack(fill=tk.X, pady=5)
+        ttk.Button(
+            link_frame,
+            text="QuentinFuxa/WhisperLiveKit",
+            command=lambda: webbrowser.open("https://github.com/QuentinFuxa/WhisperLiveKit"),
+        ).pack()
+        small_font = font.nametofont("TkDefaultFont").copy()
+        size = small_font.cget("size")
+        try:
+            size = int(size)
+        except Exception:
+            pass
+        small_font.configure(size=max(size - 2, 8))
+        tk.Label(
+            link_frame,
+            text="このアプリはこのレポジトリのラッパーです",
+            font=small_font,
+        ).pack()
+
     def login_hf(self) -> None:
         token = simpledialog.askstring("Hugging Face Login", "Enter token", show="*")
         if token:
@@ -479,9 +500,11 @@ class WrapperGUI:
             self.api_host.set(self._last_local_api_host or "127.0.0.1")
 
     def _load_settings(self) -> None:
-        if not CONFIG_FILE.exists() and OLD_CONFIG_FILE.exists():
+        config_present = CONFIG_FILE.exists()
+        if not config_present and OLD_CONFIG_FILE.exists():
             try:
                 shutil.move(str(OLD_CONFIG_FILE), CONFIG_FILE)
+                config_present = True
             except Exception:
                 pass
         try:
@@ -493,7 +516,10 @@ class WrapperGUI:
         self.backend_port.set(data.get("backend_port", self.backend_port.get()))
         self.api_host.set(data.get("api_host", self.api_host.get()))
         self.api_port.set(data.get("api_port", self.api_port.get()))
-        self.auto_start.set(data.get("auto_start", self.auto_start.get()))
+        if "auto_start" in data:
+            self.auto_start.set(data["auto_start"])
+        elif config_present:
+            self.auto_start.set(False)
         self.model.set(data.get("model", self.model.get()))
         self.diarization.set(data.get("diarization", self.diarization.get()))
         self.segmentation_model.set(data.get("segmentation_model", self.segmentation_model.get()))
@@ -684,6 +710,7 @@ class WrapperGUI:
         self.hf_login_btn.config(state=state_entry)
         self.start_btn.config(state=tk.DISABLED if running else tk.NORMAL)
         self.stop_btn.config(state=tk.NORMAL if running else tk.DISABLED)
+        self.open_web_btn.config(state=tk.NORMAL if running else tk.DISABLED)
 
     def _update_save_widgets(self) -> None:
         state = tk.NORMAL if self.save_enabled.get() else tk.DISABLED
