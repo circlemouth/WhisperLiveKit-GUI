@@ -54,7 +54,12 @@ def _load_whisper_models() -> list[str]:
 WHISPER_MODELS = _load_whisper_models()
 SEGMENTATION_MODELS = ["pyannote/segmentation-3.0", "pyannote/segmentation"]
 EMBEDDING_MODELS = ["pyannote/embedding", "speechbrain/spkrec-ecapa-voxceleb"]
-ALL_MODELS = WHISPER_MODELS + SEGMENTATION_MODELS + EMBEDDING_MODELS
+VAD_MODELS = [model_manager.VAD_REPO]
+ALL_MODELS = WHISPER_MODELS + SEGMENTATION_MODELS + EMBEDDING_MODELS + VAD_MODELS
+MODEL_USAGE = {m: "Whisper" for m in WHISPER_MODELS}
+MODEL_USAGE.update({m: "Segmentation" for m in SEGMENTATION_MODELS})
+MODEL_USAGE.update({m: "Embedding" for m in EMBEDDING_MODELS})
+MODEL_USAGE.update({model_manager.VAD_REPO: "VAD"})
 
 
 CONFIG_DIR = user_config_path("WhisperLiveKit", "wrapper")
@@ -211,6 +216,7 @@ class WrapperGUI:
         self.model = tk.StringVar(value=os.getenv("WRAPPER_MODEL", "large-v3"))
         # Use voice activity controller (Silero via torch.hub). Default off to avoid GitHub SSL/network issues.
         self.use_vac = tk.BooleanVar(value=os.getenv("WRAPPER_USE_VAC", "0") == "1")
+        self.vad_certfile = tk.StringVar(value=os.getenv("SSL_CERT_FILE", ""))
         self.diarization = tk.BooleanVar(value=os.getenv("WRAPPER_DIARIZATION") == "1")
         self.segmentation_model = tk.StringVar(
             value=os.getenv("WRAPPER_SEGMENTATION_MODEL", "pyannote/segmentation-3.0")
@@ -348,6 +354,12 @@ class WrapperGUI:
             variable=self.use_vac,
         )
         self.vac_chk.grid(row=r, column=0, columnspan=2, sticky=tk.W)
+        r += 1
+        ttk.Label(config_frame, text="VAD certificate").grid(row=r, column=0, sticky=tk.W)
+        self.vad_cert_entry = ttk.Entry(config_frame, textvariable=self.vad_certfile, width=20)
+        self.vad_cert_entry.grid(row=r, column=1, sticky="ew")
+        self.vad_cert_browse = ttk.Button(config_frame, text="...", width=3, command=self.choose_vad_certfile)
+        self.vad_cert_browse.grid(row=r, column=2, padx=2)
         r += 1
         self.diarization_chk = ttk.Checkbutton(
             config_frame,
@@ -488,9 +500,11 @@ class WrapperGUI:
         self.allow_external.trace_add("write", self.update_endpoints)
         # Save enable toggle should update widgets
         self.save_enabled.trace_add("write", lambda *_: self._update_save_widgets())
+        self.vad_certfile.trace_add("write", lambda *_: self._update_vad_state())
         self.update_endpoints()
         # Apply initial save widgets state
         self._update_save_widgets()
+        self._update_vad_state()
 
         master.protocol("WM_DELETE_WINDOW", self.on_close)
         # Initialize external toggle effect
@@ -544,6 +558,8 @@ class WrapperGUI:
             emb = self.embedding_model.get().strip()
             if emb and not model_manager.is_model_downloaded(emb):
                 missing.append(emb)
+        if self.use_vac.get() and not model_manager.is_model_downloaded(model_manager.VAD_REPO):
+            missing.append(model_manager.VAD_REPO)
         if missing:
             self.start_btn.config(state=tk.DISABLED)
             self._download_and_start(missing)
@@ -588,6 +604,10 @@ class WrapperGUI:
         env["WRAPPER_API_PORT"] = a_port
         env["HUGGINGFACE_HUB_CACHE"] = str(model_manager.HF_CACHE_DIR)
         env["HF_HOME"] = str(model_manager.HF_CACHE_DIR)
+        env["TORCH_HOME"] = str(model_manager.TORCH_CACHE_DIR)
+        cert = self.vad_certfile.get().strip()
+        if cert:
+            env["SSL_CERT_FILE"] = cert
 
         backend_cmd = [
             sys.executable,
@@ -664,6 +684,16 @@ class WrapperGUI:
         )
         if path:
             self.save_path.set(path)
+
+    def choose_vad_certfile(self) -> None:
+        path = filedialog.askopenfilename(
+            filetypes=[
+                ("Certificate files", "*.pem *.crt *.cer"),
+                ("All files", "*.*"),
+            ]
+        )
+        if path:
+            self.vad_certfile.set(path)
 
     def update_endpoints(self, *_: object) -> None:
         b_host = self.backend_host.get()
@@ -848,6 +878,7 @@ class WrapperGUI:
             self.auto_start.set(False)
         self.model.set(data.get("model", self.model.get()))
         self.use_vac.set(data.get("use_vac", self.use_vac.get()))
+        self.vad_certfile.set(data.get("vad_certfile", self.vad_certfile.get()))
         self.diarization.set(data.get("diarization", self.diarization.get()))
         self.segmentation_model.set(data.get("segmentation_model", self.segmentation_model.get()))
         self.embedding_model.set(data.get("embedding_model", self.embedding_model.get()))
@@ -866,6 +897,7 @@ class WrapperGUI:
             "auto_start": self.auto_start.get(),
             "model": self.model.get(),
             "use_vac": self.use_vac.get(),
+            "vad_certfile": self.vad_certfile.get(),
             "diarization": self.diarization.get(),
             "segmentation_model": self.segmentation_model.get(),
             "embedding_model": self.embedding_model.get(),
@@ -1027,7 +1059,6 @@ class WrapperGUI:
         self.api_port_entry.config(state=state_entry)
         # Checkbuttons
         self.auto_start_chk.config(state=state_entry)
-        self.vac_chk.config(state=state_entry)
         # Diarization also gated by HF login
         self.diarization_chk.config(state=(tk.DISABLED if running or not self.hf_logged_in else tk.NORMAL))
         self.allow_external_chk.config(state=state_entry)
@@ -1044,11 +1075,25 @@ class WrapperGUI:
         self.start_btn.config(state=tk.DISABLED if running else tk.NORMAL)
         self.stop_btn.config(state=tk.NORMAL if running else tk.DISABLED)
         self.open_web_btn.config(state=tk.NORMAL if running else tk.DISABLED)
+        self._update_vad_state()
 
     def _update_save_widgets(self) -> None:
         state = tk.NORMAL if self.save_enabled.get() else tk.DISABLED
         self.save_entry.config(state=state)
         self.save_browse_btn.config(state=state)
+
+    def _update_vad_state(self) -> None:
+        running = self.api_proc is not None or self.backend_proc is not None
+        if running:
+            self.vac_chk.config(state=tk.DISABLED)
+        elif self.vad_certfile.get().strip() and Path(self.vad_certfile.get()).exists():
+            self.vac_chk.config(state=tk.NORMAL)
+        else:
+            self.use_vac.set(False)
+            self.vac_chk.config(state=tk.DISABLED)
+        state = tk.NORMAL if not running else tk.DISABLED
+        self.vad_cert_entry.config(state=state)
+        self.vad_cert_browse.config(state=state)
 
     def _apply_allow_external_initial(self) -> None:
         # Apply initial allow_external state to hosts without losing user's explicit values
@@ -1124,20 +1169,21 @@ class ModelManagerDialog(tk.Toplevel):
         self.rows: dict[str, tuple[tk.StringVar, ttk.Progressbar, ttk.Button]] = {}
         for i, name in enumerate(ALL_MODELS):
             ttk.Label(self, text=name).grid(row=i, column=0, sticky=tk.W, padx=5, pady=2)
+            ttk.Label(self, text=MODEL_USAGE.get(name, "")).grid(row=i, column=1, sticky=tk.W)
             status = tk.StringVar()
             if model_manager.is_model_downloaded(name):
                 status.set("downloaded")
             else:
                 status.set("missing")
-            ttk.Label(self, textvariable=status).grid(row=i, column=1, sticky=tk.W)
+            ttk.Label(self, textvariable=status).grid(row=i, column=2, sticky=tk.W)
             pb = ttk.Progressbar(self, length=120)
-            pb.grid(row=i, column=2, padx=5)
+            pb.grid(row=i, column=3, padx=5)
             action = ttk.Button(
                 self,
                 text="Delete" if model_manager.is_model_downloaded(name) else "Download",
                 command=lambda n=name: self._on_action(n),
             )
-            action.grid(row=i, column=3, padx=5)
+            action.grid(row=i, column=4, padx=5)
             self.rows[name] = (status, pb, action)
 
     def _on_action(self, name: str) -> None:
