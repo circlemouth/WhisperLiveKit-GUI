@@ -23,13 +23,17 @@
 
 ## 5. インターフェース
 - CLI/GUI：
-    - `python -m wrapper.cli.main` で設定 GUI を起動。GUI は起動時に空きポートを自動選択して入力欄に表示し、必要に応じて編集できる。`Start API` でサービスを起動、`Stop API` で停止できる。`Auto-start API on launch` を有効にすると起動時に自動開始する。Whisper モデルは `Whisper model` のプルダウンから選択でき（`available_models.md` に掲載された公式モデル一覧）、`Enable diarization` をオンにすると話者分離が有効になる。`Segmentation model` と `Embedding model` は既定モデルをプルダウンから選ぶか、任意の Hugging Face モデル ID を手入力できる。モデル取得には `Hugging Face Login` ボタンからトークンを入力してログインする。選択した Whisper モデルや話者分離モデルがローカルに存在しない場合は `Start API` を押すと自動ダウンロードが始まり、完了後にサーバーが起動する。また `Manage models` ボタンからダウンロード済みモデルの一覧表示、進捗確認、削除を行える。
+    - `python -m wrapper.cli.main` で設定 GUI を起動。GUI は起動時に空きポートを自動選択して入力欄に表示し、必要に応じて編集できる。`Start API` でサービスを起動、`Stop API` で停止できる。`Auto-start API on launch` を有効にすると起動時に自動開始する。Whisper モデルは `Whisper model` のプルダウンから選択でき（`available_models.md` に掲載された公式モデル一覧）、`Enable diarization` をオンにすると話者分離が有効になる。`Segmentation model` と `Embedding model` は既定モデルをプルダウンから選ぶか、任意の Hugging Face モデル ID を手入力できる。モデル取得には `Hugging Face Login` ボタンからトークンを入力してログインする。その直下の `Manage models` ボタンからダウンロード済みモデルの一覧表示、進捗確認、削除を行える。選択した Whisper モデルや話者分離モデルがローカルに存在しない場合は `Start API` を押すと自動ダウンロードが始まり、完了後にサーバーが起動する。
     - ネットワーク公開：`Allow external connections (0.0.0.0)` をオンにすると、バックエンドおよび API を `0.0.0.0` で待受（全インターフェース bind）する。Endpoints 欄には検出したLAN内の実IP（例：`192.168.x.x`）を用いたURLが直接表示され、外部端末からアクセスしやすい形式になる。LAN/WAN に公開されるため、ファイアウォール設定とポート開放の可否を必ず確認すること（セキュリティ上の推奨：必要時のみオン）。
     - 稼働中ロック：`Start API` でサーバー稼働中は、ホスト/ポート、モデル設定、話者分離設定、外部接続許可、Auto-start、HF ログインなど、サーバー挙動に影響する設定を自動でロック（無効化）する。`Stop API` で停止すると再び編集可能になる。
-    - 起動後は Backend Web UI・WebSocket `/asr`・ファイル文字起こし API の各エンドポイントと用途が表示され、隣の `Copy` ボタンでクリップボードにコピーできる。レイアウトはサーバー設定・エンドポイント・録音・保存・トランスクリプトの各セクションに分かれており、ウィンドウのリサイズに応じて入力欄やテキスト領域が自動調整される。
+    - 起動後は Backend Web UI・WebSocket `/asr`・ファイル文字起こし API の各エンドポイントと用途が表示され、隣の `Copy` ボタンでクリップボードにコピーできる。レイアウトはサーバー設定・録音（保存・トランスクリプトを含む）・エンドポイントの各セクションに分かれており、ウィンドウのリサイズに応じて入力欄やテキスト領域が自動調整される。エンドポイントセクションはウィンドウ最下部に配置される。
+    - ヘッダ右側のプルダウンから ttkbootstrap のテーマを切り替えでき、選択内容は設定ファイルに保存される。
+    - ヘッダ直下にアイコン付きツールバーを設け、録音開始／停止やモデル管理をワンクリックで実行できる。
+    - サーバー設定・録音・エンドポイント各パネルは折りたたみ可能なセクションとして実装し、リサイズ時にもレイアウトが崩れにくいレスポンシブ構成になっている。
+    - モデルダウンロードや録音状態は常設のステータスバーとプログレスバーに表示され、モーダルダイアログを使わずに進捗を確認できる。
     - 録音コントロール（Recorder）：`Start Recording` でマイク入力を `/asr` にストリーミングし、Transcript にリアルタイム表示。録音中は音量レベルと経過時間を表示し、`Stop Recording` で終了する。`Save transcript to file` をオンにすると保存先入力と `Browse` が有効になり、録音終了時に自動保存される。
     - 話者分離（Diarization）：Hugging Face ログインが成功している場合にのみ有効化できる。未ログイン時は有効化できず、関連モデル選択もロックされる。（環境変数 `HF_TOKEN` / `HUGGINGFACEHUB_API_TOKEN` / `HUGGING_FACE_HUB_TOKEN` または `huggingface_hub` に保存されたトークンが存在すれば、ログイン済みとして扱う）
-    - `Open Web GUI` ボタンでブラウザから元の Web GUI を開ける。`License` ボタンで本リポジトリ同梱の `LICENSE` ファイルを新規ウィンドウに表示する。
+    - `Open Web GUI` ボタンでブラウザから元の Web GUI を開ける。`License` ボタンはメインウィンドウ右上にあり、本リポジトリ同梱の `LICENSE` ファイルを新規ウィンドウに表示する。
       - `Open Web GUI` ボタンはバックエンドが起動中のみ有効化される。
       - `License` ウィンドウには upstream リポジトリ [QuentinFuxa/WhisperLiveKit](https://github.com/QuentinFuxa/WhisperLiveKit) へのリンクと「このアプリはこのレポジトリのラッパーです」の注記を表示する。
 - API：
@@ -43,7 +47,7 @@
 
 ## 6. 実行・セットアップ手順
 1. 必要要件：Python 3.11 以降、ffmpeg、インターネット接続。
-2. セットアップ：`pip install -r requirements.txt` で `fastapi`, `uvicorn`, `websockets`, `sounddevice`, `platformdirs` などの依存ライブラリを導入。
+2. セットアップ：`pip install -r requirements.txt` で `fastapi`, `uvicorn`, `websockets`, `sounddevice`, `platformdirs` などの依存ライブラリを導入。GUI のテーマ切替には別途 `ttkbootstrap` が必要なため、未インストールの場合は `pip install ttkbootstrap` を実行する。
 3. 実行例：`python -m wrapper.cli.main` を実行すると設定 GUI が起動する。必要に応じてホストやポートを変更し、`Start API` で WhisperLiveKit とラッパー API を開始する。GUI は初期状態でバックエンドと API を自動開始する（環境変数 `WRAPPER_API_AUTOSTART=0` もしくは設定で無効化可能）。録音を行う場合は WebSocket URL を確認し、必要なら保存先ファイルを設定してから `Start Recording` ボタンでマイク入力を送信する。
 
 ## 7. エラーハンドリングとログ／テレメトリ
