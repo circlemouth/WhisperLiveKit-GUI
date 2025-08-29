@@ -606,7 +606,7 @@ class WrapperGUI:
         env["HF_HOME"] = str(model_manager.HF_CACHE_DIR)
         env["TORCH_HOME"] = str(model_manager.TORCH_CACHE_DIR)
         cert = self.vad_certfile.get().strip()
-        if cert:
+        if cert and Path(cert).is_file():
             env["SSL_CERT_FILE"] = cert
 
         backend_cmd = [
@@ -1086,7 +1086,8 @@ class WrapperGUI:
         running = self.api_proc is not None or self.backend_proc is not None
         if running:
             self.vac_chk.config(state=tk.DISABLED)
-        elif self.vad_certfile.get().strip() and Path(self.vad_certfile.get()).exists():
+        elif self.vad_certfile.get().strip() and Path(self.vad_certfile.get()).is_file():
+            # Certificate path exists as a file -> allow toggling
             self.vac_chk.config(state=tk.NORMAL)
         else:
             self.use_vac.set(False)
