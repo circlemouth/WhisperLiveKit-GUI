@@ -22,6 +22,25 @@
 ---
 
 ## 2025-08-29
+- 背景／スコープ：GUI のデザインセンス（特に litera 適用時の可読性と操作性）が悪いとの指摘。「フォントが小さすぎる」「セクションタイトルが分かりにくい」を解消。
+- 決定事項：
+  - テーマを `litera` に固定（GUI の配色切替は不要のためセレクタを撤去）。
+  - 基本フォントサイズを拡大（12ptへ）。ヘッダは 18pt 太字、セクション見出しは 14pt 太字＋プライマリ色。
+  - セクション見出し直下に `ttk.Separator` を追加し視覚的に区切りを明確化。
+  - `Start API`/`Stop API` ボタンを右寄せ、`Start` はプライマリ、`Stop` はデンジャー色に統一。余白・パディングも拡大。
+  - Transcript テキスト領域のフォントも拡大。
+  - レイアウトを2カラム（左：Server Settings＋Endpoints、右：Recorder）に再構成。ウィンドウ幅が閾値未満の場合は1カラム（Server→Endpoints→Recorder）へ自動切替。折りたたみUIを撤去し常時展開。
+  - Server Settings をスクロール可能なパネルに変更（小ウィンドウでも全項目を参照可能）。
+  - 右側 Recorder を `rowspan=2` で配置し、左側の2段（Server/Endpoints）と高さを揃えて右下の空白を解消。
+  - Hugging Face トークンを `HfApi().whoami` で即時検証し、有効時のみ「Enable diarization」を有効化（未検証/無効時は無効）。
+- 根拠・検討メモ：読みやすさと視認性、主操作の強調を最優先に再設計。litera 想定での配色一貫性を確保。
+- 未解決事項：高DPI環境やLinux系テーマエンジンでの表示差異の微調整。
+- 次アクション：ユーザーフィードバックに基づく余白やコントラストの微調整。必要ならアイコン／色弱対応の検討。
+- リスク／課題：既存ユーザーがテーマ切替を期待していた場合の機能後退。旧設定ファイルに保存されたテーマ値は無視される（実害なし）。
+- 参照リンク：`wrapper/app/gui.py`、`README-FOR-WRAPPER.md` のインターフェース節（デザイン刷新追記）。
+
+
+## 2025-08-29
 - 背景／スコープ：モデルダウンロード時に `tqdm_class` へ `functools.partial` を渡していたため、`'functools.partial' object has no attribute 'get_lock'` が発生。
 - 決定事項：
   - `wrapper/app/model_manager.py` で `tqdm_class` には部分適用ではなく、コールバックを束縛した `hf_tqdm` のサブクラスを返すファクトリ関数を使用。
@@ -30,20 +49,6 @@
 - 未解決事項：`huggingface_hub` の将来バージョン変更により API が変わる可能性の追随。
 - 次アクション：主要モデル（small/base/large）で進捗表示と完了までの動作確認。
 - リスク／課題：環境により `tqdm` 実装差異がある場合の互換性。
-
----
-
-## 2025-08-30
-- 背景／スコープ：MSIX 配布時にユーザー側で証明書インポートが必要となるケースへの対応（Publisher 証明書、HTTPS サーバー証明書、外向き TLS）。
-- 決定事項：
-  - `README-FOR-WRAPPER.md` に「MSIX 配布と証明書」章を追加し、ユーザー/配布者向けの手順と考慮点を整理。
-  - `wrapper/scripts/install_publisher_cert.ps1` を追加（Publisher.cer を Trusted People へインストール、管理者昇格つき）。
-  - `wrapper/scripts/make_dev_https_cert.ps1` を追加（開発用の自己署名サーバー証明書の PFX/CER 出力）。
-  - VAC（オンライン VAD）既定オフにより、初回起動時に外向き TLS が通らない環境でも起動可能にしておく方針を維持。
-- 根拠・検討メモ：MSIX では Publisher 証明書の信頼が前提。HTTPS や企業 CA は用途が異なるため、ユーザー手順を明確化。
-- 未解決事項：GUI からの証明書プリフライト/自動案内（今後の実装候補）。
-- 次アクション：MSIX ビルド手順の具体化（makeappx/signtool）と Publisher.cer の同梱整備。
-- リスク／課題：証明書の運用誤り（ルート/発行元の違いなど）によるトラブル、管理者権限の確保。
 
 ---
 

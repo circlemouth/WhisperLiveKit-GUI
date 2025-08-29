@@ -69,12 +69,38 @@ class CollapsibleSection(ttk.Frame):
         super().__init__(master)
         self._open = tk.BooleanVar(value=True)
         header = ttk.Frame(self)
-        header.pack(fill="x")
+        header.pack(fill="x", pady=(2, 2))
         self._toggle_btn = ttk.Button(header, width=2, text="▾", command=self.toggle)
         self._toggle_btn.pack(side="left")
-        ttk.Label(header, text=title, style="SectionHeader.TLabel").pack(side="left")
+        ttk.Label(header, text=title, style="SectionHeader.TLabel").pack(side="left", padx=(4, 0))
+        # セクション見出し直下にセパレータで区切る
+        ttk.Separator(self, orient="horizontal").pack(fill="x", pady=(4, 8))
         self.container = ttk.Frame(self)
         self.container.pack(fill="both", expand=True)
+
+    def _resize_to_content(self) -> None:
+        # 画面状態が最大化の場合はサイズ変更しない
+        root = self.winfo_toplevel()
+        try:
+            if root.state() == "zoomed":
+                return
+        except Exception:
+            pass
+        # 現在の幅を維持しつつ、高さを内容に合わせて調整
+        def _apply():
+            try:
+                root.update_idletasks()
+                cur_w = root.winfo_width()
+                # コンテンツに基づく推奨サイズ
+                req_h = root.winfo_reqheight()
+                # あまりに小さくならないよう最小高さを設定
+                min_h = 480
+                new_h = max(req_h, min_h)
+                root.geometry(f"{cur_w}x{new_h}")
+            except Exception:
+                pass
+        # レイアウト反映後に実施
+        root.after(0, _apply)
 
     def toggle(self) -> None:
         if self._open.get():
@@ -85,6 +111,71 @@ class CollapsibleSection(ttk.Frame):
             self.container.pack(fill="both", expand=True)
             self._toggle_btn.config(text="▾")
             self._open.set(True)
+        # 開閉に応じてウィンドウサイズを自動調整
+        self._resize_to_content()
+
+
+class ScrollableFrame(ttk.Frame):
+    def __init__(self, master: tk.Misc):
+        super().__init__(master)
+        self.columnconfigure(0, weight=1)
+        self.rowconfigure(0, weight=1)
+        self._canvas = tk.Canvas(self, borderwidth=0, highlightthickness=0)
+        self._vsb = ttk.Scrollbar(self, orient="vertical", command=self._canvas.yview)
+        self._canvas.configure(yscrollcommand=self._vsb.set)
+        self._canvas.grid(row=0, column=0, sticky="nsew")
+        self._vsb.grid(row=0, column=1, sticky="ns")
+        # 内部フレーム
+        self.inner = ttk.Frame(self._canvas)
+        self._window = self._canvas.create_window((0, 0), window=self.inner, anchor="nw")
+
+        def _on_configure_inner(_e=None):
+            self._canvas.configure(scrollregion=self._canvas.bbox("all"))
+            # 横幅をキャンバス幅に合わせる
+            try:
+                self._canvas.itemconfigure(self._window, width=self._canvas.winfo_width())
+            except Exception:
+                pass
+            # スクロールが不要ならスクロールバーを隠す
+            try:
+                bbox = self._canvas.bbox("all")
+                if bbox:
+                    content_h = bbox[3] - bbox[1]
+                    if content_h <= self._canvas.winfo_height() + 1:
+                        self._vsb.grid_remove()
+                    else:
+                        self._vsb.grid(row=0, column=1, sticky="ns")
+            except Exception:
+                pass
+
+        def _on_configure_canvas(_e=None):
+            try:
+                self._canvas.itemconfigure(self._window, width=self._canvas.winfo_width())
+            except Exception:
+                pass
+            # スクロール必要性を再評価
+            try:
+                bbox = self._canvas.bbox("all")
+                if bbox:
+                    content_h = bbox[3] - bbox[1]
+                    if content_h <= self._canvas.winfo_height() + 1:
+                        self._vsb.grid_remove()
+                    else:
+                        self._vsb.grid(row=0, column=1, sticky="ns")
+            except Exception:
+                pass
+
+        self.inner.bind("<Configure>", _on_configure_inner)
+        self._canvas.bind("<Configure>", _on_configure_canvas)
+        # スクロールホイール
+        self._canvas.bind_all("<MouseWheel>", self._on_mousewheel)
+
+    def _on_mousewheel(self, event):  # pragma: no cover - UI event
+        try:
+            delta = int(-1 * (event.delta / 120))
+            self._canvas.yview_scroll(delta, "units")
+        except Exception:
+            pass
 
 
 class WrapperGUI:
@@ -93,7 +184,8 @@ class WrapperGUI:
         master.title("WhisperLiveKit Wrapper")
 
         # Variables
-        self.theme = tk.StringVar(value=os.getenv("WRAPPER_THEME", "flatly"))
+        # 固定テーマ: litera（切替不要のため強制適用）
+        self.theme = tk.StringVar(value="litera")
         self.backend_host = tk.StringVar(value=os.getenv("WRAPPER_BACKEND_HOST", "127.0.0.1"))
         b_port_env = os.getenv("WRAPPER_BACKEND_PORT")
         if b_port_env:
@@ -119,9 +211,6 @@ class WrapperGUI:
         self.model = tk.StringVar(value=os.getenv("WRAPPER_MODEL", "large-v3"))
         # Use voice activity controller (Silero via torch.hub). Default off to avoid GitHub SSL/network issues.
         self.use_vac = tk.BooleanVar(value=os.getenv("WRAPPER_USE_VAC", "0") == "1")
-        # Optional HTTPS for backend
-        self.ssl_certfile = tk.StringVar(value=os.getenv("WRAPPER_SSL_CERTFILE", ""))
-        self.ssl_keyfile = tk.StringVar(value=os.getenv("WRAPPER_SSL_KEYFILE", ""))
         self.diarization = tk.BooleanVar(value=os.getenv("WRAPPER_DIARIZATION") == "1")
         self.segmentation_model = tk.StringVar(
             value=os.getenv("WRAPPER_SEGMENTATION_MODEL", "pyannote/segmentation-3.0")
@@ -135,6 +224,7 @@ class WrapperGUI:
         self.api_endpoint = tk.StringVar()
         # HF login state (for diarization gating)
         self.hf_logged_in: bool = False
+        self._hf_username: str | None = None
 
         # Recording-related variables
         self.ws_url = tk.StringVar()
@@ -146,35 +236,39 @@ class WrapperGUI:
         self.save_enabled = tk.BooleanVar(value=False)
 
         self._load_settings()
+        # テーマは litera を強制（既存設定を上書き）
+        self.theme.set("litera")
 
         self.style = ttkb.Style(theme=self.theme.get())
-        self.style.configure("TLabel", padding=4)
-        self.style.configure("TButton", padding=8)
-        self.style.configure("TLabelframe", padding=10)
-        self.style.configure("Header.TLabel", font=("Segoe UI", 14, "bold"))
-        self.style.configure("SectionHeader.TLabel", font=("Segoe UI", 11, "bold"))
+        # 基本フォントと余白を拡大
         try:
-            master.option_add("*Font", ("Segoe UI", 10))
+            master.option_add("*Font", ("Segoe UI", 12))
         except Exception:
             pass
+        self.style.configure("TLabel", padding=6)
+        self.style.configure("TButton", padding=10)
+        self.style.configure("TLabelframe", padding=12)
+        # 見出しの視認性を向上（サイズ増、プライマリ色）
+        primary_fg = None
+        try:
+            primary_fg = self.style.colors.primary
+        except Exception:
+            primary_fg = None
+        self.style.configure("Header.TLabel", font=("Segoe UI", 18, "bold"))
+        self.style.configure(
+            "SectionHeader.TLabel",
+            font=("Segoe UI", 14, "bold"),
+            foreground=primary_fg if primary_fg else None,
+        )
 
         master.columnconfigure(0, weight=1)
 
         row = 0
-        # App header with license button and theme selector
+        # App header（テーマセレクタは撤去し、ライセンスのみ配置）
         header = ttk.Frame(master)
         header.grid(row=row, column=0, sticky="ew", padx=10, pady=(8, 0))
         header.columnconfigure(1, weight=1)
         ttk.Label(header, text="WhisperLiveKit Wrapper", style="Header.TLabel").grid(row=0, column=0, sticky="w")
-        self.theme_box = ttk.Combobox(
-            header,
-            values=self.style.theme_names(),
-            textvariable=self.theme,
-            state="readonly",
-            width=12,
-        )
-        self.theme_box.grid(row=0, column=1, sticky="e", padx=(0, 5))
-        self.theme_box.bind("<<ComboboxSelected>>", lambda e: self._on_theme_change())
         ttk.Button(header, text="License", command=self.show_license).grid(row=0, column=2, sticky="e")
         row += 1
 
@@ -189,11 +283,25 @@ class WrapperGUI:
         ttk.Button(toolbar, text=gear, width=3, command=self._open_model_manager).pack(side="left")
         row += 1
 
-        # Collapsible server settings section
-        server_section = CollapsibleSection(master, "Server Settings")
-        server_section.grid(row=row, column=0, sticky="ew", padx=10, pady=5)
-        config_frame = server_section.container
-        config_frame.columnconfigure(1, weight=1)
+        # 2カラムのメインコンテンツ領域（左: Server Settings、右: Recorder + Endpoints）
+        content = ttk.Frame(master)
+        content.grid(row=row, column=0, sticky="nsew", padx=10, pady=5)
+        # 右カラム（Recorder）を優先的に拡張
+        content.columnconfigure(0, weight=0)
+        content.columnconfigure(1, weight=1)
+        master.rowconfigure(row, weight=1)
+        self.content = content
+
+        # 左カラム: Server Settings + Endpoints（スクロールなし、常時表示）
+        left_col = ttk.Frame(content)
+        left_col.grid(row=0, column=0, sticky="n", padx=(0, 5))
+        left_col.columnconfigure(0, weight=1)
+        server_frame = ttk.Labelframe(left_col, text="Server Settings")
+        server_frame.grid(row=0, column=0, sticky="ew")
+        server_frame.columnconfigure(1, weight=1)
+        config_frame = server_frame
+        self.left_col = left_col
+        self.server_frame = server_frame
         r = 0
         ttk.Label(config_frame, text="Backend host").grid(row=r, column=0, sticky=tk.W)
         self.backend_host_entry = ttk.Entry(config_frame, textvariable=self.backend_host, width=15)
@@ -241,15 +349,6 @@ class WrapperGUI:
         )
         self.vac_chk.grid(row=r, column=0, columnspan=2, sticky=tk.W)
         r += 1
-        # HTTPS (optional)
-        ttk.Label(config_frame, text="SSL certfile (.pem/.crt)").grid(row=r, column=0, sticky=tk.W)
-        self.ssl_cert_entry = ttk.Entry(config_frame, textvariable=self.ssl_certfile)
-        self.ssl_cert_entry.grid(row=r, column=1, sticky="ew")
-        r += 1
-        ttk.Label(config_frame, text="SSL keyfile (.key)").grid(row=r, column=0, sticky=tk.W)
-        self.ssl_key_entry = ttk.Entry(config_frame, textvariable=self.ssl_keyfile)
-        self.ssl_key_entry.grid(row=r, column=1, sticky="ew")
-        r += 1
         self.diarization_chk = ttk.Checkbutton(
             config_frame,
             text="Enable diarization",
@@ -257,6 +356,8 @@ class WrapperGUI:
             command=self._on_diarization_toggle,
         )
         self.diarization_chk.grid(row=r, column=0, columnspan=2, sticky=tk.W)
+        # トークン未検証の間は無効化
+        self.diarization_chk.config(state=tk.DISABLED)
         r += 1
         ttk.Label(config_frame, text="Segmentation model").grid(row=r, column=0, sticky=tk.W)
         self.seg_model_combo = ttk.Combobox(
@@ -295,17 +396,24 @@ class WrapperGUI:
         self.hf_hint.grid(row=r, column=0, columnspan=2, sticky=tk.W)
         r += 1
         start_stop = ttk.Frame(config_frame)
-        start_stop.grid(row=r, column=0, columnspan=2, sticky=tk.W)
-        self.start_btn = ttk.Button(start_stop, text="Start API", command=self.start_api)
-        self.start_btn.grid(row=0, column=0, padx=(0, 5))
-        self.stop_btn = ttk.Button(start_stop, text="Stop API", command=self.stop_api)
-        self.stop_btn.grid(row=0, column=1)
-        row += 1
+        start_stop.grid(row=r, column=0, columnspan=2, sticky="ew", pady=(4, 0))
+        start_stop.columnconfigure(0, weight=1)
+        self.start_btn = ttk.Button(start_stop, text="Start API", command=self.start_api, bootstyle="primary")
+        self.start_btn.grid(row=0, column=1, padx=(0, 6), sticky="e")
+        self.stop_btn = ttk.Button(start_stop, text="Stop API", command=self.stop_api, bootstyle="danger")
+        self.stop_btn.grid(row=0, column=2, sticky="e")
 
-        record_section = CollapsibleSection(master, "Recorder")
-        record_section.grid(row=row, column=0, sticky="nsew", padx=10, pady=5)
-        record_frame = record_section.container
+        # 右カラム: Recorder（縦に拡張）
+        right_panel = ttk.Frame(content)
+        right_panel.grid(row=0, column=1, sticky="nsew", padx=(5, 0))
+        right_panel.columnconfigure(0, weight=1)
+        right_panel.rowconfigure(0, weight=1)
+        self.right_panel = right_panel
+
+        record_frame = ttk.Labelframe(right_panel, text="Recorder")
+        record_frame.grid(row=0, column=0, sticky="nsew")
         record_frame.columnconfigure(1, weight=1)
+        self.record_frame = record_frame
         # Recording controls
         r = 0
         self.record_btn = ttk.Button(record_frame, text="Start Recording", command=self.toggle_recording)
@@ -331,18 +439,19 @@ class WrapperGUI:
         trans_frame.rowconfigure(0, weight=1)
         record_frame.rowconfigure(r, weight=1)
         self.transcript_box = tk.Text(trans_frame, state="disabled")
+        try:
+            self.transcript_box.configure(font=("Segoe UI", 12))
+        except Exception:
+            pass
         self.transcript_box.grid(row=0, column=0, sticky="nsew")
         scroll = ttk.Scrollbar(trans_frame, orient="vertical", command=self.transcript_box.yview)
         scroll.grid(row=0, column=1, sticky="ns")
         self.transcript_box.configure(yscrollcommand=scroll.set)
-        # Allow main window to expand Recorder section
-        master.rowconfigure(row, weight=1)
-        row += 1
-
-        endpoints_section = CollapsibleSection(master, "Endpoints")
-        endpoints_section.grid(row=row, column=0, sticky="ew", padx=10, pady=5)
-        endpoints_frame = endpoints_section.container
+        # Endpoints（左カラム下）
+        endpoints_frame = ttk.Labelframe(left_col, text="Endpoints")
+        endpoints_frame.grid(row=1, column=0, sticky="ew", pady=(5, 0))
         endpoints_frame.columnconfigure(1, weight=1)
+        self.endpoints_frame = endpoints_frame
         r = 0
         ttk.Label(endpoints_frame, text="Backend Web UI").grid(row=r, column=0, sticky=tk.W)
         ttk.Entry(endpoints_frame, textvariable=self.web_endpoint, width=40, state="readonly").grid(row=r, column=1, sticky="ew")
@@ -358,6 +467,8 @@ class WrapperGUI:
         ttk.Button(endpoints_frame, text="Copy", command=lambda: self.copy_to_clipboard(self.api_endpoint.get())).grid(row=r, column=2, padx=5)
         row += 1
 
+        # ステータスバーは最下段に全幅で配置
+        row += 1
         status = ttk.Frame(master)
         status.grid(row=row, column=0, sticky="ew", padx=5, pady=(0,5))
         status.columnconfigure(1, weight=1)
@@ -388,6 +499,36 @@ class WrapperGUI:
         self._set_running_state(False)
         # Async check of HF login state
         threading.Thread(target=self._init_check_hf_login, daemon=True).start()
+        # 固定2カラムレイアウトを適用し、最小サイズを設定
+        self.master.after(0, self._apply_fixed_layout)
+        self.master.after(50, self._lock_minsize_by_content)
+
+    def _apply_fixed_layout(self) -> None:
+        # 2カラム固定: 左（Server + Endpoints）、右（Recorder）
+        try:
+            self.left_col.grid_forget()
+            self.right_panel.grid_forget()
+        except Exception:
+            pass
+        # 右カラムが縦に拡張、左は内容サイズ
+        self.content.columnconfigure(0, weight=0)
+        self.content.columnconfigure(1, weight=1)
+        self.content.rowconfigure(0, weight=1)
+        self.left_col.grid(row=0, column=0, sticky="n", padx=(0,5))
+        self.right_panel.grid(row=0, column=1, sticky="nsew", padx=(5,0))
+        self.master.update_idletasks()
+        self._lock_minsize_by_content()
+
+    def _lock_minsize_by_content(self) -> None:
+        # 全要素が見切れない最小サイズを設定
+        root = self.master
+        try:
+            root.update_idletasks()
+            req_w = max(root.winfo_reqwidth(), 900)
+            req_h = max(root.winfo_reqheight(), 650)
+            root.minsize(req_w, req_h)
+        except Exception:
+            pass
 
     def start_api(self):
         if self.api_proc or self.backend_proc:
@@ -472,15 +613,6 @@ class WrapperGUI:
         # Disable VAC by default unless explicitly enabled to prevent torch.hub GitHub SSL failures
         if not self.use_vac.get():
             backend_cmd.append("--no-vac")
-
-        # HTTPS
-        cert = self.ssl_certfile.get().strip()
-        key = self.ssl_keyfile.get().strip()
-        if cert or key:
-            if not (cert and key):
-                self.status_var.set("Both SSL certfile and keyfile are required")
-            else:
-                backend_cmd += ["--ssl-certfile", cert, "--ssl-keyfile", key]
 
         self.backend_proc = subprocess.Popen(backend_cmd)
         time.sleep(2)
@@ -603,24 +735,63 @@ class WrapperGUI:
             threading.Thread(target=self._run_hf_login, args=(token,), daemon=True).start()
 
     def _run_hf_login(self, token: str) -> None:
+        # 1) トークンの有効性を whoami で検証
+        valid = False
+        username: str | None = None
+        whoami_err: Exception | None = None
         try:
-            subprocess.run(
-                ["huggingface-cli", "login", "--token", token],
-                check=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-            )
-            def _ok():
-                self.status_var.set("Hugging Face login succeeded")
-                self.hf_logged_in = True
-                self._apply_hf_login_state()
-            self.master.after(0, _ok)
-        except Exception as e:  # pragma: no cover - external command
-            def _ng(err=e):
-                self.status_var.set(f"Hugging Face login failed: {err}")
+            try:
+                from huggingface_hub import HfApi  # type: ignore
+                api = HfApi()
+                info = api.whoami(token=token)
+                username = info.get("name") if isinstance(info, dict) else None
+                valid = True
+            except Exception as e:
+                valid = False
+                whoami_err = e
+            # 2) 有効なら資格情報を CLI 側に保存（任意だが利便性のため）
+            if valid:
+                cli_ok = True
+                cli_err: Exception | None = None
+                try:
+                    res = subprocess.run(
+                        ["huggingface-cli", "login", "--token", token],
+                        check=True,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                    )
+                    cli_ok = (res.returncode == 0)
+                except Exception as e:
+                    cli_ok = False
+                    cli_err = e
+
+                def _ok():
+                    self.hf_logged_in = True
+                    self._hf_username = username
+                    if cli_ok:
+                        self.status_var.set(
+                            f"Hugging Face login succeeded{f' as {username}' if username else ''}"
+                        )
+                    else:
+                        self.status_var.set(
+                            f"Token is valid{f' for {username}' if username else ''}, but storing credentials failed: {cli_err}"
+                        )
+                    self._apply_hf_login_state()
+                self.master.after(0, _ok)
+            else:
+                def _ng():
+                    self.status_var.set(f"Invalid Hugging Face token: {whoami_err}")
+                    self.hf_logged_in = False
+                    self._hf_username = None
+                    self._apply_hf_login_state()
+                self.master.after(0, _ng)
+        except Exception as e:  # pragma: no cover - safety net
+            def _ng2(err=e):
+                self.status_var.set(f"Hugging Face token check failed: {err}")
                 self.hf_logged_in = False
+                self._hf_username = None
                 self._apply_hf_login_state()
-            self.master.after(0, _ng)
+            self.master.after(0, _ng2)
 
     def _update_diarization_fields(self, *_: object) -> None:
         # Only active when diarization is toggled AND HF is logged in
@@ -677,8 +848,6 @@ class WrapperGUI:
             self.auto_start.set(False)
         self.model.set(data.get("model", self.model.get()))
         self.use_vac.set(data.get("use_vac", self.use_vac.get()))
-        self.ssl_certfile.set(data.get("ssl_certfile", self.ssl_certfile.get()))
-        self.ssl_keyfile.set(data.get("ssl_keyfile", self.ssl_keyfile.get()))
         self.diarization.set(data.get("diarization", self.diarization.get()))
         self.segmentation_model.set(data.get("segmentation_model", self.segmentation_model.get()))
         self.embedding_model.set(data.get("embedding_model", self.embedding_model.get()))
@@ -697,8 +866,6 @@ class WrapperGUI:
             "auto_start": self.auto_start.get(),
             "model": self.model.get(),
             "use_vac": self.use_vac.get(),
-            "ssl_certfile": self.ssl_certfile.get(),
-            "ssl_keyfile": self.ssl_keyfile.get(),
             "diarization": self.diarization.get(),
             "segmentation_model": self.segmentation_model.get(),
             "embedding_model": self.embedding_model.get(),
@@ -861,9 +1028,6 @@ class WrapperGUI:
         # Checkbuttons
         self.auto_start_chk.config(state=state_entry)
         self.vac_chk.config(state=state_entry)
-        # HTTPS entries
-        self.ssl_cert_entry.config(state=state_entry)
-        self.ssl_key_entry.config(state=state_entry)
         # Diarization also gated by HF login
         self.diarization_chk.config(state=(tk.DISABLED if running or not self.hf_logged_in else tk.NORMAL))
         self.allow_external_chk.config(state=state_entry)
@@ -898,6 +1062,7 @@ class WrapperGUI:
     def _init_check_hf_login(self) -> None:
         # Validate that a usable, valid HF token exists (not just presence).
         logged = False
+        username: str | None = None
         try:
             token: str | None = None
             try:
@@ -917,7 +1082,8 @@ class WrapperGUI:
                 try:
                     from huggingface_hub import HfApi  # type: ignore
                     api = HfApi()
-                    _ = api.whoami(token=token)
+                    info = api.whoami(token=token)
+                    username = info.get("name") if isinstance(info, dict) else None
                     logged = True
                 except Exception:
                     logged = False
@@ -934,12 +1100,17 @@ class WrapperGUI:
                     pass
         finally:
             self.hf_logged_in = logged
+            self._hf_username = username if logged else None
             self.master.after(0, self._apply_hf_login_state)
 
     def _apply_hf_login_state(self) -> None:
         # Force-disable diarization if not logged in
         if not self.hf_logged_in and self.diarization.get():
             self.diarization.set(False)
+        # ダイアリゼーションの有効化可否を切替
+        self.diarization_chk.config(state=tk.NORMAL if self.hf_logged_in else tk.DISABLED)
+        # ダイアリゼーション関連フィールドも更新
+        self._update_diarization_fields()
         # Update controls with current running state
         self._set_running_state(self.api_proc is not None or self.backend_proc is not None)
 
