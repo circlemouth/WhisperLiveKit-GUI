@@ -23,7 +23,8 @@
 
 ## 5. インターフェース
 - CLI/GUI：
-    - `python -m wrapper.cli.main` で設定 GUI を起動。GUI は起動時に空きポートを自動選択して入力欄に表示し、必要に応じて編集できる。`Start API` でサービスを起動、`Stop API` で停止できる。`Auto-start API on launch` を有効にすると起動時に自動開始する。Whisper モデルは `Whisper model` のプルダウンから選択でき（`available_models.md` に掲載された公式モデル一覧）、`Enable diarization` をオンにすると話者分離が有効になる。`Segmentation model` と `Embedding model` は既定モデルをプルダウンから選ぶか、任意の Hugging Face モデル ID を手入力できる。モデル取得には `Hugging Face Login` ボタンからトークンを入力してログインする。その直下の `Manage models` ボタンからダウンロード済みモデルの一覧表示、進捗確認、削除を行える。選択した Whisper モデルや話者分離モデルがローカルに存在しない場合は `Start API` を押すと自動ダウンロードが始まり、完了後にサーバーが起動する。
+    - `python -m wrapper.cli.main` で設定 GUI を起動。GUI は起動時に空きポートを自動選択して入力欄に表示し、必要に応じて編集できる。`Start API` でサービスを起動、`Stop API` で停止できる。`Auto-start API on launch` を有効にすると起動時に自動開始する。Whisper モデルは `Whisper model` のプルダウンから選択でき（`available_models.md` に掲載された公式モデル一覧）、`Enable diarization` をオンにすると話者分離が有効になる。`Segmentation model` と `Embedding model` は既定モデルをプルダウンから選ぶか、任意の Hugging Face モデル ID を手入力できる。モデル取得には `Hugging Face Login` ボタンからトークンを入力してログインする。その直下の `Manage models` ボタンからダウンロード済みモデルの一覧表示、用途表示、進捗確認、削除を行える。選択した Whisper モデルや話者分離モデルがローカルに存在しない場合は `Start API` を押すと自動ダウンロードが始まり、完了後にサーバーが起動する。
+    - `Use voice activity controller (VAD)` チェックボックスで Silero VAD を利用できる。VAD 用証明書ファイルを `VAD certificate` で指定するまで有効化できない。
     - ネットワーク公開：`Allow external connections (0.0.0.0)` をオンにすると、バックエンドおよび API を `0.0.0.0` で待受（全インターフェース bind）する。Endpoints 欄には検出したLAN内の実IP（例：`192.168.x.x`）を用いたURLが直接表示され、外部端末からアクセスしやすい形式になる。LAN/WAN に公開されるため、ファイアウォール設定とポート開放の可否を必ず確認すること（セキュリティ上の推奨：必要時のみオン）。
     - 稼働中ロック：`Start API` でサーバー稼働中は、ホスト/ポート、モデル設定、話者分離設定、外部接続許可、Auto-start、HF ログインなど、サーバー挙動に影響する設定を自動でロック（無効化）する。`Stop API` で停止すると再び編集可能になる。
     - 起動後は Backend Web UI・WebSocket `/asr`・ファイル文字起こし API の各エンドポイントと用途が表示され、隣の `Copy` ボタンでクリップボードにコピーできる。レイアウトは2カラム構成（左：Server Settings＋Endpoints、右：Recorder）。ウィンドウ幅が狭い場合は1カラムに自動切替（Server → Endpoints → Recorder の順）し、UI要素が見切れないように配置を再調整する。Server Settings は独立スクロール対応で、ウィンドウが小さい場合でも全項目を確認できる。
@@ -49,7 +50,7 @@
 - 設定：
     - 入力された設定は環境変数 `WRAPPER_BACKEND_HOST`/`WRAPPER_BACKEND_PORT` と `WRAPPER_API_HOST`/`WRAPPER_API_PORT` としてサブプロセスに渡される。GUI は既定でバックエンドと API を自動起動する（設定 `Auto-start API on launch` のデフォルトはオン）。環境変数 `WRAPPER_API_AUTOSTART=0` もしくはチェックボックスをオフにすると自動起動を無効化できる。ポート番号を指定しなかった場合は空きポートが自動的に割り当てられる。
     - `Allow external connections` をオンにするとホスト値は `0.0.0.0` に設定され、オフに戻した場合は直前のローカル用ホスト（例：`127.0.0.1`）を復元する。設定は `settings.json` に `allow_external` として永続化される。
-    - Whisper 関連の設定は `model`、`diarization`、`segmentation_model`、`embedding_model` として保存され、未指定の場合は既定値が適用される。旧形式の設定ファイルは存在すれば自動読み込みされ、新項目はデフォルト値で補完される。
+     - Whisper 関連の設定は `model`、`use_vac`、`vad_certfile`、`diarization`、`segmentation_model`、`embedding_model` として保存され、未指定の場合は既定値が適用される。旧形式の設定ファイルは存在すれば自動読み込みされ、新項目はデフォルト値で補完される。
     - GUI 上で編集した設定は各 OS のユーザー設定ディレクトリ（例：`%LOCALAPPDATA%\\WhisperLiveKit\\wrapper\\settings.json`）に保存され、次回起動時に読み込まれる。保存に関わる設定（`save_enabled`、`save_path`）もここに保持される。初回起動時に旧 `~/.whisperlivekit-wrapper.json` が存在すれば自動的に移行される。フォーマット例は `wrapper/config/settings.example.json` を参照。
 
 ## 6. 実行・セットアップ手順
@@ -133,4 +134,4 @@
 ### 13.8 完了定義
 - モデル非同梱の MSIX を配布し、GUI から Whisper モデルをダウンロード・削除できる。
 - ダウンロード済みモデルを使用してバックエンド/API を起動できる。
-- 今後の拡張として、話者分離モデルや VAD ダウンロードにも対応できる設計になっている。
+ - 話者分離モデルおよび VAD モデルのダウンロード・削除に対応し、モデル一覧には各モデルの用途が表示される。
