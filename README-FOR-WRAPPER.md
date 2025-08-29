@@ -46,7 +46,8 @@
     - Hugging Face トークン検証：`Hugging Face Login` から入力されたアクセストークンは即時に検証され、whoami 成功時のみ「Enable diarization」が有効化される。トークンが未入力または無効な場合はチェックボックスがロックされる。
     - 録音コントロール（Recorder）：`Start Recording` でマイク入力を `/asr` にストリーミングし、Transcript にリアルタイム表示。録音中は音量レベルと経過時間を表示し、`Stop Recording` で終了する。`Save transcript to file` をオンにすると保存先入力と `Browse` が有効になり、録音終了時に自動保存される。
     - 話者分離（Diarization）：Hugging Face ログインが成功している場合にのみ有効化できる。未ログイン時は有効化できず、関連モデル選択もロックされる。（環境変数 `HF_TOKEN` / `HUGGINGFACEHUB_API_TOKEN` / `HUGGING_FACE_HUB_TOKEN` または `huggingface_hub` に保存されたトークンが存在すれば、ログイン済みとして扱う）
-    - `Open Web GUI` ボタンでブラウザから元の Web GUI を開ける。`License` ボタンはメインウィンドウ右上にあり、本リポジトリ同梱の `LICENSE` ファイルを新規ウィンドウに表示する。
+      - `Open Web GUI` ボタンでブラウザから元の Web GUI を開ける。`License` ボタンはメインウィンドウ右上にあり、本リポジトリ同梱の `LICENSE` ファイルと依存ライブラリのライセンス一覧およびライセンス本文を新規ウィンドウに表示する（`wrapper/licenses.json` を読み込む）。
+        - 依存ライブラリのライセンス情報は `python wrapper/scripts/generate_licenses.py` を実行することで更新される。ライセンス情報やライセンス本文が取得できなかったライブラリは表示されない。
       - `Open Web GUI` ボタンはバックエンドが起動中のみ有効化される。
       - `License` ウィンドウには upstream リポジトリ [QuentinFuxa/WhisperLiveKit](https://github.com/QuentinFuxa/WhisperLiveKit) へのリンクと「このアプリはこのレポジトリのラッパーです」の注記を表示する。
 - API：
@@ -62,6 +63,7 @@
 1. 必要要件：Python 3.11 以降、ffmpeg、インターネット接続。
 2. セットアップ：`pip install -r requirements.txt` で `fastapi`, `uvicorn`, `websockets`, `sounddevice`, `platformdirs` などの依存ライブラリを導入。GUI のテーマ切替には別途 `ttkbootstrap` が必要なため、未インストールの場合は `pip install ttkbootstrap` を実行する。
 3. 実行例：`python -m wrapper.cli.main` を実行すると設定 GUI が起動する。必要に応じてホストやポートを変更し、`Start API` で WhisperLiveKit とラッパー API を開始する。GUI は初期状態でバックエンドと API を自動開始する（環境変数 `WRAPPER_API_AUTOSTART=0` もしくは設定で無効化可能）。録音を行う場合は WebSocket URL を確認し、必要なら保存先ファイルを設定してから `Start Recording` ボタンでマイク入力を送信する。
+4. 依存ライブラリを更新した場合は `python wrapper/scripts/generate_licenses.py` を実行してライセンス情報ファイル `wrapper/licenses.json` を再生成し、ライセンス本文を含めてリポジトリにコミットする。
 
 ## 7. エラーハンドリングとログ／テレメトリ
 - 例外分類・リトライ方針、ユーザー通知方法
