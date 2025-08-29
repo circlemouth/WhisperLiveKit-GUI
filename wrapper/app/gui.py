@@ -225,6 +225,23 @@ class WrapperGUI:
             value=os.getenv("WRAPPER_EMBEDDING_MODEL", "pyannote/embedding")
         )
 
+        # Advanced backend options
+        self.warmup_file = tk.StringVar(value="")
+        self.confidence_validation = tk.BooleanVar(value=False)
+        self.punctuation_split = tk.BooleanVar(value=False)
+        self.diarization_backend = tk.StringVar(value="sortformer")
+        self.min_chunk_size = tk.DoubleVar(value=0.5)
+        self.language = tk.StringVar(value="auto")
+        self.task = tk.StringVar(value="transcribe")
+        self.backend = tk.StringVar(value="simulstreaming")
+        self.vac_chunk_size = tk.DoubleVar(value=0.04)
+        self.buffer_trimming = tk.StringVar(value="segment")
+        self.buffer_trimming_sec = tk.DoubleVar(value=15.0)
+        self.log_level = tk.StringVar(value="DEBUG")
+        self.ssl_certfile = tk.StringVar(value="")
+        self.ssl_keyfile = tk.StringVar(value="")
+        self.frame_threshold = tk.IntVar(value=25)
+
         self.web_endpoint = tk.StringVar()
         self.ws_endpoint = tk.StringVar()
         self.api_endpoint = tk.StringVar()
@@ -348,6 +365,10 @@ class WrapperGUI:
         )
         self.model_combo.grid(row=r, column=1, sticky="ew")
         r += 1
+        ttk.Button(config_frame, text="Advanced settings", command=self._open_backend_settings).grid(
+            row=r, column=0, columnspan=2, sticky=tk.W
+        )
+        r += 1
         # 6) VAD（音声活動）
         self.vac_chk = ttk.Checkbutton(
             config_frame,
@@ -364,6 +385,10 @@ class WrapperGUI:
         self.vad_cert_entry.grid(row=0, column=0, sticky="ew")
         self.vad_cert_browse = ttk.Button(cert_input, text="Browse...", command=self.choose_vad_certfile)
         self.vad_cert_browse.grid(row=0, column=1, padx=(4,0))
+        r += 1
+        ttk.Button(config_frame, text="VAD Settings", command=self._open_vad_settings).grid(
+            row=r, column=0, columnspan=2, sticky=tk.W
+        )
         r += 1
         # 7) 話者分離（HF ログイン → 有効化 → モデル指定）
         # Hugging Face Login は Start/Stop 行の左に移動
@@ -394,6 +419,10 @@ class WrapperGUI:
             width=20,
         )
         self.emb_model_combo.grid(row=r, column=1, sticky="ew")
+        r += 1
+        ttk.Button(config_frame, text="Diarization Settings", command=self._open_diarization_settings).grid(
+            row=r, column=0, columnspan=2, sticky=tk.W
+        )
         r += 1
         # ダイアリゼーションに関する補足
         self.hf_hint = tk.Label(
@@ -714,10 +743,38 @@ class WrapperGUI:
             emb = self.embedding_model.get().strip()
             if emb:
                 backend_cmd += ["--embedding-model", emb]
+            db = self.diarization_backend.get().strip()
+            if db:
+                backend_cmd += ["--diarization-backend", db]
+
+        warm = self.warmup_file.get().strip()
+        if warm:
+            backend_cmd += ["--warmup-file", warm]
+        if self.confidence_validation.get():
+            backend_cmd.append("--confidence-validation")
+        if self.punctuation_split.get():
+            backend_cmd.append("--punctuation-split")
+        backend_cmd += ["--min-chunk-size", str(self.min_chunk_size.get())]
+        backend_cmd += ["--language", self.language.get()]
+        backend_cmd += ["--task", self.task.get()]
+        backend_cmd += ["--backend", self.backend.get()]
 
         # Disable VAC by default unless explicitly enabled to prevent torch.hub GitHub SSL failures
-        if not self.use_vac.get():
+        if self.use_vac.get():
+            backend_cmd += ["--vac-chunk-size", str(self.vac_chunk_size.get())]
+        else:
             backend_cmd.append("--no-vac")
+
+        backend_cmd += ["--buffer_trimming", self.buffer_trimming.get()]
+        backend_cmd += ["--buffer_trimming_sec", str(self.buffer_trimming_sec.get())]
+        backend_cmd += ["--log-level", self.log_level.get()]
+        certfile = self.ssl_certfile.get().strip()
+        if certfile:
+            backend_cmd += ["--ssl-certfile", certfile]
+        keyfile = self.ssl_keyfile.get().strip()
+        if keyfile:
+            backend_cmd += ["--ssl-keyfile", keyfile]
+        backend_cmd += ["--frame-threshold", str(self.frame_threshold.get())]
 
         self.backend_proc = subprocess.Popen(backend_cmd)
         time.sleep(2)
@@ -769,6 +826,15 @@ class WrapperGUI:
         )
         if path:
             self.save_path.set(path)
+
+    def _open_backend_settings(self) -> None:
+        BackendSettingsDialog(self.master, self)
+
+    def _open_vad_settings(self) -> None:
+        VADSettingsDialog(self.master, self)
+
+    def _open_diarization_settings(self) -> None:
+        DiarizationSettingsDialog(self.master, self)
 
     def choose_vad_certfile(self) -> None:
         path = filedialog.askopenfilename(
@@ -972,6 +1038,21 @@ class WrapperGUI:
         self.save_enabled.set(data.get("save_enabled", False))
         self.allow_external.set(data.get("allow_external", self.allow_external.get()))
         self.theme.set(data.get("theme", self.theme.get()))
+        self.warmup_file.set(data.get("warmup_file", self.warmup_file.get()))
+        self.confidence_validation.set(data.get("confidence_validation", self.confidence_validation.get()))
+        self.punctuation_split.set(data.get("punctuation_split", self.punctuation_split.get()))
+        self.diarization_backend.set(data.get("diarization_backend", self.diarization_backend.get()))
+        self.min_chunk_size.set(data.get("min_chunk_size", self.min_chunk_size.get()))
+        self.language.set(data.get("language", self.language.get()))
+        self.task.set(data.get("task", self.task.get()))
+        self.backend.set(data.get("backend", self.backend.get()))
+        self.vac_chunk_size.set(data.get("vac_chunk_size", self.vac_chunk_size.get()))
+        self.buffer_trimming.set(data.get("buffer_trimming", self.buffer_trimming.get()))
+        self.buffer_trimming_sec.set(data.get("buffer_trimming_sec", self.buffer_trimming_sec.get()))
+        self.log_level.set(data.get("log_level", self.log_level.get()))
+        self.ssl_certfile.set(data.get("ssl_certfile", self.ssl_certfile.get()))
+        self.ssl_keyfile.set(data.get("ssl_keyfile", self.ssl_keyfile.get()))
+        self.frame_threshold.set(data.get("frame_threshold", self.frame_threshold.get()))
 
     def _save_settings(self) -> None:
         data = {
@@ -991,6 +1072,21 @@ class WrapperGUI:
             "save_enabled": self.save_enabled.get(),
             "allow_external": self.allow_external.get(),
             "theme": self.theme.get(),
+            "warmup_file": self.warmup_file.get(),
+            "confidence_validation": self.confidence_validation.get(),
+            "punctuation_split": self.punctuation_split.get(),
+            "diarization_backend": self.diarization_backend.get(),
+            "min_chunk_size": self.min_chunk_size.get(),
+            "language": self.language.get(),
+            "task": self.task.get(),
+            "backend": self.backend.get(),
+            "vac_chunk_size": self.vac_chunk_size.get(),
+            "buffer_trimming": self.buffer_trimming.get(),
+            "buffer_trimming_sec": self.buffer_trimming_sec.get(),
+            "log_level": self.log_level.get(),
+            "ssl_certfile": self.ssl_certfile.get(),
+            "ssl_keyfile": self.ssl_keyfile.get(),
+            "frame_threshold": self.frame_threshold.get(),
         }
         try:
             CONFIG_DIR.mkdir(parents=True, exist_ok=True)
@@ -1255,6 +1351,94 @@ class WrapperGUI:
         self._update_diarization_fields()
         # Update controls with current running state
         self._set_running_state(self.api_proc is not None or self.backend_proc is not None)
+
+class BackendSettingsDialog(tk.Toplevel):
+    def __init__(self, master: tk.Misc, gui: 'WrapperGUI'):
+        super().__init__(master)
+        self.title("Advanced Settings")
+        self.resizable(False, False)
+        r = 0
+        ttk.Label(self, text="Warmup file").grid(row=r, column=0, sticky=tk.W)
+        wf = ttk.Frame(self)
+        wf.grid(row=r, column=1, sticky="ew")
+        wf.columnconfigure(0, weight=1)
+        ttk.Entry(wf, textvariable=gui.warmup_file, width=30).grid(row=0, column=0, sticky="ew")
+        ttk.Button(wf, text="Browse...", command=lambda: self._choose_file(gui.warmup_file)).grid(row=0, column=1, padx=4)
+        r += 1
+        ttk.Checkbutton(self, text="Use confidence validation", variable=gui.confidence_validation).grid(row=r, column=0, columnspan=2, sticky=tk.W)
+        r += 1
+        ttk.Checkbutton(self, text="Use punctuation split", variable=gui.punctuation_split).grid(row=r, column=0, columnspan=2, sticky=tk.W)
+        r += 1
+        ttk.Label(self, text="Min chunk size").grid(row=r, column=0, sticky=tk.W)
+        ttk.Entry(self, textvariable=gui.min_chunk_size, width=10).grid(row=r, column=1, sticky=tk.W)
+        r += 1
+        ttk.Label(self, text="Language").grid(row=r, column=0, sticky=tk.W)
+        ttk.Entry(self, textvariable=gui.language, width=10).grid(row=r, column=1, sticky=tk.W)
+        r += 1
+        ttk.Label(self, text="Task").grid(row=r, column=0, sticky=tk.W)
+        ttk.Entry(self, textvariable=gui.task, width=15).grid(row=r, column=1, sticky=tk.W)
+        r += 1
+        ttk.Label(self, text="Backend").grid(row=r, column=0, sticky=tk.W)
+        ttk.Entry(self, textvariable=gui.backend, width=20).grid(row=r, column=1, sticky=tk.W)
+        r += 1
+        ttk.Label(self, text="Buffer trimming").grid(row=r, column=0, sticky=tk.W)
+        ttk.Entry(self, textvariable=gui.buffer_trimming, width=10).grid(row=r, column=1, sticky=tk.W)
+        r += 1
+        ttk.Label(self, text="Buffer trimming sec").grid(row=r, column=0, sticky=tk.W)
+        ttk.Entry(self, textvariable=gui.buffer_trimming_sec, width=10).grid(row=r, column=1, sticky=tk.W)
+        r += 1
+        ttk.Label(self, text="Log level").grid(row=r, column=0, sticky=tk.W)
+        ttk.Entry(self, textvariable=gui.log_level, width=10).grid(row=r, column=1, sticky=tk.W)
+        r += 1
+        ttk.Label(self, text="SSL certfile").grid(row=r, column=0, sticky=tk.W)
+        cf = ttk.Frame(self)
+        cf.grid(row=r, column=1, sticky="ew")
+        cf.columnconfigure(0, weight=1)
+        ttk.Entry(cf, textvariable=gui.ssl_certfile, width=30).grid(row=0, column=0, sticky="ew")
+        ttk.Button(cf, text="Browse...", command=lambda: self._choose_file(gui.ssl_certfile)).grid(row=0, column=1, padx=4)
+        r += 1
+        ttk.Label(self, text="SSL keyfile").grid(row=r, column=0, sticky=tk.W)
+        kf = ttk.Frame(self)
+        kf.grid(row=r, column=1, sticky="ew")
+        kf.columnconfigure(0, weight=1)
+        ttk.Entry(kf, textvariable=gui.ssl_keyfile, width=30).grid(row=0, column=0, sticky="ew")
+        ttk.Button(kf, text="Browse...", command=lambda: self._choose_file(gui.ssl_keyfile)).grid(row=0, column=1, padx=4)
+        r += 1
+        ttk.Label(self, text="Frame threshold").grid(row=r, column=0, sticky=tk.W)
+        ttk.Entry(self, textvariable=gui.frame_threshold, width=10).grid(row=r, column=1, sticky=tk.W)
+        r += 1
+        ttk.Button(self, text="Close", command=self.destroy).grid(row=r, column=0, columnspan=2, pady=(4, 0))
+
+    def _choose_file(self, var: tk.StringVar) -> None:
+        path = filedialog.askopenfilename()
+        if path:
+            var.set(path)
+
+
+class VADSettingsDialog(tk.Toplevel):
+    def __init__(self, master: tk.Misc, gui: 'WrapperGUI'):
+        super().__init__(master)
+        self.title("VAD Settings")
+        self.resizable(False, False)
+        ttk.Label(self, text="VAC chunk size").grid(row=0, column=0, sticky=tk.W)
+        ttk.Entry(self, textvariable=gui.vac_chunk_size, width=10).grid(row=0, column=1, sticky=tk.W)
+        ttk.Button(self, text="Close", command=self.destroy).grid(row=1, column=0, columnspan=2, pady=(4, 0))
+
+
+class DiarizationSettingsDialog(tk.Toplevel):
+    def __init__(self, master: tk.Misc, gui: 'WrapperGUI'):
+        super().__init__(master)
+        self.title("Diarization Settings")
+        self.resizable(False, False)
+        ttk.Label(self, text="Diarization backend").grid(row=0, column=0, sticky=tk.W)
+        ttk.Combobox(
+            self,
+            textvariable=gui.diarization_backend,
+            values=["sortformer", "diart"],
+            state="readonly",
+            width=15,
+        ).grid(row=0, column=1, sticky=tk.W)
+        ttk.Button(self, text="Close", command=self.destroy).grid(row=1, column=0, columnspan=2, pady=(4, 0))
 
 
 class ModelManagerDialog(tk.Toplevel):
