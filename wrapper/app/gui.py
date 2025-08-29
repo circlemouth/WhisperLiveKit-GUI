@@ -5,7 +5,10 @@ import sys
 import time
 import webbrowser
 import tkinter as tk
-from tkinter import ttk, filedialog, simpledialog, font, messagebox
+from tkinter import filedialog, simpledialog, font
+import ttkbootstrap as ttkb
+from ttkbootstrap import ttk
+from ttkbootstrap.icons import Emoji
 import audioop
 import json
 import queue
@@ -61,12 +64,36 @@ OLD_CONFIG_FILE = Path.home() / ".whisperlivekit-wrapper.json"
 LICENSE_FILE = Path(__file__).resolve().parents[2] / "LICENSE"
 
 
+class CollapsibleSection(ttk.Frame):
+    def __init__(self, master: tk.Widget, title: str):
+        super().__init__(master)
+        self._open = tk.BooleanVar(value=True)
+        header = ttk.Frame(self)
+        header.pack(fill="x")
+        self._toggle_btn = ttk.Button(header, width=2, text="▾", command=self.toggle)
+        self._toggle_btn.pack(side="left")
+        ttk.Label(header, text=title, style="SectionHeader.TLabel").pack(side="left")
+        self.container = ttk.Frame(self)
+        self.container.pack(fill="both", expand=True)
+
+    def toggle(self) -> None:
+        if self._open.get():
+            self.container.forget()
+            self._toggle_btn.config(text="▸")
+            self._open.set(False)
+        else:
+            self.container.pack(fill="both", expand=True)
+            self._toggle_btn.config(text="▾")
+            self._open.set(True)
+
+
 class WrapperGUI:
     def __init__(self, master: tk.Tk):
         self.master = master
         master.title("WhisperLiveKit Wrapper")
 
         # Variables
+        self.theme = tk.StringVar(value=os.getenv("WRAPPER_THEME", "flatly"))
         self.backend_host = tk.StringVar(value=os.getenv("WRAPPER_BACKEND_HOST", "127.0.0.1"))
         b_port_env = os.getenv("WRAPPER_BACKEND_PORT")
         if b_port_env:
@@ -115,19 +142,12 @@ class WrapperGUI:
 
         self._load_settings()
 
-        style = ttk.Style()
-        try:
-            style.theme_use("vista")
-        except tk.TclError:
-            try:
-                style.theme_use("winnative")
-            except tk.TclError:
-                style.theme_use("clam")
-        # Modern-ish styling tweaks
-        style.configure("TLabel", padding=4)
-        style.configure("TButton", padding=8)
-        style.configure("TLabelframe", padding=10)
-        style.configure("Header.TLabel", font=("Segoe UI", 14, "bold"))
+        self.style = ttkb.Style(theme=self.theme.get())
+        self.style.configure("TLabel", padding=4)
+        self.style.configure("TButton", padding=8)
+        self.style.configure("TLabelframe", padding=10)
+        self.style.configure("Header.TLabel", font=("Segoe UI", 14, "bold"))
+        self.style.configure("SectionHeader.TLabel", font=("Segoe UI", 11, "bold"))
         try:
             master.option_add("*Font", ("Segoe UI", 10))
         except Exception:
@@ -136,11 +156,38 @@ class WrapperGUI:
         master.columnconfigure(0, weight=1)
 
         row = 0
-        # App header
-        ttk.Label(master, text="WhisperLiveKit Wrapper", style="Header.TLabel").grid(row=row, column=0, sticky="w", padx=10, pady=(8,0))
+        # App header with license button and theme selector
+        header = ttk.Frame(master)
+        header.grid(row=row, column=0, sticky="ew", padx=10, pady=(8, 0))
+        header.columnconfigure(1, weight=1)
+        ttk.Label(header, text="WhisperLiveKit Wrapper", style="Header.TLabel").grid(row=0, column=0, sticky="w")
+        self.theme_box = ttk.Combobox(
+            header,
+            values=self.style.theme_names(),
+            textvariable=self.theme,
+            state="readonly",
+            width=12,
+        )
+        self.theme_box.grid(row=0, column=1, sticky="e", padx=(0, 5))
+        self.theme_box.bind("<<ComboboxSelected>>", lambda e: self._on_theme_change())
+        ttk.Button(header, text="License", command=self.show_license).grid(row=0, column=2, sticky="e")
         row += 1
-        config_frame = ttk.Labelframe(master, text="Server Settings")
-        config_frame.grid(row=row, column=0, sticky="ew", padx=10, pady=5)
+
+        # Toolbar with icon buttons
+        toolbar = ttk.Frame(master)
+        toolbar.grid(row=row, column=0, sticky="ew", padx=10, pady=5)
+        self._icon_play = Emoji.get('black right-pointing triangle').char
+        self._icon_stop = Emoji.get('black square button').char
+        gear = Emoji.get('gear').char
+        self.toolbar_record_btn = ttk.Button(toolbar, text=self._icon_play, width=3, bootstyle="success", command=self.toggle_recording)
+        self.toolbar_record_btn.pack(side="left", padx=(0,5))
+        ttk.Button(toolbar, text=gear, width=3, command=self._open_model_manager).pack(side="left")
+        row += 1
+
+        # Collapsible server settings section
+        server_section = CollapsibleSection(master, "Server Settings")
+        server_section.grid(row=row, column=0, sticky="ew", padx=10, pady=5)
+        config_frame = server_section.container
         config_frame.columnconfigure(1, weight=1)
         r = 0
         ttk.Label(config_frame, text="Backend host").grid(row=r, column=0, sticky=tk.W)
@@ -181,12 +228,6 @@ class WrapperGUI:
         )
         self.model_combo.grid(row=r, column=1, sticky="ew")
         r += 1
-        ttk.Button(
-            config_frame,
-            text="Manage models",
-            command=self._open_model_manager,
-        ).grid(row=r, column=1, sticky=tk.E)
-        r += 1
         self.diarization_chk = ttk.Checkbutton(
             config_frame,
             text="Enable diarization",
@@ -216,6 +257,12 @@ class WrapperGUI:
         self.hf_login_btn = ttk.Button(config_frame, text="Hugging Face Login", command=self.login_hf)
         self.hf_login_btn.grid(row=r, column=0, columnspan=2, sticky=tk.W)
         r += 1
+        ttk.Button(
+            config_frame,
+            text="Manage models",
+            command=self._open_model_manager,
+        ).grid(row=r, column=0, columnspan=2, sticky=tk.W)
+        r += 1
         # Hint about diarization requiring HF login
         self.hf_hint = tk.Label(
             config_frame,
@@ -233,33 +280,14 @@ class WrapperGUI:
         self.stop_btn.grid(row=0, column=1)
         row += 1
 
-        endpoints_frame = ttk.Labelframe(master, text="Endpoints")
-        endpoints_frame.grid(row=row, column=0, sticky="ew", padx=10, pady=5)
-        endpoints_frame.columnconfigure(1, weight=1)
-        r = 0
-        ttk.Label(endpoints_frame, text="Backend Web UI").grid(row=r, column=0, sticky=tk.W)
-        ttk.Entry(endpoints_frame, textvariable=self.web_endpoint, width=40, state="readonly").grid(row=r, column=1, sticky="ew")
-        # Move Open Web GUI button here instead of Copy
-        self.open_web_btn = ttk.Button(endpoints_frame, text="Open Web GUI", command=self.open_web_gui, state=tk.DISABLED)
-        self.open_web_btn.grid(row=r, column=2, padx=5)
-        r += 1
-        ttk.Label(endpoints_frame, text="Streaming WebSocket /asr").grid(row=r, column=0, sticky=tk.W)
-        ttk.Entry(endpoints_frame, textvariable=self.ws_endpoint, width=40, state="readonly").grid(row=r, column=1, sticky="ew")
-        ttk.Button(endpoints_frame, text="Copy", command=lambda: self.copy_to_clipboard(self.ws_endpoint.get())).grid(row=r, column=2, padx=5)
-        r += 1
-        ttk.Label(endpoints_frame, text="File transcription API").grid(row=r, column=0, sticky=tk.W)
-        ttk.Entry(endpoints_frame, textvariable=self.api_endpoint, width=40, state="readonly").grid(row=r, column=1, sticky="ew")
-        ttk.Button(endpoints_frame, text="Copy", command=lambda: self.copy_to_clipboard(self.api_endpoint.get())).grid(row=r, column=2, padx=5)
-        row += 1
-
-        record_frame = ttk.Labelframe(master, text="Recorder")
-        record_frame.grid(row=row, column=0, sticky="nsew", padx=10, pady=5)
+        record_section = CollapsibleSection(master, "Recorder")
+        record_section.grid(row=row, column=0, sticky="nsew", padx=10, pady=5)
+        record_frame = record_section.container
         record_frame.columnconfigure(1, weight=1)
         # Recording controls
         r = 0
         self.record_btn = ttk.Button(record_frame, text="Start Recording", command=self.toggle_recording)
         self.record_btn.grid(row=r, column=0, sticky=tk.W)
-        ttk.Label(record_frame, textvariable=self.status_var).grid(row=r, column=1, sticky=tk.W)
         r += 1
         ttk.Label(record_frame, textvariable=self.timer_var).grid(row=r, column=0, sticky=tk.W)
         ttk.Progressbar(record_frame, variable=self.level_var, maximum=1.0).grid(row=r, column=1, columnspan=2, sticky="ew")
@@ -289,10 +317,32 @@ class WrapperGUI:
         master.rowconfigure(row, weight=1)
         row += 1
 
-        bottom = ttk.Frame(master)
-        bottom.grid(row=row, column=0, sticky="ew", padx=10, pady=5)
-        bottom.columnconfigure(0, weight=1)
-        ttk.Button(bottom, text="License", command=self.show_license).grid(row=0, column=1, sticky=tk.E)
+        endpoints_section = CollapsibleSection(master, "Endpoints")
+        endpoints_section.grid(row=row, column=0, sticky="ew", padx=10, pady=5)
+        endpoints_frame = endpoints_section.container
+        endpoints_frame.columnconfigure(1, weight=1)
+        r = 0
+        ttk.Label(endpoints_frame, text="Backend Web UI").grid(row=r, column=0, sticky=tk.W)
+        ttk.Entry(endpoints_frame, textvariable=self.web_endpoint, width=40, state="readonly").grid(row=r, column=1, sticky="ew")
+        self.open_web_btn = ttk.Button(endpoints_frame, text="Open Web GUI", command=self.open_web_gui, state=tk.DISABLED)
+        self.open_web_btn.grid(row=r, column=2, padx=5)
+        r += 1
+        ttk.Label(endpoints_frame, text="Streaming WebSocket /asr").grid(row=r, column=0, sticky=tk.W)
+        ttk.Entry(endpoints_frame, textvariable=self.ws_endpoint, width=40, state="readonly").grid(row=r, column=1, sticky="ew")
+        ttk.Button(endpoints_frame, text="Copy", command=lambda: self.copy_to_clipboard(self.ws_endpoint.get())).grid(row=r, column=2, padx=5)
+        r += 1
+        ttk.Label(endpoints_frame, text="File transcription API").grid(row=r, column=0, sticky=tk.W)
+        ttk.Entry(endpoints_frame, textvariable=self.api_endpoint, width=40, state="readonly").grid(row=r, column=1, sticky="ew")
+        ttk.Button(endpoints_frame, text="Copy", command=lambda: self.copy_to_clipboard(self.api_endpoint.get())).grid(row=r, column=2, padx=5)
+        row += 1
+
+        status = ttk.Frame(master)
+        status.grid(row=row, column=0, sticky="ew", padx=5, pady=(0,5))
+        status.columnconfigure(1, weight=1)
+        ttk.Label(status, textvariable=self.status_var).grid(row=0, column=0, sticky="w")
+        self.progress = ttk.Progressbar(status, maximum=100, mode="determinate")
+        self.progress.grid(row=0, column=1, sticky="ew", padx=(10,0))
+        row += 1
 
         self.backend_proc: subprocess.Popen | None = None
         self.api_proc: subprocess.Popen | None = None
@@ -338,36 +388,28 @@ class WrapperGUI:
         self._launch_server()
 
     def _download_and_start(self, models: list[str]) -> None:
-        dlg = tk.Toplevel(self.master)
-        dlg.title("Downloading models")
-        label_var = tk.StringVar(value="")
-        ttk.Label(dlg, textvariable=label_var).pack(padx=10, pady=10)
-        pb = ttk.Progressbar(dlg, length=300, maximum=100)
-        pb.pack(padx=10, pady=10)
-        dlg.grab_set()
+        self.progress.config(value=0)
 
         def progress(frac: float) -> None:
-            pb.config(value=frac * 100)
+            self.master.after(0, lambda v=frac * 100: self.progress.config(value=v))
 
         def worker() -> None:
             try:
                 for m in models:
                     label = f"Downloading {m}"
-                    self.master.after(0, lambda l=label: label_var.set(l))
+                    self.master.after(0, lambda l=label: self.status_var.set(l))
                     model_manager.download_model(m, progress_cb=progress)
-                self.master.after(0, lambda: self._on_download_success(dlg))
+                self.master.after(0, self._on_download_success)
             except Exception as e:  # pragma: no cover - GUI display
-                self.master.after(0, lambda: self._on_download_failed(dlg, e))
+                self.master.after(0, lambda: self.status_var.set(f"Download failed: {e}"))
+                self.master.after(0, lambda: self.progress.config(value=0))
+                self.master.after(0, lambda: self.start_btn.config(state=tk.NORMAL))
 
         threading.Thread(target=worker, daemon=True).start()
 
-    def _on_download_failed(self, dlg: tk.Toplevel, exc: Exception) -> None:
-        dlg.destroy()
-        messagebox.showerror("Download failed", str(exc))
-        self.start_btn.config(state=tk.NORMAL)
-
-    def _on_download_success(self, dlg: tk.Toplevel) -> None:
-        dlg.destroy()
+    def _on_download_success(self) -> None:
+        self.status_var.set("Download complete")
+        self.progress.config(value=0)
         self._launch_server()
 
     def _launch_server(self) -> None:
@@ -573,6 +615,10 @@ class WrapperGUI:
             self.backend_host.set(self._last_local_backend_host or "127.0.0.1")
             self.api_host.set(self._last_local_api_host or "127.0.0.1")
 
+    def _on_theme_change(self) -> None:
+        self.style.theme_use(self.theme.get())
+        self._save_settings()
+
     def _load_settings(self) -> None:
         config_present = CONFIG_FILE.exists()
         if not config_present and OLD_CONFIG_FILE.exists():
@@ -602,6 +648,7 @@ class WrapperGUI:
         self.save_path.set(data.get("save_path", self.save_path.get()))
         self.save_enabled.set(data.get("save_enabled", False))
         self.allow_external.set(data.get("allow_external", self.allow_external.get()))
+        self.theme.set(data.get("theme", self.theme.get()))
 
     def _save_settings(self) -> None:
         data = {
@@ -618,6 +665,7 @@ class WrapperGUI:
             "save_path": self.save_path.get(),
             "save_enabled": self.save_enabled.get(),
             "allow_external": self.allow_external.get(),
+            "theme": self.theme.get(),
         }
         try:
             CONFIG_DIR.mkdir(parents=True, exist_ok=True)
@@ -630,10 +678,12 @@ class WrapperGUI:
         if self.is_recording:
             self.is_recording = False
             self.record_btn.config(text="Start Recording")
+            self.toolbar_record_btn.config(text=self._icon_play, bootstyle="success")
             self.status_var.set("stopping")
         else:
             self.is_recording = True
             self.record_btn.config(text="Stop Recording")
+            self.toolbar_record_btn.config(text=self._icon_stop, bootstyle="danger")
             self.status_var.set("connecting")
             self.timer_var.set("00:00")
             self.transcript_box.configure(state="normal")
