@@ -67,6 +67,7 @@ CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 CONFIG_FILE = CONFIG_DIR / "settings.json"
 OLD_CONFIG_FILE = Path.home() / ".whisperlivekit-wrapper.json"
 LICENSE_FILE = Path(__file__).resolve().parents[2] / "LICENSE"
+THIRD_PARTY_LICENSES_FILE = Path(__file__).resolve().parents[1] / "licenses.json"
 
 
 class CollapsibleSection(ttk.Frame):
@@ -888,6 +889,20 @@ class WrapperGUI:
         except Exception as e:
             content = f"Failed to load license: {e}"
         text.insert("1.0", content)
+        text.insert("end", "\n\nThird-Party Licenses:\n")
+        try:
+            with open(THIRD_PARTY_LICENSES_FILE, "r", encoding="utf-8") as f:
+                third_party = json.load(f)
+        except Exception:
+            third_party = []
+        for item in third_party:
+            name = item.get("name")
+            version = item.get("version")
+            lic = item.get("license")
+            text.insert("end", f"- {name} {version}: {lic}\n")
+            lic_text = item.get("license_text")
+            if lic_text:
+                text.insert("end", lic_text.strip() + "\n")
         text.config(state="disabled")
 
         link_frame = ttk.Frame(top)
