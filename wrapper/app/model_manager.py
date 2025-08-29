@@ -13,9 +13,22 @@ except Exception:  # pragma: no cover - optional dependency
     snapshot_download = None
     hf_tqdm = None
 
+try:
+    import torch
+    import torch.hub  # type: ignore
+except Exception:  # pragma: no cover - optional dependency
+    torch = None
+
 # Root directory for Hugging Face cache used by the wrapper
 HF_CACHE_DIR = user_cache_path("WhisperLiveKit", "wrapper") / "hf-cache"
 HF_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+# Torch hub cache directory for non-HF models (e.g., Silero VAD)
+TORCH_HUB_DIR = user_cache_path("WhisperLiveKit", "wrapper") / "torch-hub"
+TORCH_HUB_DIR.mkdir(parents=True, exist_ok=True)
+
+# VAD model repository identifier
+VAD_MODEL = "snakers4/silero-vad"
 
 
 def _resolve_repo_id(name: str) -> str:
@@ -30,6 +43,8 @@ def _cache_dir(repo_id: str) -> Path:
 
 def get_model_path(name: str) -> Path:
     """Return local snapshot path for the model (latest if multiple)."""
+    if name == VAD_MODEL:
+        return TORCH_HUB_DIR
     repo = _resolve_repo_id(name)
     base = _cache_dir(repo)
     snapshots = base / "snapshots"
@@ -41,6 +56,11 @@ def get_model_path(name: str) -> Path:
 
 
 def is_model_downloaded(name: str) -> bool:
+    if name == VAD_MODEL:
+        if torch is None:
+            return False
+        torch.hub.set_dir(str(TORCH_HUB_DIR))
+        return any(p.is_dir() for p in TORCH_HUB_DIR.glob("snakers4_silero-vad*"))
     repo = _resolve_repo_id(name)
     snapshots = _cache_dir(repo) / "snapshots"
     return snapshots.exists() and any(p.is_dir() for p in snapshots.iterdir())
@@ -52,6 +72,8 @@ def list_downloaded_models() -> list[str]:
         if (p / "snapshots").exists():
             repo_id = p.name[len("models--") :].replace("--", "/")
             models.append(repo_id)
+    if is_model_downloaded(VAD_MODEL):
+        models.append(VAD_MODEL)
     return models
 
 
@@ -88,7 +110,23 @@ def _make_tqdm_with_cb(progress_cb: Callable[[float], None] | None):
 
 
 def download_model(name: str, progress_cb: Callable[[float], None] | None = None) -> Path:
-    """Download model from Hugging Face into cache directory."""
+    """Download model into cache directory."""
+    if name == VAD_MODEL:
+        if torch is None:
+            raise RuntimeError("torch is required to download VAD model")
+        torch.hub.set_dir(str(TORCH_HUB_DIR))
+        if progress_cb:
+            try:
+                progress_cb(0.0)
+            except Exception:
+                pass
+        torch.hub.load(VAD_MODEL, "silero_vad", trust_repo=True)
+        if progress_cb:
+            try:
+                progress_cb(1.0)
+            except Exception:
+                pass
+        return TORCH_HUB_DIR
     if snapshot_download is None:
         raise RuntimeError("huggingface_hub is required to download models")
     repo = _resolve_repo_id(name)
@@ -97,5 +135,9 @@ def download_model(name: str, progress_cb: Callable[[float], None] | None = None
 
 
 def delete_model(name: str) -> None:
+    if name == VAD_MODEL:
+        for p in TORCH_HUB_DIR.glob("snakers4_silero-vad*"):
+            shutil.rmtree(p, ignore_errors=True)
+        return
     repo = _resolve_repo_id(name)
     shutil.rmtree(_cache_dir(repo), ignore_errors=True)

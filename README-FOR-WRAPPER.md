@@ -41,8 +41,9 @@
   - ffmpeg が見つからない場合 `500 ffmpeg_not_found` を返却。
 - 設定：
     - 入力された設定は環境変数 `WRAPPER_BACKEND_HOST`/`WRAPPER_BACKEND_PORT` と `WRAPPER_API_HOST`/`WRAPPER_API_PORT` としてサブプロセスに渡される。GUI は既定でバックエンドと API を自動起動する（設定 `Auto-start API on launch` のデフォルトはオン）。環境変数 `WRAPPER_API_AUTOSTART=0` もしくはチェックボックスをオフにすると自動起動を無効化できる。ポート番号を指定しなかった場合は空きポートが自動的に割り当てられる。
-    - `Allow external connections` をオンにするとホスト値は `0.0.0.0` に設定され、オフに戻した場合は直前のローカル用ホスト（例：`127.0.0.1`）を復元する。設定は `settings.json` に `allow_external` として永続化される。
-    - Whisper 関連の設定は `model`、`diarization`、`segmentation_model`、`embedding_model` として保存され、未指定の場合は既定値が適用される。旧形式の設定ファイルは存在すれば自動読み込みされ、新項目はデフォルト値で補完される。
+      - `Allow external connections` をオンにするとホスト値は `0.0.0.0` に設定され、オフに戻した場合は直前のローカル用ホスト（例：`127.0.0.1`）を復元する。設定は `settings.json` に `allow_external` として永続化される。
+      - 企業内プロキシなどで独自 CA を利用する場合は `CA bundle for downloads` に証明書ファイルを指定すると、モデルダウンロード時に `REQUESTS_CA_BUNDLE` と `SSL_CERT_FILE` として適用される。
+      - Whisper 関連の設定は `model`、`diarization`、`segmentation_model`、`embedding_model` として保存され、未指定の場合は既定値が適用される。旧形式の設定ファイルは存在すれば自動読み込みされ、新項目はデフォルト値で補完される。
     - GUI 上で編集した設定は各 OS のユーザー設定ディレクトリ（例：`%LOCALAPPDATA%\\WhisperLiveKit\\wrapper\\settings.json`）に保存され、次回起動時に読み込まれる。保存に関わる設定（`save_enabled`、`save_path`）もここに保持される。初回起動時に旧 `~/.whisperlivekit-wrapper.json` が存在すれば自動的に移行される。フォーマット例は `wrapper/config/settings.example.json` を参照。
 
 ## 6. 実行・セットアップ手順
@@ -93,15 +94,16 @@
 ### 13.2 モデルダウンロードと管理
 - ラッパーは `huggingface_hub` を利用してモデルを取得。
 - GUI に「モデル管理」パネルを実装し、以下を提供：
-  - モデル一覧とローカル保存状況の表示。
+  - モデル一覧とローカル保存状況の表示（用途別ラベル付き）。
   - ダウンロード進捗（プログレスバー）表示。
   - 削除ボタンによるローカルモデルの削除。
-  - Whisper モデルに加え、話者分離（Segmentation/Embedding）モデルも同パネルで管理可能。
+  - Whisper・話者分離（Segmentation/Embedding）・VAD モデルを同パネルで管理可能。
 
 ### 13.3 配置ディレクトリと環境変数
 - 既定のモデル保存先：`%LOCALAPPDATA%/Packages/<App>/LocalCache/WhisperLiveKit/hf-cache/`。
 - Whisper モデルはダウンロード後にパスを解決し、`--model_dir` 引数で `whisperlivekit.basic_server` に渡す。
 - `HUGGINGFACE_HUB_CACHE` および `HF_HOME` をこのディレクトリに設定し、話者分離モデルも同キャッシュを利用する。
+- Silero VAD は `TORCH_HOME`/`PYTORCH_HUB_DIR` を `%LOCALAPPDATA%/Packages/<App>/LocalCache/WhisperLiveKit/torch-hub/` に設定して管理。
 
 ### 13.4 CLI/自動化
 - `wrapper.cli.prefetch`（計画中）：GUI 以外でも事前ダウンロードできる CLI を提供。
@@ -118,15 +120,14 @@
 - ダウンロード済みモデルの破損チェックやハッシュ検証は後続タスク。
 
 ### 13.7 実装対象（ラッパー側）
-- `wrapper/app/model_manager.py`：Hugging Face からのモデル取得・削除・状態確認。
-- `wrapper/app/gui.py`：モデル管理 UI、`--model_dir` 連携。
+- `wrapper/app/model_manager.py`：Hugging Face からのモデル取得・削除・状態確認、Silero VAD の torch.hub 管理を統合。
+- `wrapper/app/gui.py`：モデル管理 UI、`--model_dir` 連携、モデル種別の表示。
 - `README-FOR-WRAPPER.md`：本計画と利用手順の記載（本節）。
 - `WRAPPER-DEV-LOG.md`：進捗と決定事項の記録。
 
 ### 13.8 完了定義
-- モデル非同梱の MSIX を配布し、GUI から Whisper モデルをダウンロード・削除できる。
+- モデル非同梱の MSIX を配布し、GUI から Whisper・話者分離・VAD 含む各モデルをダウンロード／削除できる。
 - ダウンロード済みモデルを使用してバックエンド/API を起動できる。
-- 今後の拡張として、話者分離モデルや VAD ダウンロードにも対応できる設計になっている。
 
 ## 6. MSIX 配布と証明書
 
@@ -147,5 +148,7 @@ MSIX 配布時は、以下の証明書・信頼を区別して取り扱います
 - HTTPS が必要な配布では、`wrapper/scripts/make_dev_https_cert.ps1` で自己署名証明書を生成して同梱。運用では公的 CA を推奨。
 
 ### 実装メモ
-- 本ラッパーは既定でオンライン VAD（VAC）の取得をオフにしており、初回起動時に GitHub への TLS が通らない環境でも起動できます（GUI の VAD チェックで有効化可）。
+- 本ラッパーは既定でオンライン VAD（VAC）の取得をオフにしており、GUI のモデル管理画面から Silero VAD を事前ダウンロード可能です。
+- Silero VAD モデルが未ダウンロードの場合、GUI の "Use voice activity controller" チェックボックスは無効化され、モデルを取得した後に自動で有効になります。
+- 企業内プロキシ環境などで外向き TLS の証明書検証に失敗する場合は、`CA bundle for downloads` で証明書ファイルを指定して回避できる。
 - 将来的に「起動前プリフライト（外向き TLS の疎通確認）」を GUI に追加し、失敗時に上記導入手順へ誘導する想定です。

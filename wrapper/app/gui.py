@@ -54,7 +54,15 @@ def _load_whisper_models() -> list[str]:
 WHISPER_MODELS = _load_whisper_models()
 SEGMENTATION_MODELS = ["pyannote/segmentation-3.0", "pyannote/segmentation"]
 EMBEDDING_MODELS = ["pyannote/embedding", "speechbrain/spkrec-ecapa-voxceleb"]
-ALL_MODELS = WHISPER_MODELS + SEGMENTATION_MODELS + EMBEDDING_MODELS
+VAD_MODELS = [model_manager.VAD_MODEL]
+ALL_MODELS = WHISPER_MODELS + SEGMENTATION_MODELS + EMBEDDING_MODELS + VAD_MODELS
+
+MODEL_CATEGORIES = {
+    **{m: "Whisper" for m in WHISPER_MODELS},
+    **{m: "Segmentation" for m in SEGMENTATION_MODELS},
+    **{m: "Embedding" for m in EMBEDDING_MODELS},
+    model_manager.VAD_MODEL: "VAD",
+}
 
 
 CONFIG_DIR = user_config_path("WhisperLiveKit", "wrapper")
@@ -122,6 +130,8 @@ class WrapperGUI:
         # Optional HTTPS for backend
         self.ssl_certfile = tk.StringVar(value=os.getenv("WRAPPER_SSL_CERTFILE", ""))
         self.ssl_keyfile = tk.StringVar(value=os.getenv("WRAPPER_SSL_KEYFILE", ""))
+        # Optional custom CA bundle for outbound HTTPS requests (torch.hub/HF)
+        self.ca_bundle = tk.StringVar(value=os.getenv("WRAPPER_CA_BUNDLE", ""))
         self.diarization = tk.BooleanVar(value=os.getenv("WRAPPER_DIARIZATION") == "1")
         self.segmentation_model = tk.StringVar(
             value=os.getenv("WRAPPER_SEGMENTATION_MODEL", "pyannote/segmentation-3.0")
@@ -146,6 +156,7 @@ class WrapperGUI:
         self.save_enabled = tk.BooleanVar(value=False)
 
         self._load_settings()
+        self._apply_ca_bundle()
 
         self.style = ttkb.Style(theme=self.theme.get())
         self.style.configure("TLabel", padding=4)
@@ -194,6 +205,7 @@ class WrapperGUI:
         server_section.grid(row=row, column=0, sticky="ew", padx=10, pady=5)
         config_frame = server_section.container
         config_frame.columnconfigure(1, weight=1)
+        config_frame.columnconfigure(2, weight=0)
         r = 0
         ttk.Label(config_frame, text="Backend host").grid(row=r, column=0, sticky=tk.W)
         self.backend_host_entry = ttk.Entry(config_frame, textvariable=self.backend_host, width=15)
@@ -241,6 +253,7 @@ class WrapperGUI:
         )
         self.vac_chk.grid(row=r, column=0, columnspan=2, sticky=tk.W)
         r += 1
+        self._apply_vac_availability()
         # HTTPS (optional)
         ttk.Label(config_frame, text="SSL certfile (.pem/.crt)").grid(row=r, column=0, sticky=tk.W)
         self.ssl_cert_entry = ttk.Entry(config_frame, textvariable=self.ssl_certfile)
@@ -249,6 +262,11 @@ class WrapperGUI:
         ttk.Label(config_frame, text="SSL keyfile (.key)").grid(row=r, column=0, sticky=tk.W)
         self.ssl_key_entry = ttk.Entry(config_frame, textvariable=self.ssl_keyfile)
         self.ssl_key_entry.grid(row=r, column=1, sticky="ew")
+        r += 1
+        ttk.Label(config_frame, text="CA bundle for downloads").grid(row=r, column=0, sticky=tk.W)
+        self.ca_bundle_entry = ttk.Entry(config_frame, textvariable=self.ca_bundle)
+        self.ca_bundle_entry.grid(row=r, column=1, sticky="ew")
+        ttk.Button(config_frame, text="Browse", command=self.choose_ca_bundle).grid(row=r, column=2, padx=5)
         r += 1
         self.diarization_chk = ttk.Checkbutton(
             config_frame,
@@ -375,6 +393,7 @@ class WrapperGUI:
             var.trace_add("write", self.update_endpoints)
         # Update endpoints also when external toggle changes
         self.allow_external.trace_add("write", self.update_endpoints)
+        self.ca_bundle.trace_add("write", lambda *_: self._apply_ca_bundle())
         # Save enable toggle should update widgets
         self.save_enabled.trace_add("write", lambda *_: self._update_save_widgets())
         self.update_endpoints()
@@ -447,6 +466,12 @@ class WrapperGUI:
         env["WRAPPER_API_PORT"] = a_port
         env["HUGGINGFACE_HUB_CACHE"] = str(model_manager.HF_CACHE_DIR)
         env["HF_HOME"] = str(model_manager.HF_CACHE_DIR)
+        env["TORCH_HOME"] = str(model_manager.TORCH_HUB_DIR)
+        env["PYTORCH_HUB_DIR"] = str(model_manager.TORCH_HUB_DIR)
+        ca = self.ca_bundle.get().strip()
+        if ca:
+            env["REQUESTS_CA_BUNDLE"] = ca
+            env["SSL_CERT_FILE"] = ca
 
         backend_cmd = [
             sys.executable,
@@ -482,7 +507,7 @@ class WrapperGUI:
             else:
                 backend_cmd += ["--ssl-certfile", cert, "--ssl-keyfile", key]
 
-        self.backend_proc = subprocess.Popen(backend_cmd)
+        self.backend_proc = subprocess.Popen(backend_cmd, env=env)
         time.sleep(2)
         try:
             webbrowser.open(f"http://{b_host}:{b_port}")
@@ -532,6 +557,22 @@ class WrapperGUI:
         )
         if path:
             self.save_path.set(path)
+
+    def choose_ca_bundle(self) -> None:
+        path = filedialog.askopenfilename(
+            filetypes=[("Certificate files", "*.pem *.crt *.cer *.der"), ("All files", "*.*")]
+        )
+        if path:
+            self.ca_bundle.set(path)
+
+    def _apply_ca_bundle(self) -> None:
+        path = self.ca_bundle.get().strip()
+        if path:
+            os.environ["REQUESTS_CA_BUNDLE"] = path
+            os.environ["SSL_CERT_FILE"] = path
+        else:
+            os.environ.pop("REQUESTS_CA_BUNDLE", None)
+            os.environ.pop("SSL_CERT_FILE", None)
 
     def update_endpoints(self, *_: object) -> None:
         b_host = self.backend_host.get()
@@ -628,6 +669,15 @@ class WrapperGUI:
         self.seg_model_combo.config(state=state)
         self.emb_model_combo.config(state=state)
 
+    def _apply_vac_availability(self, running: bool | None = None) -> None:
+        if running is None:
+            running = self.api_proc is not None or self.backend_proc is not None
+        available = model_manager.is_model_downloaded(model_manager.VAD_MODEL)
+        if not available:
+            self.use_vac.set(False)
+        state = tk.NORMAL if (available and not running) else tk.DISABLED
+        self.vac_chk.config(state=state)
+
     def _on_diarization_toggle(self) -> None:
         if self.diarization.get() and not self.hf_logged_in:
             # Revert and notify
@@ -636,7 +686,9 @@ class WrapperGUI:
         self._update_diarization_fields()
 
     def _open_model_manager(self) -> None:
-        ModelManagerDialog(self.master)
+        dlg = ModelManagerDialog(self.master)
+        self.master.wait_window(dlg)
+        self._apply_vac_availability()
 
     def _toggle_allow_external(self) -> None:
         # Save current local hosts when enabling
@@ -679,6 +731,7 @@ class WrapperGUI:
         self.use_vac.set(data.get("use_vac", self.use_vac.get()))
         self.ssl_certfile.set(data.get("ssl_certfile", self.ssl_certfile.get()))
         self.ssl_keyfile.set(data.get("ssl_keyfile", self.ssl_keyfile.get()))
+        self.ca_bundle.set(data.get("ca_bundle", self.ca_bundle.get()))
         self.diarization.set(data.get("diarization", self.diarization.get()))
         self.segmentation_model.set(data.get("segmentation_model", self.segmentation_model.get()))
         self.embedding_model.set(data.get("embedding_model", self.embedding_model.get()))
@@ -699,6 +752,7 @@ class WrapperGUI:
             "use_vac": self.use_vac.get(),
             "ssl_certfile": self.ssl_certfile.get(),
             "ssl_keyfile": self.ssl_keyfile.get(),
+            "ca_bundle": self.ca_bundle.get(),
             "diarization": self.diarization.get(),
             "segmentation_model": self.segmentation_model.get(),
             "embedding_model": self.embedding_model.get(),
@@ -860,7 +914,7 @@ class WrapperGUI:
         self.api_port_entry.config(state=state_entry)
         # Checkbuttons
         self.auto_start_chk.config(state=state_entry)
-        self.vac_chk.config(state=state_entry)
+        self._apply_vac_availability(running)
         # HTTPS entries
         self.ssl_cert_entry.config(state=state_entry)
         self.ssl_key_entry.config(state=state_entry)
@@ -950,23 +1004,30 @@ class ModelManagerDialog(tk.Toplevel):
         self.title("Model Manager")
         self.resizable(False, False)
 
+        ttk.Label(self, text="Model").grid(row=0, column=0, sticky=tk.W, padx=5, pady=2)
+        ttk.Label(self, text="Type").grid(row=0, column=1, sticky=tk.W, padx=5, pady=2)
+        ttk.Label(self, text="Status").grid(row=0, column=2, sticky=tk.W, padx=5, pady=2)
+        ttk.Label(self, text="Progress").grid(row=0, column=3, sticky=tk.W, padx=5, pady=2)
+        ttk.Label(self, text="Action").grid(row=0, column=4, sticky=tk.W, padx=5, pady=2)
+
         self.rows: dict[str, tuple[tk.StringVar, ttk.Progressbar, ttk.Button]] = {}
-        for i, name in enumerate(ALL_MODELS):
+        for i, name in enumerate(ALL_MODELS, start=1):
             ttk.Label(self, text=name).grid(row=i, column=0, sticky=tk.W, padx=5, pady=2)
+            ttk.Label(self, text=MODEL_CATEGORIES.get(name, "")).grid(row=i, column=1, sticky=tk.W)
             status = tk.StringVar()
             if model_manager.is_model_downloaded(name):
                 status.set("downloaded")
             else:
                 status.set("missing")
-            ttk.Label(self, textvariable=status).grid(row=i, column=1, sticky=tk.W)
+            ttk.Label(self, textvariable=status).grid(row=i, column=2, sticky=tk.W)
             pb = ttk.Progressbar(self, length=120)
-            pb.grid(row=i, column=2, padx=5)
+            pb.grid(row=i, column=3, padx=5)
             action = ttk.Button(
                 self,
                 text="Delete" if model_manager.is_model_downloaded(name) else "Download",
                 command=lambda n=name: self._on_action(n),
             )
-            action.grid(row=i, column=3, padx=5)
+            action.grid(row=i, column=4, padx=5)
             self.rows[name] = (status, pb, action)
 
     def _on_action(self, name: str) -> None:
