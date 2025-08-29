@@ -117,6 +117,11 @@ class WrapperGUI:
         self._last_local_api_host = "127.0.0.1"
 
         self.model = tk.StringVar(value=os.getenv("WRAPPER_MODEL", "large-v3"))
+        # Use voice activity controller (Silero via torch.hub). Default off to avoid GitHub SSL/network issues.
+        self.use_vac = tk.BooleanVar(value=os.getenv("WRAPPER_USE_VAC", "0") == "1")
+        # Optional HTTPS for backend
+        self.ssl_certfile = tk.StringVar(value=os.getenv("WRAPPER_SSL_CERTFILE", ""))
+        self.ssl_keyfile = tk.StringVar(value=os.getenv("WRAPPER_SSL_KEYFILE", ""))
         self.diarization = tk.BooleanVar(value=os.getenv("WRAPPER_DIARIZATION") == "1")
         self.segmentation_model = tk.StringVar(
             value=os.getenv("WRAPPER_SEGMENTATION_MODEL", "pyannote/segmentation-3.0")
@@ -227,6 +232,23 @@ class WrapperGUI:
             width=20,
         )
         self.model_combo.grid(row=r, column=1, sticky="ew")
+        r += 1
+        # VAC toggle
+        self.vac_chk = ttk.Checkbutton(
+            config_frame,
+            text="Use voice activity controller (VAD)",
+            variable=self.use_vac,
+        )
+        self.vac_chk.grid(row=r, column=0, columnspan=2, sticky=tk.W)
+        r += 1
+        # HTTPS (optional)
+        ttk.Label(config_frame, text="SSL certfile (.pem/.crt)").grid(row=r, column=0, sticky=tk.W)
+        self.ssl_cert_entry = ttk.Entry(config_frame, textvariable=self.ssl_certfile)
+        self.ssl_cert_entry.grid(row=r, column=1, sticky="ew")
+        r += 1
+        ttk.Label(config_frame, text="SSL keyfile (.key)").grid(row=r, column=0, sticky=tk.W)
+        self.ssl_key_entry = ttk.Entry(config_frame, textvariable=self.ssl_keyfile)
+        self.ssl_key_entry.grid(row=r, column=1, sticky="ew")
         r += 1
         self.diarization_chk = ttk.Checkbutton(
             config_frame,
@@ -401,7 +423,7 @@ class WrapperGUI:
                     model_manager.download_model(m, progress_cb=progress)
                 self.master.after(0, self._on_download_success)
             except Exception as e:  # pragma: no cover - GUI display
-                self.master.after(0, lambda: self.status_var.set(f"Download failed: {e}"))
+                self.master.after(0, lambda err=e: self.status_var.set(f"Download failed: {err}"))
                 self.master.after(0, lambda: self.progress.config(value=0))
                 self.master.after(0, lambda: self.start_btn.config(state=tk.NORMAL))
 
@@ -446,6 +468,19 @@ class WrapperGUI:
             emb = self.embedding_model.get().strip()
             if emb:
                 backend_cmd += ["--embedding-model", emb]
+
+        # Disable VAC by default unless explicitly enabled to prevent torch.hub GitHub SSL failures
+        if not self.use_vac.get():
+            backend_cmd.append("--no-vac")
+
+        # HTTPS
+        cert = self.ssl_certfile.get().strip()
+        key = self.ssl_keyfile.get().strip()
+        if cert or key:
+            if not (cert and key):
+                self.status_var.set("Both SSL certfile and keyfile are required")
+            else:
+                backend_cmd += ["--ssl-certfile", cert, "--ssl-keyfile", key]
 
         self.backend_proc = subprocess.Popen(backend_cmd)
         time.sleep(2)
@@ -581,8 +616,8 @@ class WrapperGUI:
                 self._apply_hf_login_state()
             self.master.after(0, _ok)
         except Exception as e:  # pragma: no cover - external command
-            def _ng():
-                self.status_var.set(f"Hugging Face login failed: {e}")
+            def _ng(err=e):
+                self.status_var.set(f"Hugging Face login failed: {err}")
                 self.hf_logged_in = False
                 self._apply_hf_login_state()
             self.master.after(0, _ng)
@@ -641,6 +676,9 @@ class WrapperGUI:
         elif config_present:
             self.auto_start.set(False)
         self.model.set(data.get("model", self.model.get()))
+        self.use_vac.set(data.get("use_vac", self.use_vac.get()))
+        self.ssl_certfile.set(data.get("ssl_certfile", self.ssl_certfile.get()))
+        self.ssl_keyfile.set(data.get("ssl_keyfile", self.ssl_keyfile.get()))
         self.diarization.set(data.get("diarization", self.diarization.get()))
         self.segmentation_model.set(data.get("segmentation_model", self.segmentation_model.get()))
         self.embedding_model.set(data.get("embedding_model", self.embedding_model.get()))
@@ -658,6 +696,9 @@ class WrapperGUI:
             "api_port": self.api_port.get(),
             "auto_start": self.auto_start.get(),
             "model": self.model.get(),
+            "use_vac": self.use_vac.get(),
+            "ssl_certfile": self.ssl_certfile.get(),
+            "ssl_keyfile": self.ssl_keyfile.get(),
             "diarization": self.diarization.get(),
             "segmentation_model": self.segmentation_model.get(),
             "embedding_model": self.embedding_model.get(),
@@ -698,7 +739,7 @@ class WrapperGUI:
             import sounddevice as sd
             from websockets.sync.client import connect
         except Exception as e:  # pragma: no cover - dependency missing
-            self.master.after(0, lambda: self.status_var.set(f"missing dependency: {e}"))
+            self.master.after(0, lambda err=e: self.status_var.set(f"missing dependency: {err}"))
             self.is_recording = False
             return
 
@@ -745,7 +786,7 @@ class WrapperGUI:
                 websocket.send(json.dumps({"eof": 1}))
                 recv_thread.join(timeout=5)
         except Exception as e:
-            self.master.after(0, lambda: self.status_var.set(f"error: {e}"))
+            self.master.after(0, lambda err=e: self.status_var.set(f"error: {err}"))
         finally:
             self.is_recording = False
             self.master.after(0, self._finalize_recording)
@@ -819,6 +860,10 @@ class WrapperGUI:
         self.api_port_entry.config(state=state_entry)
         # Checkbuttons
         self.auto_start_chk.config(state=state_entry)
+        self.vac_chk.config(state=state_entry)
+        # HTTPS entries
+        self.ssl_cert_entry.config(state=state_entry)
+        self.ssl_key_entry.config(state=state_entry)
         # Diarization also gated by HF login
         self.diarization_chk.config(state=(tk.DISABLED if running or not self.hf_logged_in else tk.NORMAL))
         self.allow_external_chk.config(state=state_entry)
@@ -851,23 +896,32 @@ class WrapperGUI:
                 self.api_host.set("0.0.0.0")
 
     def _init_check_hf_login(self) -> None:
-        # Prefer local token presence over online whoami to avoid network dependency
+        # Validate that a usable, valid HF token exists (not just presence).
         logged = False
         try:
-            # Check common env vars first
-            for k in ("HF_TOKEN", "HUGGINGFACEHUB_API_TOKEN", "HUGGING_FACE_HUB_TOKEN"):
-                if os.getenv(k):
-                    logged = True
-                    break
-            if not logged:
-                try:
+            token: str | None = None
+            try:
+                # Prefer env vars if provided explicitly
+                for k in ("HF_TOKEN", "HUGGINGFACEHUB_API_TOKEN", "HUGGING_FACE_HUB_TOKEN"):
+                    if os.getenv(k):
+                        token = os.getenv(k)
+                        break
+                if token is None:
                     from huggingface_hub import HfFolder  # type: ignore
                     token = HfFolder.get_token()
-                    if token:
-                        logged = True
+            except Exception:
+                token = None
+
+            # If we have a token candidate, verify it via whoami
+            if token:
+                try:
+                    from huggingface_hub import HfApi  # type: ignore
+                    api = HfApi()
+                    _ = api.whoami(token=token)
+                    logged = True
                 except Exception:
-                    pass
-            # Fallback to CLI whoami if still undetermined
+                    logged = False
+            # Otherwise or if above failed, fallback to CLI whoami using stored creds
             if not logged:
                 try:
                     res = subprocess.run(

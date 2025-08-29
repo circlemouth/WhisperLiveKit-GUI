@@ -21,6 +21,32 @@
 
 ---
 
+## 2025-08-29
+- 背景／スコープ：モデルダウンロード時に `tqdm_class` へ `functools.partial` を渡していたため、`'functools.partial' object has no attribute 'get_lock'` が発生。
+- 決定事項：
+  - `wrapper/app/model_manager.py` で `tqdm_class` には部分適用ではなく、コールバックを束縛した `hf_tqdm` のサブクラスを返すファクトリ関数を使用。
+  - GUI 側の遅延実行コールバックで `except Exception as e` の `e` がスコープ外になる問題を `lambda err=e: ...` で修正。
+- 根拠・検討メモ：`huggingface_hub` は `tqdm_class.get_lock()` のようにクラス属性へアクセスするため、クラスを渡す必要がある。`partial` では不足。
+- 未解決事項：`huggingface_hub` の将来バージョン変更により API が変わる可能性の追随。
+- 次アクション：主要モデル（small/base/large）で進捗表示と完了までの動作確認。
+- リスク／課題：環境により `tqdm` 実装差異がある場合の互換性。
+
+---
+
+## 2025-08-30
+- 背景／スコープ：MSIX 配布時にユーザー側で証明書インポートが必要となるケースへの対応（Publisher 証明書、HTTPS サーバー証明書、外向き TLS）。
+- 決定事項：
+  - `README-FOR-WRAPPER.md` に「MSIX 配布と証明書」章を追加し、ユーザー/配布者向けの手順と考慮点を整理。
+  - `wrapper/scripts/install_publisher_cert.ps1` を追加（Publisher.cer を Trusted People へインストール、管理者昇格つき）。
+  - `wrapper/scripts/make_dev_https_cert.ps1` を追加（開発用の自己署名サーバー証明書の PFX/CER 出力）。
+  - VAC（オンライン VAD）既定オフにより、初回起動時に外向き TLS が通らない環境でも起動可能にしておく方針を維持。
+- 根拠・検討メモ：MSIX では Publisher 証明書の信頼が前提。HTTPS や企業 CA は用途が異なるため、ユーザー手順を明確化。
+- 未解決事項：GUI からの証明書プリフライト/自動案内（今後の実装候補）。
+- 次アクション：MSIX ビルド手順の具体化（makeappx/signtool）と Publisher.cer の同梱整備。
+- リスク／課題：証明書の運用誤り（ルート/発行元の違いなど）によるトラブル、管理者権限の確保。
+
+---
+
 ## 2025-09-24
 - 背景／スコープ：UI 要素の配置整理とモダン化準備。
 - 決定事項：

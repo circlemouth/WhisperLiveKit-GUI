@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import shutil
-from functools import partial
 from pathlib import Path
 from typing import Callable
 
@@ -57,14 +56,35 @@ def list_downloaded_models() -> list[str]:
 
 
 class _TqdmWithCallback(hf_tqdm):
-    def __init__(self, *args, progress_cb: Callable[[float], None] | None = None, **kwargs):
-        self._progress_cb = progress_cb
+    """tqdm subclass that reports fractional progress via callback.
+
+    Note: huggingface_hub expects a tqdm class (not an instance) and will
+    access class attributes like `get_lock`. Therefore we cannot pass a
+    functools.partial as `tqdm_class`. Instead, use a small class factory
+    that returns a subclass binding the callback.
+    """
+
+    def __init__(self, *args, **kwargs):
+        # Placeholder; real subclass binds _progress_cb via factory.
+        self._progress_cb = kwargs.pop("_progress_cb", None)
         super().__init__(*args, **kwargs)
 
     def update(self, n=1):  # pragma: no cover - visual feedback only
         super().update(n)
         if self.total and self._progress_cb:
-            self._progress_cb(self.n / self.total)
+            try:
+                self._progress_cb(self.n / self.total)
+            except Exception:
+                pass
+
+
+def _make_tqdm_with_cb(progress_cb: Callable[[float], None] | None):
+    class _BoundTqdm(_TqdmWithCallback):
+        def __init__(self, *args, **kwargs):
+            kwargs["_progress_cb"] = progress_cb
+            super().__init__(*args, **kwargs)
+
+    return _BoundTqdm
 
 
 def download_model(name: str, progress_cb: Callable[[float], None] | None = None) -> Path:
@@ -72,7 +92,7 @@ def download_model(name: str, progress_cb: Callable[[float], None] | None = None
     if snapshot_download is None:
         raise RuntimeError("huggingface_hub is required to download models")
     repo = _resolve_repo_id(name)
-    TqdmCls = partial(_TqdmWithCallback, progress_cb=progress_cb)
+    TqdmCls = _make_tqdm_with_cb(progress_cb)
     return Path(snapshot_download(repo_id=repo, cache_dir=HF_CACHE_DIR, tqdm_class=TqdmCls))
 
 
