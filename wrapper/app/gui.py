@@ -5,7 +5,7 @@ import sys
 import time
 import webbrowser
 import tkinter as tk
-from tkinter import ttk, filedialog, simpledialog, font
+from tkinter import ttk, filedialog, simpledialog, font, messagebox
 import audioop
 import json
 import queue
@@ -13,6 +13,8 @@ import threading
 from pathlib import Path
 import shutil
 from platformdirs import user_config_path
+
+from . import model_manager
 
 
 def _load_whisper_models() -> list[str]:
@@ -49,6 +51,7 @@ def _load_whisper_models() -> list[str]:
 WHISPER_MODELS = _load_whisper_models()
 SEGMENTATION_MODELS = ["pyannote/segmentation-3.0", "pyannote/segmentation"]
 EMBEDDING_MODELS = ["pyannote/embedding", "speechbrain/spkrec-ecapa-voxceleb"]
+ALL_MODELS = WHISPER_MODELS + SEGMENTATION_MODELS + EMBEDDING_MODELS
 
 
 CONFIG_DIR = user_config_path("WhisperLiveKit", "wrapper")
@@ -177,6 +180,12 @@ class WrapperGUI:
             width=20,
         )
         self.model_combo.grid(row=r, column=1, sticky="ew")
+        r += 1
+        ttk.Button(
+            config_frame,
+            text="Manage models",
+            command=self._open_model_manager,
+        ).grid(row=r, column=1, sticky=tk.E)
         r += 1
         self.diarization_chk = ttk.Checkbutton(
             config_frame,
@@ -311,6 +320,57 @@ class WrapperGUI:
     def start_api(self):
         if self.api_proc or self.backend_proc:
             return
+        missing: list[str] = []
+        model = self.model.get().strip()
+        if model and not model_manager.is_model_downloaded(model):
+            missing.append(model)
+        if self.diarization.get() and self.hf_logged_in:
+            seg = self.segmentation_model.get().strip()
+            if seg and not model_manager.is_model_downloaded(seg):
+                missing.append(seg)
+            emb = self.embedding_model.get().strip()
+            if emb and not model_manager.is_model_downloaded(emb):
+                missing.append(emb)
+        if missing:
+            self.start_btn.config(state=tk.DISABLED)
+            self._download_and_start(missing)
+            return
+        self._launch_server()
+
+    def _download_and_start(self, models: list[str]) -> None:
+        dlg = tk.Toplevel(self.master)
+        dlg.title("Downloading models")
+        label_var = tk.StringVar(value="")
+        ttk.Label(dlg, textvariable=label_var).pack(padx=10, pady=10)
+        pb = ttk.Progressbar(dlg, length=300, maximum=100)
+        pb.pack(padx=10, pady=10)
+        dlg.grab_set()
+
+        def progress(frac: float) -> None:
+            pb.config(value=frac * 100)
+
+        def worker() -> None:
+            try:
+                for m in models:
+                    label = f"Downloading {m}"
+                    self.master.after(0, lambda l=label: label_var.set(l))
+                    model_manager.download_model(m, progress_cb=progress)
+                self.master.after(0, lambda: self._on_download_success(dlg))
+            except Exception as e:  # pragma: no cover - GUI display
+                self.master.after(0, lambda: self._on_download_failed(dlg, e))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_download_failed(self, dlg: tk.Toplevel, exc: Exception) -> None:
+        dlg.destroy()
+        messagebox.showerror("Download failed", str(exc))
+        self.start_btn.config(state=tk.NORMAL)
+
+    def _on_download_success(self, dlg: tk.Toplevel) -> None:
+        dlg.destroy()
+        self._launch_server()
+
+    def _launch_server(self) -> None:
         b_host = self.backend_host.get()
         b_port = self.backend_port.get()
         a_host = self.api_host.get()
@@ -321,6 +381,8 @@ class WrapperGUI:
         env["WRAPPER_BACKEND_PORT"] = b_port
         env["WRAPPER_API_HOST"] = a_host
         env["WRAPPER_API_PORT"] = a_port
+        env["HUGGINGFACE_HUB_CACHE"] = str(model_manager.HF_CACHE_DIR)
+        env["HF_HOME"] = str(model_manager.HF_CACHE_DIR)
 
         backend_cmd = [
             sys.executable,
@@ -333,7 +395,7 @@ class WrapperGUI:
         ]
         model = self.model.get().strip()
         if model:
-            backend_cmd += ["--model", model]
+            backend_cmd += ["--model_dir", str(model_manager.get_model_path(model))]
         if self.diarization.get() and self.hf_logged_in:
             backend_cmd.append("--diarization")
             seg = self.segmentation_model.get().strip()
@@ -495,6 +557,9 @@ class WrapperGUI:
             self.diarization.set(False)
             self.status_var.set("Diarization requires Hugging Face login")
         self._update_diarization_fields()
+
+    def _open_model_manager(self) -> None:
+        ModelManagerDialog(self.master)
 
     def _toggle_allow_external(self) -> None:
         # Save current local hosts when enabling
@@ -773,6 +838,58 @@ class WrapperGUI:
             self.diarization.set(False)
         # Update controls with current running state
         self._set_running_state(self.api_proc is not None or self.backend_proc is not None)
+
+
+class ModelManagerDialog(tk.Toplevel):
+    def __init__(self, master: tk.Misc):
+        super().__init__(master)
+        self.title("Model Manager")
+        self.resizable(False, False)
+
+        self.rows: dict[str, tuple[tk.StringVar, ttk.Progressbar, ttk.Button]] = {}
+        for i, name in enumerate(ALL_MODELS):
+            ttk.Label(self, text=name).grid(row=i, column=0, sticky=tk.W, padx=5, pady=2)
+            status = tk.StringVar()
+            if model_manager.is_model_downloaded(name):
+                status.set("downloaded")
+            else:
+                status.set("missing")
+            ttk.Label(self, textvariable=status).grid(row=i, column=1, sticky=tk.W)
+            pb = ttk.Progressbar(self, length=120)
+            pb.grid(row=i, column=2, padx=5)
+            action = ttk.Button(
+                self,
+                text="Delete" if model_manager.is_model_downloaded(name) else "Download",
+                command=lambda n=name: self._on_action(n),
+            )
+            action.grid(row=i, column=3, padx=5)
+            self.rows[name] = (status, pb, action)
+
+    def _on_action(self, name: str) -> None:
+        status, pb, btn = self.rows[name]
+        if model_manager.is_model_downloaded(name):
+            model_manager.delete_model(name)
+            status.set("missing")
+            btn.config(text="Download")
+            pb.config(value=0)
+        else:
+            btn.config(state=tk.DISABLED)
+
+            def progress(frac: float) -> None:
+                pb.config(value=frac * 100)
+
+            def worker() -> None:
+                try:
+                    model_manager.download_model(name, progress_cb=progress)
+                    status.set("downloaded")
+                    btn.config(text="Delete")
+                except Exception as e:  # pragma: no cover - GUI display
+                    status.set(str(e))
+                finally:
+                    btn.config(state=tk.NORMAL)
+                    pb.config(value=0)
+
+            threading.Thread(target=worker, daemon=True).start()
 
 
 def main():
