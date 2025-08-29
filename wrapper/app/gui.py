@@ -253,6 +253,12 @@ class WrapperGUI:
             pass
         self.style.configure("TLabel", padding=6)
         self.style.configure("TButton", padding=10)
+        # Start/Stop（primary/danger）も Manage models と同じ高さになるよう統一
+        try:
+            self.style.configure("primary.TButton", padding=10)
+            self.style.configure("danger.TButton", padding=10)
+        except Exception:
+            pass
         self.style.configure("TLabelframe", padding=12)
         # 見出しの視認性を向上（サイズ増、プライマリ色）
         primary_fg = None
@@ -266,6 +272,8 @@ class WrapperGUI:
             font=("Segoe UI", 14, "bold"),
             foreground=primary_fg if primary_fg else None,
         )
+        # 録音時間表示用の大きめフォント
+        self.style.configure("Timer.TLabel", font=("Segoe UI", 16, "bold"))
 
         master.columnconfigure(0, weight=1)
 
@@ -280,18 +288,7 @@ class WrapperGUI:
         self.header = header
         row += 1
 
-        # Toolbar with icon buttons
-        toolbar = ttk.Frame(master)
-        toolbar.grid(row=row, column=0, sticky="ew", padx=10, pady=5)
-        self._icon_play = Emoji.get('black right-pointing triangle').char
-        self._icon_stop = Emoji.get('black square button').char
-        gear = Emoji.get('gear').char
-        self.toolbar_record_btn = ttk.Button(toolbar, text=self._icon_play, width=3, bootstyle="success", command=self.toggle_recording)
-        self.toolbar_record_btn.pack(side="left", padx=(0,5))
-        ttk.Button(toolbar, text=gear, width=3, command=self._open_model_manager).pack(side="left")
-        # 高さ計算用に参照保持
-        self.toolbar = toolbar
-        row += 1
+        # Toolbar（再生/設定アイコン）は機能重複のため削除
 
         # 2カラムのメインコンテンツ領域（PanedWindowで左右同高さ）
         content = ttk.Panedwindow(master, orient=tk.HORIZONTAL)
@@ -309,26 +306,7 @@ class WrapperGUI:
         self.left_col = left_col
         self.server_frame = server_frame
         r = 0
-        ttk.Label(config_frame, text="Backend host").grid(row=r, column=0, sticky=tk.W)
-        self.backend_host_entry = ttk.Entry(config_frame, textvariable=self.backend_host, width=15)
-        self.backend_host_entry.grid(row=r, column=1, sticky="ew")
-        r += 1
-        ttk.Label(config_frame, text="Backend port").grid(row=r, column=0, sticky=tk.W)
-        self.backend_port_entry = ttk.Entry(config_frame, textvariable=self.backend_port, width=15)
-        self.backend_port_entry.grid(row=r, column=1, sticky="ew")
-        r += 1
-        ttk.Label(config_frame, text="API host").grid(row=r, column=0, sticky=tk.W)
-        self.api_host_entry = ttk.Entry(config_frame, textvariable=self.api_host, width=15)
-        self.api_host_entry.grid(row=r, column=1, sticky="ew")
-        r += 1
-        ttk.Label(config_frame, text="API port").grid(row=r, column=0, sticky=tk.W)
-        self.api_port_entry = ttk.Entry(config_frame, textvariable=self.api_port, width=15)
-        self.api_port_entry.grid(row=r, column=1, sticky="ew")
-        r += 1
-        self.auto_start_chk = ttk.Checkbutton(config_frame, text="Auto-start API on launch", variable=self.auto_start)
-        self.auto_start_chk.grid(row=r, column=0, columnspan=2, sticky=tk.W)
-        r += 1
-        # External connections toggle
+        # 1) 接続ポリシー（外部公開）
         self.allow_external_chk = ttk.Checkbutton(
             config_frame,
             text="Allow external connections (0.0.0.0)",
@@ -337,6 +315,29 @@ class WrapperGUI:
         )
         self.allow_external_chk.grid(row=r, column=0, columnspan=2, sticky=tk.W)
         r += 1
+        # 2) バックエンド接続先（ホスト/ポート）
+        ttk.Label(config_frame, text="Backend host").grid(row=r, column=0, sticky=tk.W)
+        self.backend_host_entry = ttk.Entry(config_frame, textvariable=self.backend_host, width=15)
+        self.backend_host_entry.grid(row=r, column=1, sticky="ew")
+        r += 1
+        ttk.Label(config_frame, text="Backend port").grid(row=r, column=0, sticky=tk.W)
+        self.backend_port_entry = ttk.Entry(config_frame, textvariable=self.backend_port, width=15)
+        self.backend_port_entry.grid(row=r, column=1, sticky="ew")
+        r += 1
+        # 3) API 接続先（ホスト/ポート）
+        ttk.Label(config_frame, text="API host").grid(row=r, column=0, sticky=tk.W)
+        self.api_host_entry = ttk.Entry(config_frame, textvariable=self.api_host, width=15)
+        self.api_host_entry.grid(row=r, column=1, sticky="ew")
+        r += 1
+        ttk.Label(config_frame, text="API port").grid(row=r, column=0, sticky=tk.W)
+        self.api_port_entry = ttk.Entry(config_frame, textvariable=self.api_port, width=15)
+        self.api_port_entry.grid(row=r, column=1, sticky="ew")
+        r += 1
+        # 4) 起動ポリシー
+        self.auto_start_chk = ttk.Checkbutton(config_frame, text="Auto-start API on launch", variable=self.auto_start)
+        self.auto_start_chk.grid(row=r, column=0, columnspan=2, sticky=tk.W)
+        r += 1
+        # 5) モデル選択と管理
         ttk.Label(config_frame, text="Whisper model").grid(row=r, column=0, sticky=tk.W)
         self.model_combo = ttk.Combobox(
             config_frame,
@@ -347,7 +348,7 @@ class WrapperGUI:
         )
         self.model_combo.grid(row=r, column=1, sticky="ew")
         r += 1
-        # VAC toggle
+        # 6) VAD（音声活動）
         self.vac_chk = ttk.Checkbutton(
             config_frame,
             text="Use voice activity controller (VAD)",
@@ -356,11 +357,16 @@ class WrapperGUI:
         self.vac_chk.grid(row=r, column=0, columnspan=2, sticky=tk.W)
         r += 1
         ttk.Label(config_frame, text="VAD certificate").grid(row=r, column=0, sticky=tk.W)
-        self.vad_cert_entry = ttk.Entry(config_frame, textvariable=self.vad_certfile, width=20)
-        self.vad_cert_entry.grid(row=r, column=1, sticky="ew")
-        self.vad_cert_browse = ttk.Button(config_frame, text="...", width=3, command=self.choose_vad_certfile)
-        self.vad_cert_browse.grid(row=r, column=2, padx=2)
+        cert_input = ttk.Frame(config_frame)
+        cert_input.grid(row=r, column=1, sticky="ew")
+        cert_input.columnconfigure(0, weight=1)
+        self.vad_cert_entry = ttk.Entry(cert_input, textvariable=self.vad_certfile, width=20)
+        self.vad_cert_entry.grid(row=0, column=0, sticky="ew")
+        self.vad_cert_browse = ttk.Button(cert_input, text="Browse...", command=self.choose_vad_certfile)
+        self.vad_cert_browse.grid(row=0, column=1, padx=(4,0))
         r += 1
+        # 7) 話者分離（HF ログイン → 有効化 → モデル指定）
+        # Hugging Face Login は Start/Stop 行の左に移動
         self.diarization_chk = ttk.Checkbutton(
             config_frame,
             text="Enable diarization",
@@ -389,16 +395,7 @@ class WrapperGUI:
         )
         self.emb_model_combo.grid(row=r, column=1, sticky="ew")
         r += 1
-        self.hf_login_btn = ttk.Button(config_frame, text="Hugging Face Login", command=self.login_hf)
-        self.hf_login_btn.grid(row=r, column=0, columnspan=2, sticky=tk.W)
-        r += 1
-        ttk.Button(
-            config_frame,
-            text="Manage models",
-            command=self._open_model_manager,
-        ).grid(row=r, column=0, columnspan=2, sticky=tk.W)
-        r += 1
-        # Hint about diarization requiring HF login
+        # ダイアリゼーションに関する補足
         self.hf_hint = tk.Label(
             config_frame,
             text="話者分離（Diarization）を有効化するには Hugging Face へのログインが必要です。",
@@ -407,13 +404,21 @@ class WrapperGUI:
         )
         self.hf_hint.grid(row=r, column=0, columnspan=2, sticky=tk.W)
         r += 1
+        # 8) 起動/停止操作
         start_stop = ttk.Frame(config_frame)
         start_stop.grid(row=r, column=0, columnspan=2, sticky="ew", pady=(4, 0))
+        # 左端に Manage models と Hugging Face Login を配置
+        left_actions = ttk.Frame(start_stop)
+        left_actions.grid(row=0, column=0, sticky="w")
+        ttk.Button(left_actions, text="Manage models", command=self._open_model_manager).pack(side="left", padx=(0, 6))
+        self.hf_login_btn = ttk.Button(left_actions, text="Hugging Face Login", command=self.login_hf)
+        self.hf_login_btn.pack(side="left")
+        # 右端に Start/Stop を配置
         start_stop.columnconfigure(0, weight=1)
         self.start_btn = ttk.Button(start_stop, text="Start API", command=self.start_api, bootstyle="primary")
-        self.start_btn.grid(row=0, column=1, padx=(0, 6), sticky="e")
+        self.start_btn.grid(row=0, column=1, padx=(0, 6), pady=2, sticky="e")
         self.stop_btn = ttk.Button(start_stop, text="Stop API", command=self.stop_api, bootstyle="danger")
-        self.stop_btn.grid(row=0, column=2, sticky="e")
+        self.stop_btn.grid(row=0, column=2, pady=2, sticky="e")
 
         # 右カラム: Recorder（PanedWindow右ペイン）
         right_panel = ttk.Frame(content)
@@ -430,21 +435,13 @@ class WrapperGUI:
         r = 0
         self.record_btn = ttk.Button(record_frame, text="Start Recording", command=self.toggle_recording)
         self.record_btn.grid(row=r, column=0, sticky=tk.W)
+        # 録音時間はボタンの右隣に大きく表示
+        self.timer_label = ttk.Label(record_frame, textvariable=self.timer_var, style="Timer.TLabel")
+        self.timer_label.grid(row=r, column=1, sticky=tk.W, padx=(8, 0))
         r += 1
-        ttk.Label(record_frame, textvariable=self.timer_var).grid(row=r, column=0, sticky=tk.W)
-        ttk.Progressbar(record_frame, variable=self.level_var, maximum=1.0).grid(row=r, column=1, columnspan=2, sticky="ew")
+        ttk.Progressbar(record_frame, variable=self.level_var, maximum=1.0).grid(row=r, column=0, columnspan=3, sticky="ew")
         r += 1
-        # Save options within Recorder
-        self.save_enabled_chk = ttk.Checkbutton(record_frame, text="Save transcript to file", variable=self.save_enabled, command=self._update_save_widgets)
-        self.save_enabled_chk.grid(row=r, column=0, columnspan=2, sticky=tk.W)
-        r += 1
-        ttk.Label(record_frame, text="Save path").grid(row=r, column=0, sticky=tk.W)
-        self.save_entry = ttk.Entry(record_frame, textvariable=self.save_path)
-        self.save_entry.grid(row=r, column=1, sticky="ew")
-        self.save_browse_btn = ttk.Button(record_frame, text="Browse", command=self.choose_save_path)
-        self.save_browse_btn.grid(row=r, column=2, padx=5)
-        r += 1
-        # Transcript area inside Recorder
+        # Transcript area inside Recorder (moved above Save options)
         trans_frame = ttk.Labelframe(record_frame, text="Transcript")
         trans_frame.grid(row=r, column=0, columnspan=3, sticky="nsew", pady=(5,0))
         trans_frame.columnconfigure(0, weight=1)
@@ -459,24 +456,45 @@ class WrapperGUI:
         scroll = ttk.Scrollbar(trans_frame, orient="vertical", command=self.transcript_box.yview)
         scroll.grid(row=0, column=1, sticky="ns")
         self.transcript_box.configure(yscrollcommand=scroll.set)
+        r += 1
+        # Save options within Recorder
+        self.save_enabled_chk = ttk.Checkbutton(record_frame, text="Save transcript to file", variable=self.save_enabled, command=self._update_save_widgets)
+        self.save_enabled_chk.grid(row=r, column=0, columnspan=2, sticky=tk.W)
+        r += 1
+        ttk.Label(record_frame, text="Save path").grid(row=r, column=0, sticky=tk.W)
+        self.save_entry = ttk.Entry(record_frame, textvariable=self.save_path)
+        self.save_entry.grid(row=r, column=1, sticky="ew")
+        self.save_browse_btn = ttk.Button(record_frame, text="Browse", command=self.choose_save_path)
+        self.save_browse_btn.grid(row=r, column=2, padx=5)
+        r += 1
         # Endpoints（左カラム下）
         endpoints_frame = ttk.Labelframe(left_col, text="Endpoints")
         endpoints_frame.grid(row=1, column=0, sticky="ew", pady=(5, 0))
         endpoints_frame.columnconfigure(1, weight=1)
+        endpoints_frame.columnconfigure(2, weight=0)
         self.endpoints_frame = endpoints_frame
         r = 0
         ttk.Label(endpoints_frame, text="Backend Web UI").grid(row=r, column=0, sticky=tk.W)
         ttk.Entry(endpoints_frame, textvariable=self.web_endpoint, width=40, state="readonly").grid(row=r, column=1, sticky="ew")
         self.open_web_btn = ttk.Button(endpoints_frame, text="Open Web GUI", command=self.open_web_gui, state=tk.DISABLED)
-        self.open_web_btn.grid(row=r, column=2, padx=5)
+        self.open_web_btn.grid(row=r, column=2, padx=5, sticky="ew")
         r += 1
         ttk.Label(endpoints_frame, text="Streaming WebSocket /asr").grid(row=r, column=0, sticky=tk.W)
         ttk.Entry(endpoints_frame, textvariable=self.ws_endpoint, width=40, state="readonly").grid(row=r, column=1, sticky="ew")
-        ttk.Button(endpoints_frame, text="Copy", command=lambda: self.copy_to_clipboard(self.ws_endpoint.get())).grid(row=r, column=2, padx=5)
+        self.copy_ws_btn = ttk.Button(endpoints_frame, text="Copy", command=lambda: self.copy_to_clipboard(self.ws_endpoint.get()))
+        self.copy_ws_btn.grid(row=r, column=2, padx=5, sticky="ew")
         r += 1
         ttk.Label(endpoints_frame, text="File transcription API").grid(row=r, column=0, sticky=tk.W)
         ttk.Entry(endpoints_frame, textvariable=self.api_endpoint, width=40, state="readonly").grid(row=r, column=1, sticky="ew")
-        ttk.Button(endpoints_frame, text="Copy", command=lambda: self.copy_to_clipboard(self.api_endpoint.get())).grid(row=r, column=2, padx=5)
+        self.copy_api_btn = ttk.Button(endpoints_frame, text="Copy", command=lambda: self.copy_to_clipboard(self.api_endpoint.get()))
+        self.copy_api_btn.grid(row=r, column=2, padx=5, sticky="ew")
+        # 列2の最小幅を Open Web GUI の要求幅に合わせる
+        try:
+            endpoints_frame.update_idletasks()
+            col2_min = self.open_web_btn.winfo_reqwidth()
+            endpoints_frame.columnconfigure(2, minsize=col2_min)
+        except Exception:
+            pass
         row += 1
 
         # ステータスバーは最下段に全幅で配置
@@ -985,12 +1003,23 @@ class WrapperGUI:
         if self.is_recording:
             self.is_recording = False
             self.record_btn.config(text="Start Recording")
-            self.toolbar_record_btn.config(text=self._icon_play, bootstyle="success")
+            try:
+                if hasattr(self, "toolbar_record_btn"):
+                    # ツールバーが存在する場合のみ反映
+                    icon_play = Emoji.get('black right-pointing triangle').char
+                    self.toolbar_record_btn.config(text=icon_play, bootstyle="success")
+            except Exception:
+                pass
             self.status_var.set("stopping")
         else:
             self.is_recording = True
             self.record_btn.config(text="Stop Recording")
-            self.toolbar_record_btn.config(text=self._icon_stop, bootstyle="danger")
+            try:
+                if hasattr(self, "toolbar_record_btn"):
+                    icon_stop = Emoji.get('black square button').char
+                    self.toolbar_record_btn.config(text=icon_stop, bootstyle="danger")
+            except Exception:
+                pass
             self.status_var.set("connecting")
             self.timer_var.set("00:00")
             self.transcript_box.configure(state="normal")
@@ -1119,7 +1148,7 @@ class WrapperGUI:
     def _set_running_state(self, running: bool) -> None:
         # Lock settings that affect server process while running
         state_entry = tk.DISABLED if running else tk.NORMAL
-        # Entries
+        # Entries（host/port）
         self.backend_host_entry.config(state=state_entry)
         self.backend_port_entry.config(state=state_entry)
         self.api_host_entry.config(state=state_entry)

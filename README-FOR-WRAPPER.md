@@ -23,7 +23,7 @@
 
 ## 5. インターフェース
 - CLI/GUI：
-    - `python -m wrapper.cli.main` で設定 GUI を起動。GUI は起動時に空きポートを自動選択して入力欄に表示し、必要に応じて編集できる。`Start API` でサービスを起動、`Stop API` で停止できる。`Auto-start API on launch` を有効にすると起動時に自動開始する。Whisper モデルは `Whisper model` のプルダウンから選択でき（`available_models.md` に掲載された公式モデル一覧）、`Enable diarization` をオンにすると話者分離が有効になる。`Segmentation model` と `Embedding model` は既定モデルをプルダウンから選ぶか、任意の Hugging Face モデル ID を手入力できる。モデル取得には `Hugging Face Login` ボタンからトークンを入力してログインする。その直下の `Manage models` ボタンからダウンロード済みモデルの一覧表示、用途表示、進捗確認、削除を行える。選択した Whisper モデルや話者分離モデルがローカルに存在しない場合は `Start API` を押すと自動ダウンロードが始まり、完了後にサーバーが起動する。
+    - `python -m wrapper.cli.main` で設定 GUI を起動。GUI は起動時に空きポートを自動選択して入力欄に表示し、必要に応じて編集できる。`Start API` でサービスを起動、`Stop API` で停止できる。`Auto-start API on launch` を有効にすると起動時に自動開始する。Whisper モデルは `Whisper model` のプルダウンから選択でき（`available_models.md` に掲載された公式モデル一覧）、`Enable diarization` をオンにすると話者分離が有効になる。`Segmentation model` と `Embedding model` は既定モデルをプルダウンから選ぶか、任意の Hugging Face モデル ID を手入力できる。モデル取得・管理系は Start/Stop の行の左端に集約され、`Manage models`（ダウンロード/削除/用途表示）と `Hugging Face Login`（トークン入力・検証）が配置される。選択した Whisper モデルや話者分離モデルがローカルに存在しない場合は `Start API` を押すと自動ダウンロードが始まり、完了後にサーバーが起動する。
     - `Use voice activity controller (VAD)` チェックボックスで Silero VAD を利用できる。VAD 用証明書ファイルを `VAD certificate` で既存のファイルとして指定するまで有効化できない。無効なパスや未指定の場合は自動的にロックされる。
     - ネットワーク公開：`Allow external connections (0.0.0.0)` をオンにすると、バックエンドおよび API を `0.0.0.0` で待受（全インターフェース bind）する。Endpoints 欄には検出したLAN内の実IP（例：`192.168.x.x`）を用いたURLが直接表示され、外部端末からアクセスしやすい形式になる。LAN/WAN に公開されるため、ファイアウォール設定とポート開放の可否を必ず確認すること（セキュリティ上の推奨：必要時のみオン）。
     - 稼働中ロック：`Start API` でサーバー稼働中は、ホスト/ポート、モデル設定、話者分離設定、外部接続許可、Auto-start、HF ログインなど、サーバー挙動に影響する設定を自動でロック（無効化）する。`Stop API` で停止すると再び編集可能になる。
