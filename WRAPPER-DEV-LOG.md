@@ -35,8 +35,10 @@
   - 右ペイン（Recorder）の `minsize` を「Server Settings セクション幅の 1/2」に動的追従するよう変更。`server_frame`/`left_col`/`content` の `<Configure>` 時に `_update_right_min_width` を実行し、`paneconfigure(minsize=...)` を更新。
 - 幅配分の是正：
   - PanedWindow の左右 `weight` をともに 1 に設定し、縮小時に右ペインのみが過度に削られないよう分配を均等化。
- - 左ペイン最小幅：
-   - 左（Server/Endpoints）ペインの `minsize` を「Server Settings 現在幅の 2/3」に動的追従。右の 1/2 とセットで下限をもたせ、極端な潰れ/偏りを防止。
+- 横幅制約の撤廃：
+  - 左右ペイン（Server/Endpoints, Recorder）の `minsize` 設定と動的更新を撤廃。横幅はユーザー操作および PanedWindow の配分に全面委譲。
+ - 左ペイン比率固定：
+   - 左（Server/Endpoints）の横幅を PanedWindow 全体の 2/3 に固定し、スプリッタ操作やウィンドウリサイズ時にも `_enforce_fixed_left_width` で再適用。ユーザーによるドラッグ直後にも `after_idle` で比率へスナップさせる。
 - 実装箇所：`wrapper/app/gui.py` の `content` を `ttk.Panedwindow` に変更し、`left_col` と `right_panel` を `add(..., weight=0/1)` で追加。`_init_paned_constraints()` を新設し、右ペインの `minsize` を初期幅の 2/3 に設定。
 - 根拠：PanedWindow の寸法伝播により左右の高さを常時一致させ、初期表示時の高さズレとイベント順序依存を解消するため。
 - 未解決事項：極端に狭いウィンドウでの左カラム項目の折返し見栄え（必要に応じてスクロール化を検討）。

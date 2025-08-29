@@ -525,16 +525,16 @@ class WrapperGUI:
             self.content.add(self.right_panel, weight=1)
         except Exception:
             pass
-        # 初期レイアウト確定後に右ペインの最小幅を
-        # 「Server Settings セクション幅の 1/2」に追従させる
-        self.master.after(120, self._init_paned_constraints)
+        # 左カラム（Server+Endpoints）の横幅を全体の 2/3 に固定し、ユーザー操作でも維持
+        self._left_width_ratio = 2 / 3
         try:
-            # 左セクションの幅変化に追従
-            self.server_frame.bind("<Configure>", self._update_pane_minsizes, add=True)
-            self.left_col.bind("<Configure>", self._update_pane_minsizes, add=True)
-            self.content.bind("<Configure>", self._update_pane_minsizes, add=True)
+            for seq in ("<Configure>", "<ButtonPress-1>", "<B1-Motion>", "<ButtonRelease-1>"):
+                self.content.bind(seq, self._enforce_fixed_left_width, add=True)
+            # 初期適用
+            self.master.after(120, self._apply_fixed_left_width)
         except Exception:
             pass
+        # 最小幅の動的制約は廃止（自由な横幅調整を許容）
         # 左カラム高さに Recorder をキャップ
         try:
             for w in (self.server_frame, self.endpoints_frame, self.left_col):
@@ -550,6 +550,25 @@ class WrapperGUI:
         except Exception:
             pass
         self._lock_minsize_by_content()
+
+    # --- 左ペイン幅の固定（全体の 2/3） ---
+    def _apply_fixed_left_width(self) -> None:
+        try:
+            self.master.update_idletasks()
+            total_w = max(self.content.winfo_width(), 1)
+            left_w = int(total_w * self._left_width_ratio)
+            try:
+                self.content.sashpos(0, left_w)
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+    def _enforce_fixed_left_width(self, *_: object) -> None:
+        try:
+            self.master.after_idle(self._apply_fixed_left_width)
+        except Exception:
+            pass
 
     def _lock_minsize_by_content(self) -> None:
         # 全要素が見切れない最小サイズを設定
@@ -575,39 +594,7 @@ class WrapperGUI:
         except Exception:
             pass
 
-    # --- PanedWindow に基づく Recorder 最小幅設定 ---
-    def _init_paned_constraints(self) -> None:
-        try:
-            self.master.update_idletasks()
-            # 初期化時点でもサーバーセクション幅に基づいて設定
-            sw = self.server_frame.winfo_width()
-            if sw <= 1:
-                self.master.after(120, self._init_paned_constraints)
-                return
-            self._update_pane_minsizes()
-        except Exception:
-            pass
-
-    def _update_pane_minsizes(self, *_: object) -> None:
-        # 左ペインの最小幅: Server Settings 幅の 2/3
-        # 右ペイン（Recorder）の最小幅: Server Settings 幅の 1/2
-        try:
-            self.master.update_idletasks()
-            server_w = self.server_frame.winfo_width()
-            if server_w <= 1:
-                return
-            left_min = max(int(server_w * 2 / 3), 1)
-            right_min = max(int(server_w / 2), 1)
-            try:
-                self.content.paneconfigure(self.left_col, minsize=left_min)
-            except Exception:
-                pass
-            try:
-                self.content.paneconfigure(self.right_panel, minsize=right_min)
-            except Exception:
-                pass
-        except Exception:
-            pass
+    # （横幅制約の実装は撤廃）
 
     def _cap_recorder_height_to_left(self, *_: object) -> None:
         # Recorder の縦サイズが左カラム（Server+Endpoints）の合計高さを超えないように上限キャップ
