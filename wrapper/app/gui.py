@@ -276,6 +276,8 @@ class WrapperGUI:
         header.columnconfigure(1, weight=1)
         ttk.Label(header, text="WhisperLiveKit Wrapper", style="Header.TLabel").grid(row=0, column=0, sticky="w")
         ttk.Button(header, text="License", command=self.show_license).grid(row=0, column=2, sticky="e")
+        # 高さ計算用に参照保持
+        self.header = header
         row += 1
 
         # Toolbar with icon buttons
@@ -287,20 +289,18 @@ class WrapperGUI:
         self.toolbar_record_btn = ttk.Button(toolbar, text=self._icon_play, width=3, bootstyle="success", command=self.toggle_recording)
         self.toolbar_record_btn.pack(side="left", padx=(0,5))
         ttk.Button(toolbar, text=gear, width=3, command=self._open_model_manager).pack(side="left")
+        # 高さ計算用に参照保持
+        self.toolbar = toolbar
         row += 1
 
-        # 2カラムのメインコンテンツ領域（左: Server Settings、右: Recorder + Endpoints）
-        content = ttk.Frame(master)
+        # 2カラムのメインコンテンツ領域（PanedWindowで左右同高さ）
+        content = ttk.Panedwindow(master, orient=tk.HORIZONTAL)
         content.grid(row=row, column=0, sticky="nsew", padx=10, pady=5)
-        # 右カラム（Recorder）を優先的に拡張
-        content.columnconfigure(0, weight=0)
-        content.columnconfigure(1, weight=1)
         master.rowconfigure(row, weight=1)
         self.content = content
 
         # 左カラム: Server Settings + Endpoints（スクロールなし、常時表示）
         left_col = ttk.Frame(content)
-        left_col.grid(row=0, column=0, sticky="n", padx=(0, 5))
         left_col.columnconfigure(0, weight=1)
         server_frame = ttk.Labelframe(left_col, text="Server Settings")
         server_frame.grid(row=0, column=0, sticky="ew")
@@ -415,15 +415,15 @@ class WrapperGUI:
         self.stop_btn = ttk.Button(start_stop, text="Stop API", command=self.stop_api, bootstyle="danger")
         self.stop_btn.grid(row=0, column=2, sticky="e")
 
-        # 右カラム: Recorder（縦に拡張）
+        # 右カラム: Recorder（PanedWindow右ペイン）
         right_panel = ttk.Frame(content)
-        right_panel.grid(row=0, column=1, sticky="nsew", padx=(5, 0))
         right_panel.columnconfigure(0, weight=1)
         right_panel.rowconfigure(0, weight=1)
         self.right_panel = right_panel
 
         record_frame = ttk.Labelframe(right_panel, text="Recorder")
-        record_frame.grid(row=0, column=0, sticky="nsew")
+        # 横方向のみ拡張（縦は上限を左カラム高さにキャップ）
+        record_frame.grid(row=0, column=0, sticky="new")
         record_frame.columnconfigure(1, weight=1)
         self.record_frame = record_frame
         # Recording controls
@@ -487,6 +487,8 @@ class WrapperGUI:
         ttk.Label(status, textvariable=self.status_var).grid(row=0, column=0, sticky="w")
         self.progress = ttk.Progressbar(status, maximum=100, mode="determinate")
         self.progress.grid(row=0, column=1, sticky="ew", padx=(10,0))
+        # 高さ計算用に参照保持
+        self.status_bar = status
         row += 1
 
         self.backend_proc: subprocess.Popen | None = None
@@ -516,21 +518,37 @@ class WrapperGUI:
         # 固定2カラムレイアウトを適用し、最小サイズを設定
         self.master.after(0, self._apply_fixed_layout)
         self.master.after(50, self._lock_minsize_by_content)
-
-    def _apply_fixed_layout(self) -> None:
-        # 2カラム固定: 左（Server + Endpoints）、右（Recorder）
+        # PanedWindow に左右ペインを追加（左:固定、右:拡張）
         try:
-            self.left_col.grid_forget()
-            self.right_panel.grid_forget()
+            # 左右とも同じ weight で縮小/拡張をバランスさせる
+            self.content.add(self.left_col, weight=1)
+            self.content.add(self.right_panel, weight=1)
         except Exception:
             pass
-        # 右カラムが縦に拡張、左は内容サイズ
-        self.content.columnconfigure(0, weight=0)
-        self.content.columnconfigure(1, weight=1)
-        self.content.rowconfigure(0, weight=1)
-        self.left_col.grid(row=0, column=0, sticky="n", padx=(0,5))
-        self.right_panel.grid(row=0, column=1, sticky="nsew", padx=(5,0))
-        self.master.update_idletasks()
+        # 初期レイアウト確定後に右ペインの最小幅を
+        # 「Server Settings セクション幅の 1/2」に追従させる
+        self.master.after(120, self._init_paned_constraints)
+        try:
+            # 左セクションの幅変化に追従
+            self.server_frame.bind("<Configure>", self._update_pane_minsizes, add=True)
+            self.left_col.bind("<Configure>", self._update_pane_minsizes, add=True)
+            self.content.bind("<Configure>", self._update_pane_minsizes, add=True)
+        except Exception:
+            pass
+        # 左カラム高さに Recorder をキャップ
+        try:
+            for w in (self.server_frame, self.endpoints_frame, self.left_col):
+                w.bind("<Configure>", self._cap_recorder_height_to_left, add=True)
+            self.master.bind("<Map>", self._cap_recorder_height_to_left, add=True)
+        except Exception:
+            pass
+
+    def _apply_fixed_layout(self) -> None:
+        # PanedWindow を用いた固定2カラム（左右同高さ）配置
+        try:
+            self.master.update_idletasks()
+        except Exception:
+            pass
         self._lock_minsize_by_content()
 
     def _lock_minsize_by_content(self) -> None:
@@ -540,7 +558,69 @@ class WrapperGUI:
             root.update_idletasks()
             req_w = max(root.winfo_reqwidth(), 900)
             req_h = max(root.winfo_reqheight(), 650)
+            # 幅は最小幅のみ拘束、高さは「現在の最小高さ」で固定
+            cur_w = max(root.winfo_width(), req_w)
+            # 高さを固定（geometry で設定し、縦方向リサイズを無効化）
+            root.geometry(f"{cur_w}x{req_h}")
             root.minsize(req_w, req_h)
+            try:
+                # 幅の最大は十分大きく、縦は固定
+                root.maxsize(100000, req_h)
+            except Exception:
+                pass
+            try:
+                root.resizable(True, False)
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+    # --- PanedWindow に基づく Recorder 最小幅設定 ---
+    def _init_paned_constraints(self) -> None:
+        try:
+            self.master.update_idletasks()
+            # 初期化時点でもサーバーセクション幅に基づいて設定
+            sw = self.server_frame.winfo_width()
+            if sw <= 1:
+                self.master.after(120, self._init_paned_constraints)
+                return
+            self._update_pane_minsizes()
+        except Exception:
+            pass
+
+    def _update_pane_minsizes(self, *_: object) -> None:
+        # 左ペインの最小幅: Server Settings 幅の 2/3
+        # 右ペイン（Recorder）の最小幅: Server Settings 幅の 1/2
+        try:
+            self.master.update_idletasks()
+            server_w = self.server_frame.winfo_width()
+            if server_w <= 1:
+                return
+            left_min = max(int(server_w * 2 / 3), 1)
+            right_min = max(int(server_w / 2), 1)
+            try:
+                self.content.paneconfigure(self.left_col, minsize=left_min)
+            except Exception:
+                pass
+            try:
+                self.content.paneconfigure(self.right_panel, minsize=right_min)
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+    def _cap_recorder_height_to_left(self, *_: object) -> None:
+        # Recorder の縦サイズが左カラム（Server+Endpoints）の合計高さを超えないように上限キャップ
+        try:
+            self.master.update_idletasks()
+            left_h = 0
+            try:
+                left_h = self.server_frame.winfo_height() + self.endpoints_frame.winfo_height()
+            except Exception:
+                pass
+            if left_h > 0:
+                self.record_frame.configure(height=left_h)
+                self.record_frame.grid_propagate(False)
         except Exception:
             pass
 

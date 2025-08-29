@@ -27,7 +27,11 @@
     - `Use voice activity controller (VAD)` チェックボックスで Silero VAD を利用できる。VAD 用証明書ファイルを `VAD certificate` で既存のファイルとして指定するまで有効化できない。無効なパスや未指定の場合は自動的にロックされる。
     - ネットワーク公開：`Allow external connections (0.0.0.0)` をオンにすると、バックエンドおよび API を `0.0.0.0` で待受（全インターフェース bind）する。Endpoints 欄には検出したLAN内の実IP（例：`192.168.x.x`）を用いたURLが直接表示され、外部端末からアクセスしやすい形式になる。LAN/WAN に公開されるため、ファイアウォール設定とポート開放の可否を必ず確認すること（セキュリティ上の推奨：必要時のみオン）。
     - 稼働中ロック：`Start API` でサーバー稼働中は、ホスト/ポート、モデル設定、話者分離設定、外部接続許可、Auto-start、HF ログインなど、サーバー挙動に影響する設定を自動でロック（無効化）する。`Stop API` で停止すると再び編集可能になる。
-    - 起動後は Backend Web UI・WebSocket `/asr`・ファイル文字起こし API の各エンドポイントと用途が表示され、隣の `Copy` ボタンでクリップボードにコピーできる。レイアウトは2カラム構成（左：Server Settings＋Endpoints、右：Recorder）。ウィンドウ幅が狭い場合は1カラムに自動切替（Server → Endpoints → Recorder の順）し、UI要素が見切れないように配置を再調整する。Server Settings は独立スクロール対応で、ウィンドウが小さい場合でも全項目を確認できる。
+    - 起動後は Backend Web UI・WebSocket `/asr`・ファイル文字起こし API の各エンドポイントと用途が表示され、隣の `Copy` ボタンでクリップボードにコピーできる。レイアウトは `PanedWindow` による2カラム構成（左：Server Settings＋Endpoints、右：Recorder）で、最小幅は動的に追従する。
+      - 左（Server/Endpoints）最小幅: Server Settings セクションの現在幅の約 2/3。
+      - 右（Recorder）最小幅: Server Settings セクションの現在幅の約 1/2。
+      - 両ペインのウェイトは等しく、縮小時に左右が均等に幅を分担する。
+      - Recorder の縦方向は左カラム（Server Settings＋Endpoints）の合計高さを上限にキャップされ、左を超えて伸びない。ウィンドウの高さは初期の最小高さに固定され、縦方向のリサイズは不可（横方向は可）。
     - GUI テーマは `litera` に固定（切替機能は提供しない）。
     - デザイン刷新（litera前提）：
       - 基本フォントサイズを拡大（可読性向上）。

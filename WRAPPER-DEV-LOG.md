@@ -22,6 +22,29 @@
 ---
 
 ## 2025-08-29
+- 背景／スコープ：GUI レイアウトの微調整依頼（Recorder セクションの幅・高さ制約）。
+- 決定事項（根本的アプローチ変更）：
+  - PanedWindow（水平方向）を導入し、左右カラム（左：Server+Endpoints、右：Recorder）を同一行・同一高さでレイアウト。
+  - 右ペイン（Recorder）の最小幅を「初期幅の 2/3」に設定（`paneconfigure(minsize=...)`）。
+  - これに伴い、従来のイベント駆動による高さ同期・ジオメトリ強制・ポーリング処理は全撤去。
+- 追加調整：
+  - Recorder の縦方向拡張を止め、横方向のみ `sticky='new'` とし、左カラム合計高さを上限に `grid_propagate(False)` によるキャップを実装。`server_frame`/`endpoints_frame`/`left_col` の `<Configure>` にフックして都度キャップ。
+- 高さ固定（本件）：
+  - ウィンドウの高さを初期の最小高さで固定（`_lock_minsize_by_content` で `geometry` により高さ確定、`resizable(True, False)` で縦リサイズ無効、`maxsize` の高さも合わせて固定）。
+- 横幅下限の見直し：
+  - 右ペイン（Recorder）の `minsize` を「Server Settings セクション幅の 1/2」に動的追従するよう変更。`server_frame`/`left_col`/`content` の `<Configure>` 時に `_update_right_min_width` を実行し、`paneconfigure(minsize=...)` を更新。
+- 幅配分の是正：
+  - PanedWindow の左右 `weight` をともに 1 に設定し、縮小時に右ペインのみが過度に削られないよう分配を均等化。
+ - 左ペイン最小幅：
+   - 左（Server/Endpoints）ペインの `minsize` を「Server Settings 現在幅の 2/3」に動的追従。右の 1/2 とセットで下限をもたせ、極端な潰れ/偏りを防止。
+- 実装箇所：`wrapper/app/gui.py` の `content` を `ttk.Panedwindow` に変更し、`left_col` と `right_panel` を `add(..., weight=0/1)` で追加。`_init_paned_constraints()` を新設し、右ペインの `minsize` を初期幅の 2/3 に設定。
+- 根拠：PanedWindow の寸法伝播により左右の高さを常時一致させ、初期表示時の高さズレとイベント順序依存を解消するため。
+- 未解決事項：極端に狭いウィンドウでの左カラム項目の折返し見栄え（必要に応じてスクロール化を検討）。
+- 次アクション：ユーザーフィードバックに応じて右ペインの `minsize` 係数の調整や、左ペインの最小幅固定を検討。
+- リスク／課題：古い Tk バージョンで `paneconfigure(minsize=...)` の反映タイミング差がある可能性（現状は `after(120ms)` で初期化）。
+
+
+## 2025-08-29
 - 背景／スコープ：VAD 設定の不備による誤動作を防止したい。
 - 決定事項：
   - VAD 証明書パスが実在するファイルでない場合はチェックボックスを自動で無効化。
