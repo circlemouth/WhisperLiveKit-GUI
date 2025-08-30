@@ -21,6 +21,16 @@
 
 ---
 
+## 2025-10-01
+- 背景／スコープ：Hugging Face ログイン状態を Avalonia GUI に反映させ、未ログイン時のダイアリゼーション誤設定を防止。
+- 決定事項：
+  - 起動時とログイン後にトークン検証を行い、無効時は "Enable diarization" を自動で無効化。
+- 根拠・検討メモ：Tkinter 版と同等の操作感を維持するため。
+- 未解決事項：SimulStreaming 追加パラメータ、モデルダウンロード進捗表示は未実装。
+- 次アクション：残りの未実装項目への対応を継続。
+- リスク／課題：`huggingface_hub` 未インストール環境での例外処理。
+- 参照リンク：`wrapper/app/avalonia_ui/MainWindow.axaml.cs`、`README-FOR-WRAPPER.md`
+
 ## 2025-08-30
 - 背景／スコープ：Avalonia GUI の起動可否を自動検証するためのテストを追加。
 - 決定事項：
