@@ -42,6 +42,7 @@ public partial class MainWindow : Window
     private string _segmentationModel = "pyannote/segmentation-3.0";
     private string _embeddingModel = "pyannote/embedding";
     private string _vadCertFile = string.Empty; // env SSL_CERT_FILE override
+    private bool _hfLoggedIn = false;
 
     public MainWindow()
     {
@@ -120,6 +121,7 @@ public partial class MainWindow : Window
         {
             // ignore malformed config
         }
+        await CheckHfLoginState();
     }
 
     private async Task SaveSettings()
@@ -261,7 +263,7 @@ public partial class MainWindow : Window
         if (Diarization.IsChecked == true)
         {
             backend.ArgumentList.Add("--diarization");
-            // 詳細は後続�E設定ダイアログで拡張
+            // detailed options handled in settings dialogs
         }
 
         if (false && UseVac.IsChecked != true)
@@ -453,10 +455,11 @@ public partial class MainWindow : Window
     private void OnLoginHf(object? sender, RoutedEventArgs e)
     {
         var dlg = new HfLoginWindow();
-        dlg.ShowDialog<bool>(this).ContinueWith(t =>
+        dlg.ShowDialog<bool>(this).ContinueWith(async t =>
         {
             var ok = t.Result;
-            Dispatcher.UIThread.Post(() => StatusText.Text = ok ? "Hugging Face login succeeded" : "Hugging Face login failed");
+            await Dispatcher.UIThread.InvokeAsync(() => StatusText.Text = ok ? "Hugging Face login succeeded" : "Hugging Face login failed");
+            await CheckHfLoginState();
         });
     }
 
@@ -519,6 +522,41 @@ public partial class MainWindow : Window
         {
             psi.Environment[kv.Key] = kv.Value;
         }
+    }
+
+    private async Task CheckHfLoginState()
+    {
+        _hfLoggedIn = await IsHfLoggedIn();
+        await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            Diarization.IsEnabled = _hfLoggedIn;
+            if (!_hfLoggedIn)
+                Diarization.IsChecked = false;
+        });
+    }
+
+    private async Task<bool> IsHfLoggedIn()
+    {
+        var cacheDir = GetPythonUserCacheDir();
+        var psi = new ProcessStartInfo
+        {
+            FileName = "python",
+            UseShellExecute = false
+        };
+        psi.ArgumentList.Add("-c");
+        psi.ArgumentList.Add("import os,sys;from huggingface_hub import HfApi,HfFolder;" +
+            "token=os.getenv('HF_TOKEN') or os.getenv('HUGGINGFACEHUB_API_TOKEN') or os.getenv('HUGGING_FACE_HUB_TOKEN') or HfFolder.get_token();" +
+            "api=HfApi();sys.exit(0) if token and api.whoami(token=token) else sys.exit(1)");
+        psi.Environment["HF_HOME"] = Path.Combine(cacheDir, "hf-cache");
+        psi.Environment["HUGGINGFACE_HUB_CACHE"] = Path.Combine(cacheDir, "hf-cache");
+        try
+        {
+            using var p = Process.Start(psi);
+            if (p == null) return false;
+            await p.WaitForExitAsync();
+            return p.ExitCode == 0;
+        }
+        catch { return false; }
     }
 
     public string GetPythonUserCacheDir()

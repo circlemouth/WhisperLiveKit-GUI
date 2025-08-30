@@ -78,6 +78,7 @@
 - 操作は Tkinter 版と同等（Advanced/VAD/Diarization ダイアログは段階的に整備）
  - 配置: `Manage models` / `Hugging Face Login` / `Start API` / `Stop API` は Server Settings の最下部に集約。
  - 表示安定化: Endpoints の URL 欄は横幅可変で広めに確保（必要に応じてコピー/オープンボタンを右側に配置）。
+ - Hugging Face へのログイン状態を自動検出し、未ログイン時は "Enable diarization" が無効化される。
 
 4) API だけを起動したい場合（手動）
 - Backend: `python -m whisperlivekit.basic_server --host 127.0.0.1 --port 8000 [--model_dir <PATH>] [...options]`
