@@ -1,0 +1,15 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="avalonia_ui.VadSettingsWindow"
+        x:CompileBindings="False"
+        Width="380" Height="140" Title="VAD Settings">
+  <Grid Margin="10" ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto" ColumnSpacing="6" RowSpacing="6">
+    <TextBlock Grid.ColumnSpan="2" Text="VAC chunk size (sec)"/>
+    <TextBox x:Name="VacChunk" Grid.Row="1" Grid.Column="1"/>
+    <StackPanel Grid.Row="2" Grid.ColumnSpan="2" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="6">
+      <Button Content="Cancel" IsCancel="True"/>
+      <Button Content="OK" IsDefault="True" Click="OnOk"/>
+    </StackPanel>
+  </Grid>
+</Window>
+

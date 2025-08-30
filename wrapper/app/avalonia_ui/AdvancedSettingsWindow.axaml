@@ -1,0 +1,52 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="avalonia_ui.AdvancedSettingsWindow"
+        x:CompileBindings="False"
+        Width="520" Height="520" Title="Advanced Settings">
+  <Grid Margin="10" ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto" ColumnSpacing="6" RowSpacing="6">
+    <TextBlock Grid.ColumnSpan="2" Text="Backend detailed options"/>
+    <TextBlock Grid.Row="1" Text="Warmup file"/>
+    <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal" Spacing="6">
+      <TextBox x:Name="WarmupFile" Width="280"/>
+      <Button Content="Browse" Click="OnBrowseWarmup"/>
+    </StackPanel>
+    <CheckBox x:Name="ConfidenceValidation" Grid.Row="2" Grid.ColumnSpan="2" Content="Use confidence validation"/>
+    <CheckBox x:Name="PunctuationSplit" Grid.Row="3" Grid.ColumnSpan="2" Content="Use punctuation split"/>
+    <TextBlock Grid.Row="4" Text="Min chunk size (sec)"/>
+    <TextBox x:Name="MinChunkSize" Grid.Row="4" Grid.Column="1"/>
+    <TextBlock Grid.Row="5" Text="Language"/>
+    <TextBox x:Name="Language" Grid.Row="5" Grid.Column="1"/>
+    <TextBlock Grid.Row="6" Text="Task"/>
+    <TextBox x:Name="TaskBox" Grid.Row="6" Grid.Column="1"/>
+    <TextBlock Grid.Row="7" Text="Backend"/>
+    <TextBox x:Name="Backend" Grid.Row="7" Grid.Column="1"/>
+    <TextBlock Grid.Row="8" Text="Buffer trimming"/>
+    <TextBox x:Name="BufferTrimming" Grid.Row="8" Grid.Column="1"/>
+    <TextBlock Grid.Row="9" Text="Buffer trimming sec"/>
+    <TextBox x:Name="BufferTrimmingSec" Grid.Row="9" Grid.Column="1"/>
+    <TextBlock Grid.Row="10" Text="Log level"/>
+    <TextBox x:Name="LogLevel" Grid.Row="10" Grid.Column="1"/>
+    <TextBlock Grid.Row="11" Text="SSL certfile"/>
+    <StackPanel Grid.Row="11" Grid.Column="1" Orientation="Horizontal" Spacing="6">
+      <TextBox x:Name="SslCertFile" Width="280"/>
+      <Button Content="Browse" Click="OnBrowseCert"/>
+    </StackPanel>
+    <TextBlock Grid.Row="12" Text="SSL keyfile"/>
+    <StackPanel Grid.Row="12" Grid.Column="1" Orientation="Horizontal" Spacing="6">
+      <TextBox x:Name="SslKeyFile" Width="280"/>
+      <Button Content="Browse" Click="OnBrowseKey"/>
+    </StackPanel>
+    <TextBlock Grid.Row="13" Text="Frame threshold"/>
+    <TextBox x:Name="FrameThreshold" Grid.Row="13" Grid.Column="1"/>
+    <TextBlock Grid.Row="14" Text="VAD certificate (SSL_CERT_FILE)"/>
+    <StackPanel Grid.Row="14" Grid.Column="1" Orientation="Horizontal" Spacing="6">
+      <TextBox x:Name="VadCertFile" Width="280"/>
+      <Button Content="Browse" Click="OnBrowseVadCert"/>
+    </StackPanel>
+    <StackPanel Grid.ColumnSpan="2" Grid.Row="15" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="6">
+      <Button Content="Cancel" IsCancel="True"/>
+      <Button Content="OK" IsDefault="True" Click="OnOk"/>
+    </StackPanel>
+  </Grid>
+</Window>
+

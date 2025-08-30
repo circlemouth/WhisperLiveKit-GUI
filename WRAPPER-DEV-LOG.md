@@ -21,6 +21,33 @@
 
 ---
 
+## 2025-09-18
+- 背景・スコープ：旧Tkinter版GUIの完全移植要求に対応し、Avalonia版に機能/レイアウトを統合。
+- 決定事項
+  - Avaloniaで2カラム構成（左：Server Settings/Endpoints、右：Start/Stop/Recorder）を再現。
+  - Start/Stopでバックエンド(`python -m whisperlivekit.basic_server`)とAPI(`uvicorn wrapper.api.server:app`)を同時起動。
+  - エンドポイント表示を旧GUIと一致（/asr, /v1/audio/transcriptions）。`0.0.0.0`選択時はLAN IPを表示。
+  - 録音をNAudioで実装し、WebSocketへPCM(16kHz/mono/16bit)配信。レベルメータ/タイマー/保存に対応。
+  - モデル管理ダイアログを追加（ダウンロード/削除）。Python CLI `wrapper/cli/model_manager_cli.py` を経由して既存ロジックを呼出。
+  - Hugging Faceログインダイアログを追加。トークン検証/保存はPythonサブプロセスで実行し、キャッシュはwrapper専用に固定。
+  - 設定保存/読込は従来`settings.json`を継続利用。将来の詳細設定用に「Advanced/VAD/Diarization Settings」ボタンをプレースホルダーで追加。
+- 根拠・検討メモ
+  - 既存コード改変なしでの合成を徹底（すべてPythonサブプロセス/環境変数で連携）。
+  - モデルのローカル参照は`--model_dir`にPythonワンライナーで解決したパスを渡す方針。
+- 未解決事項
+  - Advanced/VAD/Diarization各ダイアログの詳細項目（言語/タスク/バッファトリミング/SSL証明書/バックエンド種別など）のUI実装と引数連携。
+  - ダウンロード進捗の可視化（現状は非同期完了ベース）。
+  - HFログイン状態のUI反映（話者分離の有効/無効制御など）。
+- 次アクション
+  - 各詳細設定ダイアログの実装→`basic_server`引数へ完全連携。
+  - モデル管理の進捗表示とエラーハンドリング強化。
+  - README整備（実行手順・主要シナリオ・既知の制約）。
+- リスク
+  - 録音の16k固定が一部デバイスで使用不可の可能性（将来Resampler導入で回避）。
+  - 外部ネットワーク公開時のファイアウォール設定/権限依存。
+- 参照
+  - `wrapper/app/avalonia_ui/*`, `wrapper/cli/model_manager_cli.py`, `wrapper/api/server.py`
+
 ## 2025-08-29
 - 背景／スコープ：GUI レイアウトの微調整依頼（Recorder セクションの幅・高さ制約）。
 - 決定事項（根本的アプローチ変更）：
@@ -410,3 +437,25 @@
 - 次アクション：取得ロジックや表示方法の改善検討。
 - リスク／課題：ライセンス本文の増加によるバイナリサイズの肥大化。
 - 参照リンク：`README-FOR-WRAPPER.md` インターフェース節・実行手順、`wrapper/app/gui.py`、`wrapper/scripts/generate_licenses.py`
+
+## 2025-09-30
+- 背景／スコープ：クロスプラットフォームな UI を求める要望に対応するため、Avalonia ベースの GUI を試験実装。
+- 決定事項：
+  - `wrapper/app/avalonia_ui` として Avalonia プロジェクトを追加し、`Start API`/`Stop API` ボタンでバックエンドを制御できる最小機能を提供。
+  - 設定ファイルは Python 版 GUI と同じ `settings.json` を参照し、既存ユーザーの設定が継承される。
+- 根拠・検討メモ：Windows/macOS 双方で利用できるネイティブライクな UI フレームワークとして Avalonia を選定。
+- 未解決事項：Tkinter 版と同等の詳細設定・モデル管理機能の移植。
+- 次アクション：ユーザーフィードバックをもとに機能拡充と UI 改善を検討。
+- リスク／課題：.NET ランタイムの導入が必要であり、環境によってはセットアップが煩雑になる可能性。
+- 参照リンク：`README-FOR-WRAPPER.md` のインターフェース節および実行手順節。
+
+## 2025-08-29
+- 背景／スコープ：Tkinter 版 GUI を完全移行するため、Avalonia 版を既存レイアウトに合わせて拡張。
+- 決定事項：
+  - Avalonia UI を 2 カラム構成とし、サーバー設定・エンドポイント表示・録音パネルを実装。
+  - 設定値や環境変数を GUI から指定できるようにし、`settings.json` の読み書きも対応。
+- 根拠・検討メモ：Tkinter 版との互換性を維持しつつクロスプラットフォーム対応を強化。
+- 未解決事項：録音機能やモデル管理、HF ログインなど一部機能は未実装。
+- 次アクション：不足機能の実装と UI テスト。
+- リスク／課題：未実装機能が多くユーザー体験に差異がある。
+- 参照リンク：`wrapper/app/avalonia_ui/MainWindow.axaml`, `wrapper/app/avalonia_ui/MainWindow.axaml.cs`, `README-FOR-WRAPPER.md`。

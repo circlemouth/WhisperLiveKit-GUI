@@ -1,0 +1,23 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:avalonia_ui"
+        x:Class="avalonia_ui.ModelManagerWindow"
+        x:CompileBindings="False"
+        Width="520" Height="480"
+        Title="Model Manager">
+  <Grid RowDefinitions="Auto,*" Margin="10">
+    <TextBlock Text="Download/Delete models stored in wrapper cache"/>
+    <DataGrid Grid.Row="1" x:Name="ModelsGrid" AutoGenerateColumns="False" CanUserReorderColumns="False" CanUserResizeColumns="False">
+      <DataGrid.Columns>
+        <DataGridTextColumn Header="Model" Binding="{Binding Name}" Width="*" />
+        <DataGridTextColumn Header="Usage" Binding="{Binding Usage}" Width="120" />
+        <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="100" />
+        <DataGridTemplateColumn Header="Action" Width="120">
+          <DataTemplate>
+            <Button Content="{Binding ActionText}" Command="{Binding ActionCommand}"/>
+          </DataTemplate>
+        </DataGridTemplateColumn>
+      </DataGrid.Columns>
+    </DataGrid>
+  </Grid>
+</Window>

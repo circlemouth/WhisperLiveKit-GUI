@@ -1,0 +1,17 @@
+    private static string DisplayHost(string host)
+    {
+        if (host == "0.0.0.0")
+        {
+            try
+            {
+                foreach (var ni in System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces())
+                {
+                    if (ni.OperationalStatus != System.Net.NetworkInformation.OperationalStatus.Up) continue;
+                    var ipProps = ni.GetIPProperties();
+                    foreach (var ua in ipProps.UnicastAddresses)
+                    {
+                        if (ua.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork && !System.Net.IPAddress.IsLoopback(ua.Address))
+                        {
+                            return ua.Address.ToString();
+                        }
+                    }

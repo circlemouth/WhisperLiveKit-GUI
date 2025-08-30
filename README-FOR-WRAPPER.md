@@ -23,7 +23,8 @@
 
 ## 5. インターフェース
 - CLI/GUI：
-    - `python -m wrapper.cli.main` で設定 GUI を起動。GUI は起動時に空きポートを自動選択して入力欄に表示し、必要に応じて編集できる。`Start API` でサービスを起動、`Stop API` で停止できる。`Auto-start API on launch` を有効にすると起動時に自動開始する。Whisper モデルは `Whisper model` のプルダウンから選択でき（`available_models.md` に掲載された公式モデル一覧）、`Enable diarization` をオンにすると話者分離が有効になる。`Segmentation model` と `Embedding model` は既定モデルをプルダウンから選ぶか、任意の Hugging Face モデル ID を手入力できる。モデル取得・管理系は Start/Stop の行の左端に集約され、`Manage models`（ダウンロード/削除/用途表示）と `Hugging Face Login`（トークン入力・検証）が配置される。選択した Whisper モデルや話者分離モデルがローカルに存在しない場合は `Start API` を押すと自動ダウンロードが始まり、完了後にサーバーが起動する。
+    - Avalonia ベースのクロスプラットフォーム GUI を追加。旧 Tkinter 版と同じ 2 カラムレイアウトでサーバー設定やエンドポイント表示、録音パネルを備え、`dotnet run --project wrapper/app/avalonia_ui` で起動する。`Start API`/`Stop API` ボタンや各種チェックボックス/入力欄は Tkinter 版と同じ役割を持ち、設定ファイルは共通の `settings.json` を参照して既存ユーザー設定を引き継ぐ。
+    - `python -m wrapper.cli.main` で従来の Tkinter ベース設定 GUI を起動。GUI は起動時に空きポートを自動選択して入力欄に表示し、必要に応じて編集できる。`Start API` でサービスを起動、`Stop API` で停止できる。`Auto-start API on launch` を有効にすると起動時に自動開始する。Whisper モデルは `Whisper model` のプルダウンから選択でき（`available_models.md` に掲載された公式モデル一覧）、`Enable diarization` をオンにすると話者分離が有効になる。`Segmentation model` と `Embedding model` は既定モデルをプルダウンから選ぶか、任意の Hugging Face モデル ID を手入力できる。モデル取得・管理系は Start/Stop の行の左端に集約され、`Manage models`（ダウンロード/削除/用途表示）と `Hugging Face Login`（トークン入力・検証）が配置される。選択した Whisper モデルや話者分離モデルがローカルに存在しない場合は `Start API` を押すと自動ダウンロードが始まり、完了後にサーバーが起動する。
     - `Use voice activity controller (VAD)` チェックボックスで Silero VAD を利用できる。VAD 用証明書ファイルを `VAD certificate` で既存のファイルとして指定するまで有効化できない。無効なパスや未指定の場合は自動的にロックされる。
     - `Advanced settings` ボタンからウォームアップ音声、言語・タスク、バックエンド種別、ログレベル、SSL 証明書/鍵、バッファトリミングなど詳細なサーバー設定を行える。`VAD Settings` では VAC チャンクサイズを、`Diarization Settings` では話者分離バックエンドを選択できる。
     - ネットワーク公開：`Allow external connections (0.0.0.0)` をオンにすると、バックエンドおよび API を `0.0.0.0` で待受（全インターフェース bind）する。Endpoints 欄には検出したLAN内の実IP（例：`192.168.x.x`）を用いたURLが直接表示され、外部端末からアクセスしやすい形式になる。LAN/WAN に公開されるため、ファイアウォール設定とポート開放の可否を必ず確認すること（セキュリティ上の推奨：必要時のみオン）。
@@ -62,8 +63,9 @@
 ## 6. 実行・セットアップ手順
 1. 必要要件：Python 3.11 以降、ffmpeg、インターネット接続。
 2. セットアップ：`pip install -r requirements.txt` で `fastapi`, `uvicorn`, `websockets`, `sounddevice`, `platformdirs` などの依存ライブラリを導入。GUI のテーマ切替には別途 `ttkbootstrap` が必要なため、未インストールの場合は `pip install ttkbootstrap` を実行する。
-3. 実行例：`python -m wrapper.cli.main` を実行すると設定 GUI が起動する。必要に応じてホストやポートを変更し、`Start API` で WhisperLiveKit とラッパー API を開始する。GUI は初期状態でバックエンドと API を自動開始する（環境変数 `WRAPPER_API_AUTOSTART=0` もしくは設定で無効化可能）。録音を行う場合は WebSocket URL を確認し、必要なら保存先ファイルを設定してから `Start Recording` ボタンでマイク入力を送信する。
-4. 依存ライブラリを更新した場合は `python wrapper/scripts/generate_licenses.py` を実行してライセンス情報ファイル `wrapper/licenses.json` を再生成し、ライセンス本文を含めてリポジトリにコミットする。
+3. 実行例（Tkinter 版）：`python -m wrapper.cli.main` を実行すると設定 GUI が起動する。必要に応じてホストやポートを変更し、`Start API` で WhisperLiveKit とラッパー API を開始する。GUI は初期状態でバックエンドと API を自動開始する（環境変数 `WRAPPER_API_AUTOSTART=0` もしくは設定で無効化可能）。録音を行う場合は WebSocket URL を確認し、必要なら保存先ファイルを設定してから `Start Recording` ボタンでマイク入力を送信する。
+4. 実行例（Avalonia 版）：`.NET 8` を導入後、`dotnet run --project wrapper/app/avalonia_ui` を実行すると Tkinter 版と同等の GUI が起動し、サーバー設定・エンドポイント表示・録音パネルを備えた画面からバックエンドを操作できる。設定は Tkinter 版と同じ `settings.json` を共有する。
+5. 依存ライブラリを更新した場合は `python wrapper/scripts/generate_licenses.py` を実行してライセンス情報ファイル `wrapper/licenses.json` を再生成し、ライセンス本文を含めてリポジトリにコミットする。
 
 ## 7. エラーハンドリングとログ／テレメトリ
 - 例外分類・リトライ方針、ユーザー通知方法
@@ -142,3 +144,21 @@
 - モデル非同梱の MSIX を配布し、GUI から Whisper モデルをダウンロード・削除できる。
 - ダウンロード済みモデルを使用してバックエンド/API を起動できる。
  - 話者分離モデルおよび VAD モデルのダウンロード・削除に対応し、モデル一覧には各モデルの用途が表示される。
+
+## �ύX�����iGUI�ڐA�T�}���j
+- Avalonia��GUI�֋�Tkinter�ł�2�J�����\���Ǝ�v�@�\�iStart/Stop�AEndpoints�\���ARecorder�j���ڐA�B
+- Start/Stop�̓o�b�N�G���h�ipython -m whisperlivekit.basic_server�j��API�iuvicorn wrapper.api.server:app�j�𓯎��N���B
+- Endpoints�� /asr�iWebSocket�j�� /v1/audio/transcriptions�iREST�j��\���B0.0.0.0 �I������LAN IP��\���B
+- Recorder��NAudio��16kHz/mono/16bit��PCM��WebSocket�֔z�M�B���x��/�^�C�}�[/�ۑ��ɑΉ��B
+- Manage models�_�C�A���O��Hugging Face Login�_�C�A���O��ǉ��B���f���Ǘ���g�[�N���ۑ���Python�T�u�v���Z�X�Ŋ������W�b�N���ďo�B
+- Advanced/VAD/Diarization Settings�̓v���[�X�z���_�[�B�ڍ׃p�����[�^��UI���f�͍���̃^�X�N�B
+
+## ���s�菇�iAvalonia GUI�j
+- �ˑ��֌W�F.NET 8 SDK�APython 3.11+�Affmpeg
+- �N���Fdotnet run --project wrapper/app/avalonia_ui
+- �g�p�FStart API�ŋN���AEndpoints����URL�m�F�ARecorder�Ŕz�M/�ۑ��AManage models�Ń��f���Ǘ��AHugging Face Login�Ńg�[�N���o�^�B
+
+## ���m�̒���
+- �ꕔ�f�o�C�X��16k���ژ^���s�̏ꍇ����i�������T���v���Ή��j�B
+- �O�����J���̓t�@�C�A�E�H�[��/�|�[�g�J���̊m�F���K�v�B
+- �ڍאݒ�_�C�A���O�͏��������\��B
