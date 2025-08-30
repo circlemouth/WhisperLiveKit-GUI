@@ -21,6 +21,24 @@
 
 ---
 
+## 2025-08-31
+- 背景／スコープ：dotnet/Avalonia ベースの GUI を廃止し、Tkinter 版へ一本化。
+- 決定事項：
+  - `wrapper/app/avalonia_ui/*` と `wrapper/app/avalonia_ui.Tests/*` を削除。
+  - `wrapper/scripts/run_avalonia_tests.py` と `wrapper/scripts/build_msix.ps1` を削除。
+  - `README-FOR-WRAPPER.md` から Avalonia/dotnet に関する記述を撤去。
+- 根拠・検討メモ：
+  - メンテ負荷の分散を避け、Tkinter 版に集約して品質を高めるため。
+  - ユーザー要求がダークテーマ等の Tkinter 改善に集中しているため。
+- 未解決事項：
+  - Windows 向け配布形態（MSIX 言及の継続是非）の再検討。
+- 次アクション：
+  - 必要に応じて Python 由来の配布（PyInstaller など）へ方針転換案を検討。
+- リスク／課題：
+  - 既存ログや外部リンクに Avalonia 参照が残る可能性。必要に応じて追って整理。
+- 参照リンク：
+  - `README-FOR-WRAPPER.md`
+
 ## 2025-08-30
 - 背景／スコープ：Avalonia GUI の起動可否を自動検証するためのテストを追加。
 - 決定事項：

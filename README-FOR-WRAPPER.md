@@ -4,7 +4,7 @@
 
 ## 目的 / 非目的
 - 目的: 既存の `whisperlivekit.basic_server` を安全に起動・制御し、以下を提供する。
-  - デスクトップ GUI（Tkinter/Avalonia）による起動・録音・可視化
+  - デスクトップ GUI（Tkinter）による起動・録音・可視化
   - OpenAI Whisper API 互換の REST エンドポイント（`/v1/audio/transcriptions`）
   - モデル管理（ダウンロード/削除/パス解決）と話者分離の前提設定
 - 非目的:
@@ -12,7 +12,7 @@
   - upstream コードの直接編集・分岐
 
 ## 要求 / 制約
-- 必須: Python 3.11+、`ffmpeg`、ネットワークアクセス（モデル取得時）、必要に応じて .NET 8 SDK（Avalonia GUI）
+- 必須: Python 3.11+、`ffmpeg`、ネットワークアクセス（モデル取得時）
 - プラットフォーム: Windows/macOS/Linux
 - セキュリティ: 既定は `127.0.0.1` バインド。外部公開はユーザー操作で有効化（`0.0.0.0`）
 - 依存は `requirements.txt` を参照。upstream は `pyproject.toml` に準拠
@@ -30,9 +30,7 @@
     - Backend: `python -m whisperlivekit.basic_server`
     - API: `uvicorn wrapper.api.server:app`
   - 録音→WebSocket 送信、テキスト可視化、保存
-- GUI 層（C# Avalonia）：`wrapper/app/avalonia_ui/*`
-  - Tkinter と同等の操作をクロスプラットフォームで提供（進行中）
-  - ヘッダーの「License」ボタンから依存ライブラリのライセンス本文を参照可能
+ 
 - API 層（FastAPI）：`wrapper/api/server.py`
   - 受領音声を `ffmpeg` で 16kHz/mono PCM 化 → WebSocket で backend `/asr` へストリーミング → 連結テキスト返却
 - モデル管理：`wrapper/app/model_manager.py` と CLI `wrapper/cli/model_manager_cli.py`
@@ -41,7 +39,6 @@
 ## I/O / 公開インターフェース
 - CLI/GUI:
   - Tkinter GUI 起動: `python -m wrapper.cli.main`
-  - Avalonia GUI 起動: `dotnet run --project wrapper/app/avalonia_ui`
 - REST API:
   - エンドポイント: `POST http://<api_host>:<api_port>/v1/audio/transcriptions`
   - フォーム: `file=@audio.wav`、`model=whisper-1`
@@ -64,7 +61,7 @@
 1) 依存インストール
 - Python 環境を有効化し `pip install -r requirements.txt`
 - `ffmpeg` をインストール（PATH で実行可能に）
-- Avalonia を使う場合は .NET 8 SDK をインストール
+ 
 
 2) GUI 起動と基本操作（Tkinter）
 - 起動: `python -m wrapper.cli.main`
@@ -74,12 +71,7 @@
 - Manage models で Whisper/VAD/関連モデルの取得・削除
 - Hugging Face Login でトークン登録（話者分離の有効化に必須）
 
-3) GUI 起動（Avalonia）
-- 起動: `dotnet run --project wrapper/app/avalonia_ui`
-- 操作は Tkinter 版と同等（Advanced/VAD/Diarization ダイアログは段階的に整備）
- - 配置: `Manage models` / `Hugging Face Login` / `Start API` / `Stop API` は Server Settings の最下部に集約。
- - 表示安定化: Endpoints の URL 欄は横幅可変で広めに確保（必要に応じてコピー/オープンボタンを右側に配置）。
- - 依存ライブラリのライセンスはヘッダー右上の「License」ボタンから確認可能。
+ 
 
 4) API だけを起動したい場合（手動）
 - Backend: `python -m whisperlivekit.basic_server --host 127.0.0.1 --port 8000 [--model_dir <PATH>] [...options]`
@@ -104,14 +96,12 @@
 - VAD 有効時は torch.hub の初回取得が発生。証明書問題回避のため既定では無効（GUI から有効化）
 
 ## リリース計画/今後のタスク
-- Avalonia GUI の機能パリティ完了（Advanced/VAD/Diarization ダイアログの実装）
-- パッケージング（例: Windows MSIX）と自動アップデート検討
+- 配布パッケージング（PyInstaller など）の検討
 - API 認証/簡易ダッシュボードの追加検討
 - upstream への改善提案は `WRAPPER-DEV-LOG.md` に記録
 
 ## 主要ファイル
 - GUI（Tkinter）: `wrapper/app/gui.py`（エントリ: `python -m wrapper.cli.main`）
-- GUI（Avalonia）: `wrapper/app/avalonia_ui/*`（エントリ: `dotnet run --project wrapper/app/avalonia_ui`）
 - API: `wrapper/api/server.py`（FFmpeg 変換 → WS `/asr`）
 - モデル管理: `wrapper/app/model_manager.py`、`wrapper/cli/model_manager_cli.py`
 - 設定テンプレート: `wrapper/config/settings.example.json`

@@ -129,6 +129,13 @@ class ScrollableFrame(ttk.Frame):
         self._canvas = tk.Canvas(self, borderwidth=0, highlightthickness=0)
         self._vsb = ttk.Scrollbar(self, orient="vertical", command=self._canvas.yview)
         self._canvas.configure(yscrollcommand=self._vsb.set)
+        # ダークテーマ時にキャンバス背景が浮かないよう配色
+        try:
+            _style = ttkb.Style()
+            _bg = getattr(_style.colors, "bg", "#222222")
+            self._canvas.configure(background=_bg)
+        except Exception:
+            pass
         self._canvas.grid(row=0, column=0, sticky="nsew")
         self._vsb.grid(row=0, column=1, sticky="ns")
         # 内部フレーム
@@ -190,8 +197,8 @@ class WrapperGUI:
         master.title("WhisperLiveKit Wrapper")
 
         # Variables
-        # 固定テーマ: litera（切替不要のため強制適用）
-        self.theme = tk.StringVar(value="litera")
+        # 固定テーマ: ダーク系（ttkbootstrap: darkly）
+        self.theme = tk.StringVar(value="darkly")
         self.backend_host = tk.StringVar(value=os.getenv("WRAPPER_BACKEND_HOST", "127.0.0.1"))
         b_port_env = os.getenv("WRAPPER_BACKEND_PORT")
         if b_port_env:
@@ -260,21 +267,24 @@ class WrapperGUI:
         self.save_enabled = tk.BooleanVar(value=False)
 
         self._load_settings()
-        # テーマは litera を強制（既存設定を上書き）
-        self.theme.set("litera")
+        # テーマは darkly を強制（既存設定を上書き）
+        self.theme.set("darkly")
 
         self.style = ttkb.Style(theme=self.theme.get())
+        # ダークテーマでクラシックTk要素にも配色を適用
+        self._fg = getattr(self.style.colors, "fg", "#EAEAEA")
+        self._bg = getattr(self.style.colors, "bg", "#222222")
         # 基本フォントと余白を拡大
         try:
             master.option_add("*Font", ("Segoe UI", 12))
         except Exception:
             pass
         self.style.configure("TLabel", padding=6)
-        self.style.configure("TButton", padding=10)
+        self.style.configure("TButton", padding=6)
         # Start/Stop（primary/danger）も Manage models と同じ高さになるよう統一
         try:
-            self.style.configure("primary.TButton", padding=10)
-            self.style.configure("danger.TButton", padding=10)
+            self.style.configure("primary.TButton", padding=6)
+            self.style.configure("danger.TButton", padding=6)
         except Exception:
             pass
         self.style.configure("TLabelframe", padding=12)
@@ -324,6 +334,10 @@ class WrapperGUI:
         self.left_col = left_col
         self.server_frame = server_frame
         r = 0
+        # Auto-start on top of Server Settings
+        self.auto_start_chk = ttk.Checkbutton(config_frame, text="Auto-start API on launch", variable=self.auto_start)
+        self.auto_start_chk.grid(row=r, column=0, columnspan=2, sticky=tk.W)
+        r += 1
         # 1) 接続ポリシー（外部公開）
         self.allow_external_chk = ttk.Checkbutton(
             config_frame,
@@ -351,11 +365,12 @@ class WrapperGUI:
         self.api_port_entry = ttk.Entry(config_frame, textvariable=self.api_port, width=15)
         self.api_port_entry.grid(row=r, column=1, sticky="ew")
         r += 1
-        # 4) 起動ポリシー
-        self.auto_start_chk = ttk.Checkbutton(config_frame, text="Auto-start API on launch", variable=self.auto_start)
-        self.auto_start_chk.grid(row=r, column=0, columnspan=2, sticky=tk.W)
+        # 4) 起動ポリシー（moved to top）
+        # 5) Model section header + selection
+        ttk.Separator(config_frame, orient="horizontal").grid(row=r, column=0, columnspan=2, sticky="ew", pady=(6, 6))
         r += 1
-        # 5) モデル選択と管理
+        ttk.Label(config_frame, text="Model", style="SectionHeader.TLabel").grid(row=r, column=0, columnspan=2, sticky=tk.W)
+        r += 1
         ttk.Label(config_frame, text="Whisper model").grid(row=r, column=0, sticky=tk.W)
         self.model_combo = ttk.Combobox(
             config_frame,
@@ -366,11 +381,18 @@ class WrapperGUI:
         )
         self.model_combo.grid(row=r, column=1, sticky="ew")
         r += 1
-        ttk.Button(config_frame, text="Advanced settings", command=self._open_backend_settings).grid(
-            row=r, column=0, columnspan=2, sticky=tk.W
-        )
+        # Advanced settings on the right edge
+        adv_row = ttk.Frame(config_frame)
+        adv_row.grid(row=r, column=0, columnspan=2, sticky="ew")
+        adv_row.columnconfigure(0, weight=1)
+        self.adv_btn = ttk.Button(adv_row, text="Advanced Settings", command=self._open_backend_settings)
+        self.adv_btn.grid(row=0, column=1, sticky="e")
         r += 1
-        # 6) VAD（音声活動）
+        # 6) VAD section
+        ttk.Separator(config_frame, orient="horizontal").grid(row=r, column=0, columnspan=2, sticky="ew", pady=(6, 6))
+        r += 1
+        ttk.Label(config_frame, text="VAD", style="SectionHeader.TLabel").grid(row=r, column=0, columnspan=2, sticky=tk.W)
+        r += 1
         self.vac_chk = ttk.Checkbutton(
             config_frame,
             text="Use voice activity controller (VAD)",
@@ -387,11 +409,18 @@ class WrapperGUI:
         self.vad_cert_browse = ttk.Button(cert_input, text="Browse...", command=self.choose_vad_certfile)
         self.vad_cert_browse.grid(row=0, column=1, padx=(4,0))
         r += 1
-        ttk.Button(config_frame, text="VAD Settings", command=self._open_vad_settings).grid(
-            row=r, column=0, columnspan=2, sticky=tk.W
-        )
+        # VAD Settings aligned to the right (enabled only if VAD is on)
+        vad_row = ttk.Frame(config_frame)
+        vad_row.grid(row=r, column=0, columnspan=2, sticky="ew")
+        vad_row.columnconfigure(0, weight=1)
+        self.vad_settings_btn = ttk.Button(vad_row, text="VAD Settings", command=self._open_vad_settings)
+        self.vad_settings_btn.grid(row=0, column=1, sticky="e")
         r += 1
-        # 7) 話者分離（HF ログイン → 有効化 → モデル指定）
+        # 7) Diarization section
+        ttk.Separator(config_frame, orient="horizontal").grid(row=r, column=0, columnspan=2, sticky="ew", pady=(6, 6))
+        r += 1
+        ttk.Label(config_frame, text="Diarization", style="SectionHeader.TLabel").grid(row=r, column=0, columnspan=2, sticky=tk.W)
+        r += 1
         # Hugging Face Login は Start/Stop 行の左に移動
         self.diarization_chk = ttk.Checkbutton(
             config_frame,
@@ -421,14 +450,17 @@ class WrapperGUI:
         )
         self.emb_model_combo.grid(row=r, column=1, sticky="ew")
         r += 1
-        ttk.Button(config_frame, text="Diarization Settings", command=self._open_diarization_settings).grid(
-            row=r, column=0, columnspan=2, sticky=tk.W
-        )
+        # Diarization Settings aligned to the right (enabled only if diarization is on)
+        diar_row = ttk.Frame(config_frame)
+        diar_row.grid(row=r, column=0, columnspan=2, sticky="ew")
+        diar_row.columnconfigure(0, weight=1)
+        self.diar_settings_btn = ttk.Button(diar_row, text="Diarization Settings", command=self._open_diarization_settings)
+        self.diar_settings_btn.grid(row=0, column=1, sticky="e")
         r += 1
-        # ダイアリゼーションに関する補足
-        self.hf_hint = tk.Label(
+        # Diarization hint (English)
+        self.hf_hint = ttk.Label(
             config_frame,
-            text="話者分離（Diarization）を有効化するには Hugging Face へのログインが必要です。",
+            text="Hugging Face login is required to enable diarization.",
             wraplength=460,
             justify="left",
         )
@@ -480,6 +512,11 @@ class WrapperGUI:
         self.transcript_box = tk.Text(trans_frame, state="disabled")
         try:
             self.transcript_box.configure(font=("Segoe UI", 12))
+        except Exception:
+            pass
+        # ダークテーマに合わせて Text の配色を調整
+        try:
+            self.transcript_box.configure(bg=self._bg, fg=self._fg, insertbackground=self._fg)
         except Exception:
             pass
         self.transcript_box.grid(row=0, column=0, sticky="nsew")
@@ -551,6 +588,7 @@ class WrapperGUI:
         # Save enable toggle should update widgets
         self.save_enabled.trace_add("write", lambda *_: self._update_save_widgets())
         self.vad_certfile.trace_add("write", lambda *_: self._update_vad_state())
+        self.use_vac.trace_add("write", lambda *_: self._update_vad_state())
         self.update_endpoints()
         # Apply initial save widgets state
         self._update_save_widgets()
@@ -883,6 +921,11 @@ class WrapperGUI:
         scroll = ttk.Scrollbar(top, orient="vertical", command=text.yview)
         scroll.pack(side=tk.RIGHT, fill=tk.Y)
         text.configure(yscrollcommand=scroll.set)
+        # テーマカラーに合わせて配色
+        try:
+            text.configure(bg=self._bg, fg=self._fg, insertbackground=self._fg)
+        except Exception:
+            pass
         try:
             with open(LICENSE_FILE, "r", encoding="utf-8") as f:
                 content = f.read()
@@ -919,9 +962,9 @@ class WrapperGUI:
         except Exception:
             pass
         small_font.configure(size=max(size - 2, 8))
-        tk.Label(
+        ttk.Label(
             link_frame,
-            text="このアプリはこのレポジトリのラッパーです",
+            text="This app is a wrapper for the above repository.",
             font=small_font,
         ).pack()
 
@@ -994,6 +1037,10 @@ class WrapperGUI:
         state = tk.NORMAL if (self.diarization.get() and self.hf_logged_in) else tk.DISABLED
         self.seg_model_combo.config(state=state)
         self.emb_model_combo.config(state=state)
+        try:
+            self.diar_settings_btn.config(state=state)
+        except Exception:
+            pass
 
     def _on_diarization_toggle(self) -> None:
         if self.diarization.get() and not self.hf_logged_in:
@@ -1291,17 +1338,20 @@ class WrapperGUI:
 
     def _update_vad_state(self) -> None:
         running = self.api_proc is not None or self.backend_proc is not None
+        # VAD toggle is available when not running
         if running:
             self.vac_chk.config(state=tk.DISABLED)
-        elif self.vad_certfile.get().strip() and Path(self.vad_certfile.get()).is_file():
-            # Certificate path exists as a file -> allow toggling
-            self.vac_chk.config(state=tk.NORMAL)
         else:
-            self.use_vac.set(False)
-            self.vac_chk.config(state=tk.DISABLED)
-        state = tk.NORMAL if not running else tk.DISABLED
-        self.vad_cert_entry.config(state=state)
-        self.vad_cert_browse.config(state=state)
+            self.vac_chk.config(state=tk.NORMAL)
+        # Certificate selection is only available when VAD is enabled and not running
+        cert_controls_state = tk.NORMAL if (self.use_vac.get() and not running) else tk.DISABLED
+        self.vad_cert_entry.config(state=cert_controls_state)
+        self.vad_cert_browse.config(state=cert_controls_state)
+        # VAD Settings button is enabled only when VAD is ON and not running
+        try:
+            self.vad_settings_btn.config(state=(tk.NORMAL if (self.use_vac.get() and not running) else tk.DISABLED))
+        except Exception:
+            pass
 
     def _apply_allow_external_initial(self) -> None:
         # Apply initial allow_external state to hosts without losing user's explicit values
