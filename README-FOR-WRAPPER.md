@@ -1,165 +1,125 @@
-# README for Wrapper Application
+# WhisperLiveKit Wrapper 仕様書（README-FOR-WRAPPER）
 
-譛ｬ譖ｸ縺ｯ縲∵里蟄倥� WhisperLiveKit 繧呈隼螟峨○縺壹↓螟門�縺九ｉ邨ｱ蜷医�蛻ｶ蠕｡縺吶ｋ縲後Λ繝�ヱ繝ｼ��rapper�峨阪い繝励Μ繧ｱ繝ｼ繧ｷ繝ｧ繝ｳ縺ｮ莉墓ｧ俶嶌縺ｧ縺吶ゆｸ玖ｨ倥�蜷��岼繧貞沂繧√↑縺後ｉ髢狗匱繧帝ｲ繧√※縺上□縺輔＞縲
+本リポジトリは upstream（`whisperlivekit`）を直接改変せず、GUI と API のラッパーとして統合・拡張します。upstream 連携ファイルは読み取り専用です。変更は `wrapper/` 配下とこの README、`WRAPPER-DEV-LOG.md` のみで行います。
 
-## 1. 讎りｦ�ｼ育岼逧��髱樒岼逧�ｼ
-- 逶ｮ逧�ｼ壽里蟄倥� WhisperLiveKit 繧呈隼螟峨○縺壹仝indows 縺ｧ襍ｷ蜍輔＠繧�☆縺 GUI 縺ｨ Whisper API 莠呈鋤縺ｮ髻ｳ螢ｰ繝輔ぃ繧､繝ｫ譁�ｭ苓ｵｷ縺薙＠ API 繧呈署萓帙☆繧九
-- 髱樒岼逧�ｼ啗ebSocket 繧ｹ繝医Μ繝ｼ繝蜃ｦ逅�Ο繧ｸ繝�け繧�Δ繝�Ν螳溯｣��菴薙�謾ｹ螟峨
+## 目的 / 非目的
+- 目的: 既存の `whisperlivekit.basic_server` を安全に起動・制御し、以下を提供する。
+  - デスクトップ GUI（Tkinter/Avalonia）による起動・録音・可視化
+  - OpenAI Whisper API 互換の REST エンドポイント（`/v1/audio/transcriptions`）
+  - モデル管理（ダウンロード/削除/パス解決）と話者分離の前提設定
+- 非目的:
+  - Whisper 推論エンジンの再実装や精度改善
+  - upstream コードの直接編集・分岐
 
-## 2. 諠ｳ螳壹Θ繝ｼ繧ｶ繝ｼ縺ｨ繝ｦ繝ｼ繧ｹ繧ｱ繝ｼ繧ｹ
-- 莉｣陦ｨ逧�Θ繝ｼ繧ｹ繧ｱ繝ｼ繧ｹ�
-  - 繝繝悶Ν繧ｯ繝ｪ繝�け縺ｧ GUI 繧定ｵｷ蜍輔＠縲√ヶ繝ｩ繧ｦ繧ｶ荳翫〒繝ｪ繧｢繝ｫ繧ｿ繧､繝譁�ｭ苓ｵｷ縺薙＠繧貞茜逕ｨ縲
-  - REST API `/v1/audio/transcriptions` 縺ｫ髻ｳ螢ｰ繝輔ぃ繧､繝ｫ繧帝∽ｿ｡縺励∽ｸ諡ｬ縺ｧ譁�ｭ苓ｵｷ縺薙＠邨先棡繧貞叙蠕励
+## 要求 / 制約
+- 必須: Python 3.11+、`ffmpeg`、ネットワークアクセス（モデル取得時）、必要に応じて .NET 8 SDK（Avalonia GUI）
+- プラットフォーム: Windows/macOS/Linux
+- セキュリティ: 既定は `127.0.0.1` バインド。外部公開はユーザー操作で有効化（`0.0.0.0`）
+- 依存は `requirements.txt` を参照。upstream は `pyproject.toml` に準拠
 
-## 3. 隕∵ｱゅ�蛻ｶ邏
-- 讖溯�隕∵ｱゑｼ哦UI 縺九ｉ繝昴�繝育分蜿ｷ縺ｪ縺ｩ縺ｮ迺ｰ蠅�ｾ晏ｭ伜､繧呈欠螳壹＠縲∵里蟄 WebSocket 繧ｵ繝ｼ繝舌�縺ｨ繝ｩ繝�ヱ繝ｼ API 繧定ｵｷ蜍輔�蛛懈ｭ｢縺ｧ縺阪ｋ縺薙→縲
-- 蜩∬ｳｪ隕∵ｱゑｼ域ｧ閭ｽ繝ｻ蜿ｯ逕ｨ諤ｧ繝ｻ驕狗畑諤ｧ 縺ｪ縺ｩ�会ｼ喃fmpeg 縺悟ｭ伜惠縺励↑縺�ｴ蜷医�繧ｨ繝ｩ繝ｼ繝｡繝�そ繝ｼ繧ｸ繧定ｿ斐☆縲
-- 蛻ｶ邏�ｼ域里蟄倥Μ繝晏､画峩荳榊庄縲∽ｾ晏ｭ倬未菫ゅ∝ｮ溯｡檎腸蠅 縺ｪ縺ｩ�会ｼ啻whisperlivekit` 繧偵し繝悶�繝ｭ繧ｻ繧ｹ縺ｧ襍ｷ蜍輔Ａffmpeg` 縺ｨ Python 3.11+ 縺悟ｿ�ｦ√
+## ユースケース / ユーザーフロー
+- ローカルでリアルタイム文字起こしを試す（GUI 起動 → Start API → 録音 → 結果表示/保存）
+- 既存アプリから Whisper API 互換 REST を叩く（GUI/CLI で API 起動 → `POST /v1/audio/transcriptions`）
+- モデルを事前に取得し、オフラインで利用（モデル管理 → Whisper/VAD/ダイアリゼーションモデル）
+- 話者分離を有効化（Hugging Face ログイン → モデル選択 → Start API）
 
-## 4. 繧｢繝ｼ繧ｭ繝�け繝√Ε
-- 讒区��啻wrapper/` 驟堺ｸ九↓ CLI/UI/險ｭ螳壹ｒ驟咲ｽｮ�井ｾ具ｼ啻wrapper/cli/`, `wrapper/app/`, `wrapper/config/`�
-- 萓晏ｭ假ｼ壽里蟄倥� `whisperlivekit`��mport 縺ｾ縺溘�繧ｵ繝悶�繝ｭ繧ｻ繧ｹ襍ｷ蜍包ｼ
-- 雋ｬ蜍吝�諡�ｼ壹Λ繝�ヱ繝ｼ縺ｯ蜈･蜃ｺ蜉帙�繧ｪ繝ｼ繧ｱ繧ｹ繝医Ξ繝ｼ繧ｷ繝ｧ繝ｳ繝ｻ險ｭ螳壹�UI 繧呈球蠖
+## アーキテクチャ
+- GUI 層（Python Tkinter）：`wrapper/cli/main.py` → `wrapper/app/gui.py`
+  - WhisperLiveKit の Web UI（`http://<backend_host>:<backend_port>`）をブラウザで開く
+  - Start/Stop で 2 プロセス起動/停止
+    - Backend: `python -m whisperlivekit.basic_server`
+    - API: `uvicorn wrapper.api.server:app`
+  - 録音→WebSocket 送信、テキスト可視化、保存
+- GUI 層（C# Avalonia）：`wrapper/app/avalonia_ui/*`
+  - Tkinter と同等の操作をクロスプラットフォームで提供（進行中）
+- API 層（FastAPI）：`wrapper/api/server.py`
+  - 受領音声を `ffmpeg` で 16kHz/mono PCM 化 → WebSocket で backend `/asr` へストリーミング → 連結テキスト返却
+- モデル管理：`wrapper/app/model_manager.py` と CLI `wrapper/cli/model_manager_cli.py`
+  - HF キャッシュと torch.hub キャッシュを wrapper 専用ディレクトリに分離
 
-## 5. 繧､繝ｳ繧ｿ繝ｼ繝輔ぉ繝ｼ繧ｹ
-- CLI/GUI�
-    - Avalonia 繝吶�繧ｹ縺ｮ繧ｯ繝ｭ繧ｹ繝励Λ繝�ヨ繝輔か繝ｼ繝 GUI 繧定ｿｽ蜉縲よ立 Tkinter 迚医→蜷後§ 2 繧ｫ繝ｩ繝繝ｬ繧､繧｢繧ｦ繝医〒繧ｵ繝ｼ繝舌�險ｭ螳壹ｄ繧ｨ繝ｳ繝峨�繧､繝ｳ繝郁｡ｨ遉ｺ縲�鹸髻ｳ繝代ロ繝ｫ繧貞ｙ縺医～dotnet run --project wrapper/app/avalonia_ui` 縺ｧ襍ｷ蜍輔☆繧九ＡStart API`/`Stop API` 繝懊ち繝ｳ繧�推遞ｮ繝√ぉ繝�け繝懊ャ繧ｯ繧ｹ/蜈･蜉帶ｬ�� Tkinter 迚医→蜷後§蠖ｹ蜑ｲ繧呈戟縺｡縲∬ｨｭ螳壹ヵ繧｡繧､繝ｫ縺ｯ蜈ｱ騾壹� `settings.json` 繧貞盾辣ｧ縺励※譌｢蟄倥Θ繝ｼ繧ｶ繝ｼ險ｭ螳壹ｒ蠑輔″邯吶＄縲
-    - `python -m wrapper.cli.main` 縺ｧ蠕捺擂縺ｮ Tkinter 繝吶�繧ｹ險ｭ螳 GUI 繧定ｵｷ蜍輔�UI 縺ｯ襍ｷ蜍墓凾縺ｫ遨ｺ縺阪�繝ｼ繝医ｒ閾ｪ蜍暮∈謚槭＠縺ｦ蜈･蜉帶ｬ�↓陦ｨ遉ｺ縺励∝ｿ�ｦ√↓蠢懊§縺ｦ邱ｨ髮�〒縺阪ｋ縲ＡStart API` 縺ｧ繧ｵ繝ｼ繝薙せ繧定ｵｷ蜍輔～Stop API` 縺ｧ蛛懈ｭ｢縺ｧ縺阪ｋ縲ＡAuto-start API on launch` 繧呈怏蜉ｹ縺ｫ縺吶ｋ縺ｨ襍ｷ蜍墓凾縺ｫ閾ｪ蜍暮幕蟋九☆繧九８hisper 繝｢繝�Ν縺ｯ `Whisper model` 縺ｮ繝励Ν繝繧ｦ繝ｳ縺九ｉ驕ｸ謚槭〒縺搾ｼ�available_models.md` 縺ｫ謗ｲ霈峨＆繧後◆蜈ｬ蠑上Δ繝�Ν荳隕ｧ�峨～Enable diarization` 繧偵が繝ｳ縺ｫ縺吶ｋ縺ｨ隧ｱ閠��髮｢縺梧怏蜉ｹ縺ｫ縺ｪ繧九ＡSegmentation model` 縺ｨ `Embedding model` 縺ｯ譌｢螳壹Δ繝�Ν繧偵�繝ｫ繝繧ｦ繝ｳ縺九ｉ驕ｸ縺ｶ縺九∽ｻｻ諢上� Hugging Face 繝｢繝�Ν ID 繧呈焔蜈･蜉帙〒縺阪ｋ縲ゅΔ繝�Ν蜿門ｾ励�邂｡逅�ｳｻ縺ｯ Start/Stop 縺ｮ陦後�蟾ｦ遶ｯ縺ｫ髮�ｴ�＆繧後～Manage models`�医ム繧ｦ繝ｳ繝ｭ繝ｼ繝/蜑企勁/逕ｨ騾碑｡ｨ遉ｺ�峨→ `Hugging Face Login`�医ヨ繝ｼ繧ｯ繝ｳ蜈･蜉帙�讀懆ｨｼ�峨′驟咲ｽｮ縺輔ｌ繧九る∈謚槭＠縺 Whisper 繝｢繝�Ν繧�ｩｱ閠��髮｢繝｢繝�Ν縺後Ο繝ｼ繧ｫ繝ｫ縺ｫ蟄伜惠縺励↑縺�ｴ蜷医� `Start API` 繧呈款縺吶→閾ｪ蜍輔ム繧ｦ繝ｳ繝ｭ繝ｼ繝峨′蟋九∪繧翫∝ｮ御ｺ�ｾ後↓繧ｵ繝ｼ繝舌�縺瑚ｵｷ蜍輔☆繧九
-    - `Use voice activity controller (VAD)` 繝√ぉ繝�け繝懊ャ繧ｯ繧ｹ縺ｧ Silero VAD 繧貞茜逕ｨ縺ｧ縺阪ｋ縲７AD 逕ｨ險ｼ譏取嶌繝輔ぃ繧､繝ｫ繧 `VAD certificate` 縺ｧ譌｢蟄倥�繝輔ぃ繧､繝ｫ縺ｨ縺励※謖�ｮ壹☆繧九∪縺ｧ譛牙柑蛹悶〒縺阪↑縺�ら┌蜉ｹ縺ｪ繝代せ繧�悴謖�ｮ壹�蝣ｴ蜷医�閾ｪ蜍慕噪縺ｫ繝ｭ繝�け縺輔ｌ繧九
-    - `Advanced settings` 繝懊ち繝ｳ縺九ｉ繧ｦ繧ｩ繝ｼ繝繧｢繝��髻ｳ螢ｰ縲∬ｨ隱槭�繧ｿ繧ｹ繧ｯ縲√ヰ繝�け繧ｨ繝ｳ繝臥ｨｮ蛻･縲√Ο繧ｰ繝ｬ繝吶Ν縲ヾSL 險ｼ譏取嶌/骰ｵ縲√ヰ繝�ヵ繧｡繝医Μ繝溘Φ繧ｰ縺ｪ縺ｩ隧ｳ邏ｰ縺ｪ繧ｵ繝ｼ繝舌�險ｭ螳壹ｒ陦後∴繧九ＡVAD Settings` 縺ｧ縺ｯ VAC 繝√Ε繝ｳ繧ｯ繧ｵ繧､繧ｺ繧偵～Diarization Settings` 縺ｧ縺ｯ隧ｱ閠��髮｢繝舌ャ繧ｯ繧ｨ繝ｳ繝峨ｒ驕ｸ謚槭〒縺阪ｋ縲
-    - 繝阪ャ繝医Ρ繝ｼ繧ｯ蜈ｬ髢具ｼ啻Allow external connections (0.0.0.0)` 繧偵が繝ｳ縺ｫ縺吶ｋ縺ｨ縲√ヰ繝�け繧ｨ繝ｳ繝峨♀繧医� API 繧 `0.0.0.0` 縺ｧ蠕�女�亥�繧､繝ｳ繧ｿ繝ｼ繝輔ぉ繝ｼ繧ｹ bind�峨☆繧九�ndpoints 谺�↓縺ｯ讀懷�縺励◆LAN蜀��螳櫑P�井ｾ具ｼ啻192.168.x.x`�峨ｒ逕ｨ縺�◆URL縺檎峩謗･陦ｨ遉ｺ縺輔ｌ縲∝､夜Κ遶ｯ譛ｫ縺九ｉ繧｢繧ｯ繧ｻ繧ｹ縺励ｄ縺吶＞蠖｢蠑上↓縺ｪ繧九�AN/WAN 縺ｫ蜈ｬ髢九＆繧後ｋ縺溘ａ縲√ヵ繧｡繧､繧｢繧ｦ繧ｩ繝ｼ繝ｫ險ｭ螳壹→繝昴�繝磯幕謾ｾ縺ｮ蜿ｯ蜷ｦ繧貞ｿ�★遒ｺ隱阪☆繧九％縺ｨ�医そ繧ｭ繝･繝ｪ繝�ぅ荳翫�謗ｨ螂ｨ�壼ｿ�ｦ∵凾縺ｮ縺ｿ繧ｪ繝ｳ�峨
-    - 遞ｼ蜒堺ｸｭ繝ｭ繝�け�啻Start API` 縺ｧ繧ｵ繝ｼ繝舌�遞ｼ蜒堺ｸｭ縺ｯ縲√�繧ｹ繝/繝昴�繝医√Δ繝�Ν險ｭ螳壹∬ｩｱ閠��髮｢險ｭ螳壹∝､夜Κ謗･邯夊ｨｱ蜿ｯ縲、uto-start縲？F 繝ｭ繧ｰ繧､繝ｳ縺ｪ縺ｩ縲√し繝ｼ繝舌�謖吝虚縺ｫ蠖ｱ髻ｿ縺吶ｋ險ｭ螳壹ｒ閾ｪ蜍輔〒繝ｭ繝�け�育┌蜉ｹ蛹厄ｼ峨☆繧九ＡStop API` 縺ｧ蛛懈ｭ｢縺吶ｋ縺ｨ蜀阪�邱ｨ髮�庄閭ｽ縺ｫ縺ｪ繧九
-    - 襍ｷ蜍募ｾ後� Backend Web UI繝ｻWebSocket `/asr`繝ｻ繝輔ぃ繧､繝ｫ譁�ｭ苓ｵｷ縺薙＠ API 縺ｮ蜷�お繝ｳ繝峨�繧､繝ｳ繝医→逕ｨ騾斐′陦ｨ遉ｺ縺輔ｌ縲�團縺ｮ `Copy` 繝懊ち繝ｳ縺ｧ繧ｯ繝ｪ繝��繝懊�繝峨↓繧ｳ繝斐�縺ｧ縺阪ｋ縲ゅΞ繧､繧｢繧ｦ繝医� `PanedWindow` 縺ｫ繧医ｋ2繧ｫ繝ｩ繝讒区��亥ｷｦ�售erver Settings�畿ndpoints縲∝承�啌ecorder�峨〒縲∵怙蟆丞ｹ��蜍慕噪縺ｫ霑ｽ蠕薙☆繧九
-      - 蟾ｦ��erver/Endpoints�峨�讓ｪ蟷��蜈ｨ菴薙�邏 2/3 縺ｫ蝗ｺ螳夲ｼ医せ繝励Μ繝�ち謫堺ｽ懊〒繧よｯ皮紫繧堤ｶｭ謖�ｼ峨
-      - 讓ｪ蟷��譛蟆丞､蛻ｶ邏��險ｭ縺代↑縺�ｼ域ｯ皮紫蝗ｺ螳壹�縺ｿ�峨
-      - 荳｡繝壹う繝ｳ縺ｮ繧ｦ繧ｧ繧､繝医�遲峨＠縺上∵ｯ皮紫蝗ｺ螳壹↓蜷医ｏ縺帙※閾ｪ蜍募�驟咲ｽｮ縺輔ｌ繧九
-      - Recorder 縺ｮ邵ｦ譁ｹ蜷代�蟾ｦ繧ｫ繝ｩ繝��erver Settings�畿ndpoints�峨�蜷郁ｨ磯ｫ倥＆繧剃ｸ企剞縺ｫ繧ｭ繝｣繝��縺輔ｌ縲∝ｷｦ繧定ｶ�∴縺ｦ莨ｸ縺ｳ縺ｪ縺�ゅえ繧｣繝ｳ繝峨え縺ｮ鬮倥＆縺ｯ蛻晄悄縺ｮ譛蟆城ｫ倥＆縺ｫ蝗ｺ螳壹＆繧後∫ｸｦ譁ｹ蜷代�繝ｪ繧ｵ繧､繧ｺ縺ｯ荳榊庄�域ｨｪ譁ｹ蜷代�蜿ｯ�峨
-    - GUI 繝��繝槭� `litera` 縺ｫ蝗ｺ螳夲ｼ亥�譖ｿ讖溯�縺ｯ謠蝉ｾ帙＠縺ｪ縺�ｼ峨
-    - 繝�じ繧､繝ｳ蛻ｷ譁ｰ��itera蜑肴署�会ｼ
-      - 蝓ｺ譛ｬ繝輔か繝ｳ繝医し繧､繧ｺ繧呈僑螟ｧ�亥庄隱ｭ諤ｧ蜷台ｸ奇ｼ峨
-      - 繧ｻ繧ｯ繧ｷ繝ｧ繝ｳ隕句�縺励ｒ螟ｧ縺阪￥螟ｪ蟄暦ｼ九�繝ｩ繧､繝槭Μ濶ｲ縺ｧ蠑ｷ隱ｿ縲∫峩荳九↓繧ｻ繝代Ξ繝ｼ繧ｿ繧定ｿｽ蜉縲
-      - 荳ｻ隕∵桃菴懶ｼ�tart/Stop�峨�繧ｿ繝ｳ繧貞承蟇�○縲～Start` 縺ｯ繝励Λ繧､繝槭Μ縲～Stop` 縺ｯ繝�Φ繧ｸ繝｣繝ｼ濶ｲ縺ｧ譏守｢ｺ蛹悶
-      - 蜈･蜉帶ｬ��繝懊ち繝ｳ縺ｮ菴咏區繧貞｢励ｄ縺励∵ュ蝣ｱ蟇�ｺｦ繧定ｪｿ謨ｴ縲
-      - 謚倥ｊ縺溘◆縺ｿUI縺ｯ蟒�ｭ｢縺励∝ｸｸ譎ょｱ暮幕陦ｨ遉ｺ縺ｫ邨ｱ荳�郁ｦ矩壹＠縺ｨ謫堺ｽ懈ｧ繧貞━蜈茨ｼ峨
-6. テスト：Avalonia UI の単体テストは `python wrapper/scripts/run_avalonia_tests.py` で実行できる。.NET SDK がインストールされている必要がある。
-    - 繝倥ャ繝逶ｴ荳九↓繧｢繧､繧ｳ繝ｳ莉倥″繝��繝ｫ繝舌�繧定ｨｭ縺代�鹸髻ｳ髢句ｧ具ｼ丞●豁｢繧�Δ繝�Ν邂｡逅�ｒ繝ｯ繝ｳ繧ｯ繝ｪ繝�け縺ｧ螳溯｡後〒縺阪ｋ縲
-    - 繧ｵ繝ｼ繝舌�險ｭ螳壹�骭ｲ髻ｳ繝ｻ繧ｨ繝ｳ繝峨�繧､繝ｳ繝亥推繝代ロ繝ｫ縺ｯ謚倥ｊ縺溘◆縺ｿ蜿ｯ閭ｽ縺ｪ繧ｻ繧ｯ繧ｷ繝ｧ繝ｳ縺ｨ縺励※螳溯｣�＠縲√Μ繧ｵ繧､繧ｺ譎ゅ↓繧ゅΞ繧､繧｢繧ｦ繝医′蟠ｩ繧後↓縺上＞繝ｬ繧ｹ繝昴Φ繧ｷ繝匁ｧ区�縺ｫ縺ｪ縺｣縺ｦ縺�ｋ縲
-    - 繝｢繝�Ν繝繧ｦ繝ｳ繝ｭ繝ｼ繝峨ｄ骭ｲ髻ｳ迥ｶ諷九�蟶ｸ險ｭ縺ｮ繧ｹ繝��繧ｿ繧ｹ繝舌�縺ｨ繝励Ο繧ｰ繝ｬ繧ｹ繝舌�縺ｫ陦ｨ遉ｺ縺輔ｌ縲√Δ繝ｼ繝繝ｫ繝繧､繧｢繝ｭ繧ｰ繧剃ｽｿ繧上★縺ｫ騾ｲ謐励ｒ遒ｺ隱阪〒縺阪ｋ縲
-    - Hugging Face 繝医�繧ｯ繝ｳ讀懆ｨｼ�啻Hugging Face Login` 縺九ｉ蜈･蜉帙＆繧後◆繧｢繧ｯ繧ｻ繧ｹ繝医�繧ｯ繝ｳ縺ｯ蜊ｳ譎ゅ↓讀懆ｨｼ縺輔ｌ縲『hoami 謌仙粥譎ゅ�縺ｿ縲窪nable diarization縲阪′譛牙柑蛹悶＆繧後ｋ縲ゅヨ繝ｼ繧ｯ繝ｳ縺梧悴蜈･蜉帙∪縺溘�辟｡蜉ｹ縺ｪ蝣ｴ蜷医�繝√ぉ繝�け繝懊ャ繧ｯ繧ｹ縺後Ο繝�け縺輔ｌ繧九
-    - 骭ｲ髻ｳ繧ｳ繝ｳ繝医Ο繝ｼ繝ｫ��ecorder�会ｼ啻Start Recording` 縺ｧ繝槭う繧ｯ蜈･蜉帙ｒ `/asr` 縺ｫ繧ｹ繝医Μ繝ｼ繝溘Φ繧ｰ縺励ゝranscript 縺ｫ繝ｪ繧｢繝ｫ繧ｿ繧､繝陦ｨ遉ｺ縲る鹸髻ｳ荳ｭ縺ｯ髻ｳ驥上Ξ繝吶Ν縺ｨ邨碁℃譎る俣繧定｡ｨ遉ｺ縺励～Stop Recording` 縺ｧ邨ゆｺ�☆繧九ＡSave transcript to file` 繧偵が繝ｳ縺ｫ縺吶ｋ縺ｨ菫晏ｭ伜�蜈･蜉帙→ `Browse` 縺梧怏蜉ｹ縺ｫ縺ｪ繧翫�鹸髻ｳ邨ゆｺ�凾縺ｫ閾ｪ蜍穂ｿ晏ｭ倥＆繧後ｋ縲
-    - 隧ｱ閠��髮｢��iarization�会ｼ唏ugging Face 繝ｭ繧ｰ繧､繝ｳ縺梧�蜉溘＠縺ｦ縺�ｋ蝣ｴ蜷医↓縺ｮ縺ｿ譛牙柑蛹悶〒縺阪ｋ縲よ悴繝ｭ繧ｰ繧､繝ｳ譎ゅ�譛牙柑蛹悶〒縺阪★縲�未騾｣繝｢繝�Ν驕ｸ謚槭ｂ繝ｭ繝�け縺輔ｌ繧九ゑｼ育腸蠅�､画焚 `HF_TOKEN` / `HUGGINGFACEHUB_API_TOKEN` / `HUGGING_FACE_HUB_TOKEN` 縺ｾ縺溘� `huggingface_hub` 縺ｫ菫晏ｭ倥＆繧後◆繝医�繧ｯ繝ｳ縺悟ｭ伜惠縺吶ｌ縺ｰ縲√Ο繧ｰ繧､繝ｳ貂医∩縺ｨ縺励※謇ｱ縺�ｼ
-      - `Open Web GUI` 繝懊ち繝ｳ縺ｧ繝悶Λ繧ｦ繧ｶ縺九ｉ蜈�� Web GUI 繧帝幕縺代ｋ縲ＡLicense` 繝懊ち繝ｳ縺ｯ繝｡繧､繝ｳ繧ｦ繧｣繝ｳ繝峨え蜿ｳ荳翫↓縺ゅｊ縲∵悽繝ｪ繝昴ず繝医Μ蜷梧｢ｱ縺ｮ `LICENSE` 繝輔ぃ繧､繝ｫ縺ｨ萓晏ｭ倥Λ繧､繝悶Λ繝ｪ縺ｮ繝ｩ繧､繧ｻ繝ｳ繧ｹ荳隕ｧ縺翫ｈ縺ｳ繝ｩ繧､繧ｻ繝ｳ繧ｹ譛ｬ譁�ｒ譁ｰ隕上え繧｣繝ｳ繝峨え縺ｫ陦ｨ遉ｺ縺吶ｋ��wrapper/licenses.json` 繧定ｪｭ縺ｿ霎ｼ繧�峨
-        - 萓晏ｭ倥Λ繧､繝悶Λ繝ｪ縺ｮ繝ｩ繧､繧ｻ繝ｳ繧ｹ諠�ｱ縺ｯ `python wrapper/scripts/generate_licenses.py` 繧貞ｮ溯｡後☆繧九％縺ｨ縺ｧ譖ｴ譁ｰ縺輔ｌ繧九ゅΛ繧､繧ｻ繝ｳ繧ｹ諠�ｱ繧�Λ繧､繧ｻ繝ｳ繧ｹ譛ｬ譁�′蜿門ｾ励〒縺阪↑縺九▲縺溘Λ繧､繝悶Λ繝ｪ縺ｯ陦ｨ遉ｺ縺輔ｌ縺ｪ縺�
-      - `Open Web GUI` 繝懊ち繝ｳ縺ｯ繝舌ャ繧ｯ繧ｨ繝ｳ繝峨′襍ｷ蜍穂ｸｭ縺ｮ縺ｿ譛牙柑蛹悶＆繧後ｋ縲
-      - `License` 繧ｦ繧｣繝ｳ繝峨え縺ｫ縺ｯ upstream 繝ｪ繝昴ず繝医Μ [QuentinFuxa/WhisperLiveKit](https://github.com/QuentinFuxa/WhisperLiveKit) 縺ｸ縺ｮ繝ｪ繝ｳ繧ｯ縺ｨ縲後％縺ｮ繧｢繝励Μ縺ｯ縺薙�繝ｬ繝昴ず繝医Μ縺ｮ繝ｩ繝�ヱ繝ｼ縺ｧ縺吶阪�豕ｨ險倥ｒ陦ｨ遉ｺ縺吶ｋ縲
-- API�
-  - `POST /v1/audio/transcriptions`��ultipart/form-data, field=`file`� 竊 `{ "text": "..." }`
-  - ffmpeg 縺瑚ｦ九▽縺九ｉ縺ｪ縺�ｴ蜷 `500 ffmpeg_not_found` 繧定ｿ泌唆縲
-- 險ｭ螳夲ｼ
-    - 蜈･蜉帙＆繧後◆險ｭ螳壹�迺ｰ蠅�､画焚 `WRAPPER_BACKEND_HOST`/`WRAPPER_BACKEND_PORT` 縺ｨ `WRAPPER_API_HOST`/`WRAPPER_API_PORT` 縺ｨ縺励※繧ｵ繝悶�繝ｭ繧ｻ繧ｹ縺ｫ貂｡縺輔ｌ繧九�UI 縺ｯ譌｢螳壹〒繝舌ャ繧ｯ繧ｨ繝ｳ繝峨→ API 繧定�蜍戊ｵｷ蜍輔☆繧具ｼ郁ｨｭ螳 `Auto-start API on launch` 縺ｮ繝�ヵ繧ｩ繝ｫ繝医�繧ｪ繝ｳ�峨ら腸蠅�､画焚 `WRAPPER_API_AUTOSTART=0` 繧ゅ＠縺上�繝√ぉ繝�け繝懊ャ繧ｯ繧ｹ繧偵が繝輔↓縺吶ｋ縺ｨ閾ｪ蜍戊ｵｷ蜍輔ｒ辟｡蜉ｹ蛹悶〒縺阪ｋ縲ゅ�繝ｼ繝育分蜿ｷ繧呈欠螳壹＠縺ｪ縺九▲縺溷ｴ蜷医�遨ｺ縺阪�繝ｼ繝医′閾ｪ蜍慕噪縺ｫ蜑ｲ繧雁ｽ薙※繧峨ｌ繧九
-    - `Allow external connections` 繧偵が繝ｳ縺ｫ縺吶ｋ縺ｨ繝帙せ繝亥､縺ｯ `0.0.0.0` 縺ｫ險ｭ螳壹＆繧後√が繝輔↓謌ｻ縺励◆蝣ｴ蜷医�逶ｴ蜑阪�繝ｭ繝ｼ繧ｫ繝ｫ逕ｨ繝帙せ繝茨ｼ井ｾ具ｼ啻127.0.0.1`�峨ｒ蠕ｩ蜈�☆繧九りｨｭ螳壹� `settings.json` 縺ｫ `allow_external` 縺ｨ縺励※豌ｸ邯壼喧縺輔ｌ繧九
-     - Whisper 髢｢騾｣縺ｮ險ｭ螳壹� `model`縲～use_vac`縲～vad_certfile`縲～diarization`縲～segmentation_model`縲～embedding_model` 縺ｫ蜉縺医～warmup_file`縲～confidence_validation`縲～punctuation_split`縲～diarization_backend`縲～min_chunk_size`縲～language`縲～task`縲～backend`縲～vac_chunk_size`縲～buffer_trimming`縲～buffer_trimming_sec`縲～log_level`縲～ssl_certfile`縲～ssl_keyfile`縲～frame_threshold` 繧剃ｿ晏ｭ倥☆繧九よ立蠖｢蠑上�險ｭ螳壹ヵ繧｡繧､繝ｫ縺ｯ蟄伜惠縺吶ｌ縺ｰ閾ｪ蜍戊ｪｭ縺ｿ霎ｼ縺ｿ縺輔ｌ縲∵眠鬆�岼縺ｯ繝�ヵ繧ｩ繝ｫ繝亥､縺ｧ陬懷ｮ後＆繧後ｋ縲
-    - GUI 荳翫〒邱ｨ髮�＠縺溯ｨｭ螳壹�蜷 OS 縺ｮ繝ｦ繝ｼ繧ｶ繝ｼ險ｭ螳壹ョ繧｣繝ｬ繧ｯ繝医Μ�井ｾ具ｼ啻%LOCALAPPDATA%\\WhisperLiveKit\\wrapper\\settings.json`�峨↓菫晏ｭ倥＆繧後∵ｬ｡蝗櫁ｵｷ蜍墓凾縺ｫ隱ｭ縺ｿ霎ｼ縺ｾ繧後ｋ縲ゆｿ晏ｭ倥↓髢｢繧上ｋ險ｭ螳夲ｼ�save_enabled`縲～save_path`�峨ｂ縺薙％縺ｫ菫晄戟縺輔ｌ繧九ょ�蝗櫁ｵｷ蜍墓凾縺ｫ譌ｧ `~/.whisperlivekit-wrapper.json` 縺悟ｭ伜惠縺吶ｌ縺ｰ閾ｪ蜍慕噪縺ｫ遘ｻ陦後＆繧後ｋ縲ゅヵ繧ｩ繝ｼ繝槭ャ繝井ｾ九� `wrapper/config/settings.example.json` 繧貞盾辣ｧ縲
+## I/O / 公開インターフェース
+- CLI/GUI:
+  - Tkinter GUI 起動: `python -m wrapper.cli.main`
+  - Avalonia GUI 起動: `dotnet run --project wrapper/app/avalonia_ui`
+- REST API:
+  - エンドポイント: `POST http://<api_host>:<api_port>/v1/audio/transcriptions`
+  - フォーム: `file=@audio.wav`、`model=whisper-1`
+  - 例: `curl -X POST -F "file=@sample.wav" -F "model=whisper-1" http://127.0.0.1:8001/v1/audio/transcriptions`
+  - レスポンス: `{ "text": "...", "model": "whisper-1" }`
+- WebSocket（upstream 提供）:
+  - `ws://<backend_host>:<backend_port>/asr`（GUI の Recorder もこれを利用）
+- 設定ファイル（自動保存/読込）:
+  - `~/.config/WhisperLiveKit/wrapper/settings.json`（OSにより適切な `platformdirs` パス）
+- 主な環境変数（初期値や自動設定に利用）:
+  - `WRAPPER_BACKEND_HOST` / `WRAPPER_BACKEND_PORT`
+  - `WRAPPER_API_HOST` / `WRAPPER_API_PORT`
+  - `WRAPPER_ALLOW_EXTERNAL=1`（`0.0.0.0` バインド）
+  - `WRAPPER_MODEL`、`WRAPPER_USE_VAC=1`、`WRAPPER_DIARIZATION=1`
+  - `WRAPPER_SEGMENTATION_MODEL`、`WRAPPER_EMBEDDING_MODEL`
+  - `WRAPPER_CACHE_DIR`（モデル管理 CLI のキャッシュルート上書き）
+  - `SSL_CERT_FILE`（VAD 用の証明書パスを明示）
 
-## 6. 螳溯｡後�繧ｻ繝�ヨ繧｢繝��謇矩
-1. 蠢�ｦ∬ｦ∽ｻｶ�啀ython 3.11 莉･髯阪’fmpeg縲√う繝ｳ繧ｿ繝ｼ繝阪ャ繝域磁邯壹
-2. 繧ｻ繝�ヨ繧｢繝���啻pip install -r requirements.txt` 縺ｧ `fastapi`, `uvicorn`, `websockets`, `sounddevice`, `platformdirs` 縺ｪ縺ｩ縺ｮ萓晏ｭ倥Λ繧､繝悶Λ繝ｪ繧貞ｰ主�縲�UI 縺ｮ繝��繝槫�譖ｿ縺ｫ縺ｯ蛻･騾 `ttkbootstrap` 縺悟ｿ�ｦ√↑縺溘ａ縲∵悴繧､繝ｳ繧ｹ繝医�繝ｫ縺ｮ蝣ｴ蜷医� `pip install ttkbootstrap` 繧貞ｮ溯｡後☆繧九
-3. 螳溯｡御ｾ具ｼ�kinter 迚茨ｼ会ｼ啻python -m wrapper.cli.main` 繧貞ｮ溯｡後☆繧九→險ｭ螳 GUI 縺瑚ｵｷ蜍輔☆繧九ょｿ�ｦ√↓蠢懊§縺ｦ繝帙せ繝医ｄ繝昴�繝医ｒ螟画峩縺励～Start API` 縺ｧ WhisperLiveKit 縺ｨ繝ｩ繝�ヱ繝ｼ API 繧帝幕蟋九☆繧九�UI 縺ｯ蛻晄悄迥ｶ諷九〒繝舌ャ繧ｯ繧ｨ繝ｳ繝峨→ API 繧定�蜍暮幕蟋九☆繧具ｼ育腸蠅�､画焚 `WRAPPER_API_AUTOSTART=0` 繧ゅ＠縺上�險ｭ螳壹〒辟｡蜉ｹ蛹門庄閭ｽ�峨る鹸髻ｳ繧定｡後≧蝣ｴ蜷医� WebSocket URL 繧堤｢ｺ隱阪＠縲∝ｿ�ｦ√↑繧我ｿ晏ｭ伜�繝輔ぃ繧､繝ｫ繧定ｨｭ螳壹＠縺ｦ縺九ｉ `Start Recording` 繝懊ち繝ｳ縺ｧ繝槭う繧ｯ蜈･蜉帙ｒ騾∽ｿ｡縺吶ｋ縲
-4. 螳溯｡御ｾ具ｼ�valonia 迚茨ｼ会ｼ啻.NET 8` 繧貞ｰ主�蠕後～dotnet run --project wrapper/app/avalonia_ui` 繧貞ｮ溯｡後☆繧九→ Tkinter 迚医→蜷檎ｭ峨� GUI 縺瑚ｵｷ蜍輔＠縲√し繝ｼ繝舌�險ｭ螳壹�繧ｨ繝ｳ繝峨�繧､繝ｳ繝郁｡ｨ遉ｺ繝ｻ骭ｲ髻ｳ繝代ロ繝ｫ繧貞ｙ縺医◆逕ｻ髱｢縺九ｉ繝舌ャ繧ｯ繧ｨ繝ｳ繝峨ｒ謫堺ｽ懊〒縺阪ｋ縲りｨｭ螳壹� Tkinter 迚医→蜷後§ `settings.json` 繧貞�譛峨☆繧九
-5. 萓晏ｭ倥Λ繧､繝悶Λ繝ｪ繧呈峩譁ｰ縺励◆蝣ｴ蜷医� `python wrapper/scripts/generate_licenses.py` 繧貞ｮ溯｡後＠縺ｦ繝ｩ繧､繧ｻ繝ｳ繧ｹ諠�ｱ繝輔ぃ繧､繝ｫ `wrapper/licenses.json` 繧貞�逕滓�縺励√Λ繧､繧ｻ繝ｳ繧ｹ譛ｬ譁�ｒ蜷ｫ繧√※繝ｪ繝昴ず繝医Μ縺ｫ繧ｳ繝溘ャ繝医☆繧九
+## 実行・設定手順
+1) 依存インストール
+- Python 環境を有効化し `pip install -r requirements.txt`
+- `ffmpeg` をインストール（PATH で実行可能に）
+- Avalonia を使う場合は .NET 8 SDK をインストール
 
-## 7. 繧ｨ繝ｩ繝ｼ繝上Φ繝峨Μ繝ｳ繧ｰ縺ｨ繝ｭ繧ｰ�上ユ繝ｬ繝｡繝医Μ
-- 萓句､門�鬘槭�繝ｪ繝医Λ繧､譁ｹ驥昴√Θ繝ｼ繧ｶ繝ｼ騾夂衍譁ｹ豕
-- 繝ｭ繧ｰ縺ｮ蜃ｺ蜉帛�繝ｻ邊貞ｺｦ繝ｻ繝輔か繝ｼ繝槭ャ繝
-- 蜿朱寔謖�ｨ呻ｼ亥ｿ�ｦ√↑繧会ｼ峨→繧ｪ繝励ヨ繧｢繧ｦ繝域婿豕
+2) GUI 起動と基本操作（Tkinter）
+- 起動: `python -m wrapper.cli.main`
+- Server Settings で host/port を確認（既定は空きポート自動割当）
+- Start API で backend と API を起動（Stop API で停止）
+- Recorder で録音開始/停止、テキスト表示、保存先指定が可能
+- Manage models で Whisper/VAD/関連モデルの取得・削除
+- Hugging Face Login でトークン登録（話者分離の有効化に必須）
 
-## 8. 繧ｻ繧ｭ繝･繝ｪ繝�ぅ�上�繝ｩ繧､繝舌す繝ｼ
-- 蜈･蜉帙ョ繝ｼ繧ｿ縺ｮ謇ｱ縺�∽ｿ晏ｭ伜庄蜷ｦ縲√�繧ｹ繧ｭ繝ｳ繧ｰ譁ｹ驥
-- 讓ｩ髯舌�隱榊庄�亥ｿ�ｦ√↑繧会ｼ
+3) GUI 起動（Avalonia）
+- 起動: `dotnet run --project wrapper/app/avalonia_ui`
+- 操作は Tkinter 版と同等（Advanced/VAD/Diarization ダイアログは段階的に整備）
+ - 配置: `Manage models` / `Hugging Face Login` / `Start API` / `Stop API` は Server Settings の最下部に集約。
+ - 表示安定化: Endpoints の URL 欄は横幅可変で広めに確保（必要に応じてコピー/オープンボタンを右側に配置）。
 
-## 9. 繝代ヵ繧ｩ繝ｼ繝槭Φ繧ｹ逶ｮ讓
-- 繝ｬ繧､繝�Φ繧ｷ縲√せ繝ｫ繝ｼ繝励ャ繝医√Μ繧ｽ繝ｼ繧ｹ菴ｿ逕ｨ縺ｮ逶ｮ螳
-- 繝吶Φ繝∬ｦｳ轤ｹ�医ユ繧ｹ繝医ョ繝ｼ繧ｿ縲∵擅莉ｶ�
+4) API だけを起動したい場合（手動）
+- Backend: `python -m whisperlivekit.basic_server --host 127.0.0.1 --port 8000 [--model_dir <PATH>] [...options]`
+- API: `WRAPPER_BACKEND_HOST=127.0.0.1 WRAPPER_BACKEND_PORT=8000 uvicorn wrapper.api.server:app --host 127.0.0.1 --port 8001`
 
-## 10. 繝ｪ繝ｪ繝ｼ繧ｹ險育判
-- 繝槭う繝ｫ繧ｹ繝医�繝ｳ��VP 竊 Beta 竊 GA�
-- 莠呈鋤繝昴Μ繧ｷ繝ｼ��LI 蠑墓焚繧�ｨｭ螳壹�螳牙ｮ壽ｧ�
+## エラーハンドリング / ログ・テレメトリ
+- `ffmpeg` が無い場合: API は `500 (ffmpeg_not_found)` を返す
+- 音声変換失敗: `400 (ffmpeg_failed)` を返す
+- backend 未起動/接続失敗: WebSocket 例外 → API は 5xx 応答の可能性
+- ログ: backend と API は標準出力へログ出力（GUI から起動時も同様）
+- テレメトリ: 送信なし。モデル取得時に Hugging Face へのアクセスが発生
 
-## 11. 莉倬鹸��ODO / 譛ｪ隗｣豎ｺ莠矩�ｼ
-- TODO�
-- 譛ｪ隗｣豎ｺ莠矩�ｼ
+## セキュリティ / プライバシー
+- 既定は `127.0.0.1` バインド。`Allow external connections` を有効にすると `0.0.0.0` で待受
+- 公開時はファイアウォール/ポート開放/反向プロキシ（TLS/認証）の考慮が必須
+- API に認証は付与していないため、インターネット直結は非推奨
+- `--ssl-certfile`/`--ssl-keyfile`（backend 引数）で TLS 終端に対応可能
 
-## 12. Windows 蜷代￠ MSIX 繝代ャ繧ｱ繝ｼ繧ｸ繝ｳ繧ｰ
-- 逶ｮ逧�ｼ啗indows 繝阪う繝�ぅ繝悶↑驟榊ｸ�ｽ｢諷九ｒ謠蝉ｾ帙☆繧九◆繧√｀SIX 蠖｢蠑上〒縺ｮ繝代ャ繧ｱ繝ｼ繧ｸ蛹悶ｒ諠ｳ螳壹☆繧九
-- 霑ｽ蜉螳溯｣��蛟呵｣懶ｼ
-  - PyInstaller 縺ｧ `wrapper/cli/main.py` 繧貞腰荳 exe 蛹悶☆繧九ン繝ｫ繝峨せ繧ｯ繝ｪ繝励ヨ�井ｾ具ｼ啻wrapper/scripts/build_msix.ps1`�峨
-  - `AppxManifest.xml` 繧堤畑諢上＠縲～whisperlivekit/web` 縺ｪ縺ｩ蠢�ｦ√↑髱咏噪繝輔ぃ繧､繝ｫ繧貞酔譴ｱ縺吶ｋ險ｭ螳壹
-  - `makeappx.exe` 縺ｫ繧医ｋ繝代ャ繧ｱ繝ｼ繧ｸ逕滓�縺ｨ `signtool.exe` 縺ｫ繧医ｋ鄂ｲ蜷阪ヵ繝ｭ繝ｼ縲
-  - 險ｭ螳壹ヵ繧｡繧､繝ｫ縺ｯ `platformdirs` 繧帝壹§縺ｦ `AppData` 驟堺ｸ九↓菫晏ｭ倥＆繧後∵立繝帙�繝繝�ぅ繝ｬ繧ｯ繝医Μ縺ｮ險ｭ螳壹′蟄伜惠縺吶ｌ縺ｰ蛻晏屓襍ｷ蜍墓凾縺ｫ閾ｪ蜍慕ｧｻ陦後＆繧後ｋ縲
-- 譌｢蟄倥Θ繝ｼ繧ｶ繝ｼ縺ｸ縺ｮ蠖ｱ髻ｿ�夂ｧｻ陦悟�逅�′螳溯｣�＆繧後※縺翫ｊ縲∽ｻ･蜑阪�險ｭ螳壹ヵ繧｡繧､繝ｫ縺後≠繧後�閾ｪ蜍慕噪縺ｫ譁ｰ繝�ぅ繝ｬ繧ｯ繝医Μ縺ｸ繧ｳ繝斐�縺輔ｌ繧九
+## パフォーマンス目標（参考）
+- 低遅延（< 数百 ms レベルのバッファリング）での逐次文字起こし
+- モデルとハードウェアに依存。`large-v3` 以上は高負荷のため、必要に応じて `tiny/base/small` を推奨
+- VAD 有効時は torch.hub の初回取得が発生。証明書問題回避のため既定では無効（GUI から有効化）
 
-## 13. MSIX 驟榊ｸ�ｼ医Δ繝�Ν髱槫酔譴ｱ繝ｻHugging Face 繝繧ｦ繝ｳ繝ｭ繝ｼ繝芽ｨ育判�
-譛ｬ遽縺ｯ縲｀SIX 繝代ャ繧ｱ繝ｼ繧ｸ縺ｫ繝｢繝�Ν繧貞性繧√★縲∝ｿ�ｦ√↓蠢懊§縺ｦ Hugging Face 縺九ｉ繝繧ｦ繝ｳ繝ｭ繝ｼ繝峨☆繧矩°逕ｨ縺ｮ險育判縺ｧ縺ゅｋ縲ょｮ溯｣��騾ｲ陦後↓蜷医ｏ縺帙※譛ｬ險育判繧呈峩譁ｰ縺吶ｋ縲
+## リリース計画/今後のタスク
+- Avalonia GUI の機能パリティ完了（Advanced/VAD/Diarization ダイアログの実装）
+- パッケージング（例: Windows MSIX）と自動アップデート検討
+- API 認証/簡易ダッシュボードの追加検討
+- upstream への改善提案は `WRAPPER-DEV-LOG.md` に記録
 
-### 13.1 逶ｮ讓吶→遽�峇
-- 逶ｮ讓呻ｼ哺SIX 繧､繝ｳ繧ｹ繝医�繝ｩ縺ｫ縺ｯ繝｢繝�Ν繧貞酔譴ｱ縺帙★縲∝�蝗櫁ｵｷ蜍輔∪縺溘�繝ｦ繝ｼ繧ｶ繝ｼ謫堺ｽ懊〒繝｢繝�Ν繧貞叙蠕励〒縺阪ｋ縺薙→縲
-- 遽�峇�
-  - Whisper 繝｢繝�Ν縺翫ｈ縺ｳ隧ｱ閠��髮｢繝｢繝�Ν繧 Hugging Face 縺九ｉ繝繧ｦ繝ｳ繝ｭ繝ｼ繝峨＠縺ｦ蛻ｩ逕ｨ縲
-  - GUI 縺ｧ繝｢繝�Ν縺ｮ繝繧ｦ繝ｳ繝ｭ繝ｼ繝臥憾豕√ｒ蜿ｯ隕門喧縺励∝炎髯､縺ｪ縺ｩ縺ｮ邂｡逅�′蜿ｯ閭ｽ縲
-  - 繝繧ｦ繝ｳ繝ｭ繝ｼ繝画ｸ医∩繝｢繝�Ν縺ｯ繝ｦ繝ｼ繧ｶ繝ｼ鬆伜沺縺ｫ菫晏ｭ倥＠縲∝�蛻ｩ逕ｨ縺ｧ縺阪ｋ繧医≧縺ｫ縺吶ｋ縲
+## 主要ファイル
+- GUI（Tkinter）: `wrapper/app/gui.py`（エントリ: `python -m wrapper.cli.main`）
+- GUI（Avalonia）: `wrapper/app/avalonia_ui/*`（エントリ: `dotnet run --project wrapper/app/avalonia_ui`）
+- API: `wrapper/api/server.py`（FFmpeg 変換 → WS `/asr`）
+- モデル管理: `wrapper/app/model_manager.py`、`wrapper/cli/model_manager_cli.py`
+- 設定テンプレート: `wrapper/config/settings.example.json`
+- ライセンス一覧: `wrapper/licenses.json`（GUI の License ボタンから参照）
 
-### 13.2 繝｢繝�Ν繝繧ｦ繝ｳ繝ｭ繝ｼ繝峨→邂｡逅
-- 繝ｩ繝�ヱ繝ｼ縺ｯ `huggingface_hub` 繧貞茜逕ｨ縺励※繝｢繝�Ν繧貞叙蠕励
-- GUI 縺ｫ縲後Δ繝�Ν邂｡逅�阪ヱ繝阪Ν繧貞ｮ溯｣�＠縲∽ｻ･荳九ｒ謠蝉ｾ幢ｼ
-  - 繝｢繝�Ν荳隕ｧ縺ｨ繝ｭ繝ｼ繧ｫ繝ｫ菫晏ｭ倡憾豕√�陦ｨ遉ｺ縲
-  - 繝繧ｦ繝ｳ繝ｭ繝ｼ繝蛾ｲ謐暦ｼ医�繝ｭ繧ｰ繝ｬ繧ｹ繝舌��芽｡ｨ遉ｺ縲
-  - 蜑企勁繝懊ち繝ｳ縺ｫ繧医ｋ繝ｭ繝ｼ繧ｫ繝ｫ繝｢繝�Ν縺ｮ蜑企勁縲
-  - Whisper 繝｢繝�Ν縺ｫ蜉縺医∬ｩｱ閠��髮｢��egmentation/Embedding�峨Δ繝�Ν繧ょ酔繝代ロ繝ｫ縺ｧ邂｡逅�庄閭ｽ縲
+## 動作確認チェック
+- `python -m wrapper.cli.main` で GUI が起動し、Start/Stop が機能する
+- Web UI が `http://<backend_host>:<backend_port>` で開ける
+- `curl` で `/v1/audio/transcriptions` に音声を投げてテキストが返る
+- モデル管理で Whisper/VAD が取得/削除できる
+- 設定が `settings.json` に保存/復元される
 
-### 13.3 驟咲ｽｮ繝�ぅ繝ｬ繧ｯ繝医Μ縺ｨ迺ｰ蠅�､画焚
-- 譌｢螳壹�繝｢繝�Ν菫晏ｭ伜��啻%LOCALAPPDATA%/Packages/<App>/LocalCache/WhisperLiveKit/hf-cache/`縲
-- Whisper 繝｢繝�Ν縺ｯ繝繧ｦ繝ｳ繝ｭ繝ｼ繝牙ｾ後↓繝代せ繧定ｧ｣豎ｺ縺励～--model_dir` 蠑墓焚縺ｧ `whisperlivekit.basic_server` 縺ｫ貂｡縺吶
-- `HUGGINGFACE_HUB_CACHE` 縺翫ｈ縺ｳ `HF_HOME` 繧偵％縺ｮ繝�ぅ繝ｬ繧ｯ繝医Μ縺ｫ險ｭ螳壹＠縲∬ｩｱ閠��髮｢繝｢繝�Ν繧ょ酔繧ｭ繝｣繝�す繝･繧貞茜逕ｨ縺吶ｋ縲
-
-## �ύX�����iGUI�ڐA�T�}���j
-- Avalonia��GUI�֋�Tkinter�ł�2�J�����\���Ǝ�v�@�\�iStart/Stop�AEndpoints�\���ARecorder�j���ڐA�B
-- Start/Stop�̓o�b�N�G���h�ipython -m whisperlivekit.basic_server�j��API�iuvicorn wrapper.api.server:app�j�𓯎��N���B
-- Endpoints�� /asr�iWebSocket�j�� /v1/audio/transcriptions�iREST�j��\���B0.0.0.0 �I������LAN IP��\���B
-- Recorder��NAudio��16kHz/mono/16bit��PCM��WebSocket�֔z�M�B���x��/�^�C�}�[/�ۑ��ɑΉ��B
-- Manage models�_�C�A���O��Hugging Face Login�_�C�A���O��ǉ��B���f���Ǘ���g�[�N���ۑ���Python�T�u�v���Z�X�Ŋ������W�b�N���ďo�B
-- Advanced/VAD/Diarization Settings�̓v���[�X�z���_�[�B�ڍ׃p�����[�^��UI���f�͍���̃^�X�N�B
-
-## ���s�菇�iAvalonia GUI�j
-- �ˑ��֌W�F.NET 8 SDK�APython 3.11+�Affmpeg
-- �N���Fdotnet run --project wrapper/app/avalonia_ui
-- �g�p�FStart API�ŋN���AEndpoints����URL�m�F�ARecorder�Ŕz�M/�ۑ��AManage models�Ń��f���Ǘ��AHugging Face Login�Ńg�[�N���o�^�B
-
-## ���m�̒���
-- �ꕔ�f�o�C�X��16k���ژ^���s�̏ꍇ����i�������T���v���Ή��j�B
-- �O�����J���̓t�@�C�A�E�H�[��/�|�[�g�J���̊m�F���K�v�B
-- �ڍאݒ�_�C�A���O�͏��������\��B
-- `README-FOR-WRAPPER.md`�壽悽險育判縺ｨ蛻ｩ逕ｨ謇矩��險倩ｼ会ｼ域悽遽�峨
-- `WRAPPER-DEV-LOG.md`�夐ｲ謐励→豎ｺ螳壻ｺ矩��險倬鹸縲
-
-### 13.8 螳御ｺ�ｮ夂ｾｩ
-- 繝｢繝�Ν髱槫酔譴ｱ縺ｮ MSIX 繧帝�蟶�＠縲；UI 縺九ｉ Whisper 繝｢繝�Ν繧偵ム繧ｦ繝ｳ繝ｭ繝ｼ繝峨�蜑企勁縺ｧ縺阪ｋ縲
-- 繝繧ｦ繝ｳ繝ｭ繝ｼ繝画ｸ医∩繝｢繝�Ν繧剃ｽｿ逕ｨ縺励※繝舌ャ繧ｯ繧ｨ繝ｳ繝/API 繧定ｵｷ蜍輔〒縺阪ｋ縲
- - 隧ｱ閠��髮｢繝｢繝�Ν縺翫ｈ縺ｳ VAD 繝｢繝�Ν縺ｮ繝繧ｦ繝ｳ繝ｭ繝ｼ繝峨�蜑企勁縺ｫ蟇ｾ蠢懊＠縲√Δ繝�Ν荳隕ｧ縺ｫ縺ｯ蜷�Δ繝�Ν縺ｮ逕ｨ騾斐′陦ｨ遉ｺ縺輔ｌ繧九
-
-## 変更履歴（GUI移植サマリ）
-- Avalonia版GUIへ旧Tkinter版の2カラム構成と主要機能（Start/Stop、Endpoints表示、Recorder）を移植。
-- Start/Stopはバックエンド（python -m whisperlivekit.basic_server）とAPI（uvicorn wrapper.api.server:app）を同時起動。
-- Endpointsは /asr（WebSocket）と /v1/audio/transcriptions（REST）を表示。0.0.0.0 選択時はLAN IPを表示。
-- RecorderはNAudioで16kHz/mono/16bitのPCMをWebSocketへ配信。レベル/タイマー/保存に対応。
-- Manage modelsダイアログとHugging Face Loginダイアログを追加。モデル管理やトークン保存はPythonサブプロセスで既存ロジックを呼出。
-- Advanced/VAD/Diarization Settingsはプレースホルダー。詳細パラメータのUI反映は今後のタスク。
-
-## 実行手順（Avalonia GUI）
-- 依存関係：.NET 8 SDK、Python 3.11+、ffmpeg
-- 起動：dotnet run --project wrapper/app/avalonia_ui
-- 使用：Start APIで起動、EndpointsからURL確認、Recorderで配信/保存、Manage modelsでモデル管理、Hugging Face Loginでトークン登録。
-
-## 既知の注意
-- 一部デバイスで16k直接録音不可の場合あり（将来リサンプル対応）。
-- 外部公開時はファイアウォール/ポート開放の確認が必要。
-- 詳細設定ダイアログは順次実装予定。
+この README と `WRAPPER-DEV-LOG.md` は、仕様変更や意思決定に合わせて随時更新します。

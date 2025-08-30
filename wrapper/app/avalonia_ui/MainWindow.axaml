@@ -19,7 +19,7 @@
                 <StackPanel>
                     <TextBlock Text="Server Settings" FontWeight="Bold" Margin="0,0,0,4"/>
                     <Border BorderThickness="1" BorderBrush="Gray" Padding="5">
-                        <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="4" ColumnSpacing="6">
+                        <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="4" ColumnSpacing="6">
                             <CheckBox x:Name="AllowExternal" Content="Allow external connections (0.0.0.0)" Grid.ColumnSpan="2"/>
                             <TextBlock Text="Backend host" Grid.Row="1" VerticalAlignment="Center"/>
                             <TextBox x:Name="BackendHost" Grid.Row="1" Grid.Column="1"/>
@@ -39,6 +39,15 @@
                                 <Button Content="VAD settings" Click="OnVadSettings"/>
                                 <Button Content="Diarization settings" Click="OnDiarSettings"/>
                             </StackPanel>
+                            <!-- Management and API control buttons moved into Server Settings bottom -->
+                            <Grid Grid.Row="10" Grid.ColumnSpan="2" ColumnDefinitions="* Auto Auto Auto" ColumnSpacing="6" Margin="0,6,0,0">
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                                    <Button Content="Manage models" Click="OnManageModels"/>
+                                    <Button Content="Hugging Face Login" Click="OnLoginHf"/>
+                                </StackPanel>
+                                <Button x:Name="StartButton" Grid.Column="2" Content="Start API" Click="OnStartClick"/>
+                                <Button x:Name="StopButton" Grid.Column="3" Content="Stop API" Click="OnStopClick" IsEnabled="False"/>
+                            </Grid>
                         </Grid>
                     </Border>
                 </StackPanel>
@@ -46,16 +55,28 @@
                 <StackPanel Margin="0,8,0,0">
                     <TextBlock Text="Endpoints" FontWeight="Bold" Margin="0,0,0,4"/>
                     <Border BorderThickness="1" BorderBrush="Gray" Padding="5">
-                        <Grid ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto,Auto" RowSpacing="4" ColumnSpacing="6">
+                        <!-- Stable layout: label column + content column where TextBox stretches and Button stays auto-sized -->
+                        <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto" RowSpacing="6" ColumnSpacing="8">
+                            <!-- Row 0: Backend Web UI -->
                             <TextBlock Text="Backend Web UI" Grid.Row="0" VerticalAlignment="Center"/>
-                            <TextBox x:Name="WebEndpoint" Grid.Row="0" Grid.Column="1" IsReadOnly="True"/>
-                            <Button x:Name="OpenWebButton" Content="Open Web GUI" Grid.Row="0" Grid.Column="2" IsEnabled="False" Click="OnOpenWeb"/>
+                            <Grid Grid.Row="0" Grid.Column="1" ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                                <TextBox x:Name="WebEndpoint" Grid.Column="0" IsReadOnly="True" HorizontalAlignment="Stretch" MinWidth="240"/>
+                                <Button x:Name="OpenWebButton" Grid.Column="1" Content="Open Web GUI" IsEnabled="False" Click="OnOpenWeb"/>
+                            </Grid>
+
+                            <!-- Row 1: WS endpoint -->
                             <TextBlock Text="Streaming WebSocket /asr" Grid.Row="1" VerticalAlignment="Center"/>
-                            <TextBox x:Name="WsEndpoint" Grid.Row="1" Grid.Column="1" IsReadOnly="True"/>
-                            <Button Content="Copy" Grid.Row="1" Grid.Column="2" Click="OnCopyWs"/>
+                            <Grid Grid.Row="1" Grid.Column="1" ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                                <TextBox x:Name="WsEndpoint" Grid.Column="0" IsReadOnly="True" HorizontalAlignment="Stretch" MinWidth="240"/>
+                                <Button Grid.Column="1" Content="Copy" Click="OnCopyWs"/>
+                            </Grid>
+
+                            <!-- Row 2: REST endpoint -->
                             <TextBlock Text="File transcription API (/v1/audio/transcriptions)" Grid.Row="2" VerticalAlignment="Center"/>
-                            <TextBox x:Name="ApiEndpoint" Grid.Row="2" Grid.Column="1" IsReadOnly="True"/>
-                            <Button Content="Copy" Grid.Row="2" Grid.Column="2" Click="OnCopyApi"/>
+                            <Grid Grid.Row="2" Grid.Column="1" ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                                <TextBox x:Name="ApiEndpoint" Grid.Column="0" IsReadOnly="True" HorizontalAlignment="Stretch" MinWidth="240"/>
+                                <Button Grid.Column="1" Content="Copy" Click="OnCopyApi"/>
+                            </Grid>
                         </Grid>
                     </Border>
                 </StackPanel>
@@ -63,15 +84,6 @@
 
             <!-- Right column -->
             <StackPanel Grid.Column="1" Spacing="8">
-                <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
-                    <StackPanel Orientation="Horizontal" Spacing="6">
-                        <Button Content="Manage models" Click="OnManageModels"/>
-                        <Button Content="Hugging Face Login" Click="OnLoginHf"/>
-                    </StackPanel>
-                    <Button x:Name="StartButton" Content="Start API" Grid.Column="1" Click="OnStartClick"/>
-                    <Button x:Name="StopButton" Content="Stop API" Grid.Column="2" Click="OnStopClick" IsEnabled="False"/>
-                </Grid>
-
                 <StackPanel>
                     <TextBlock Text="Recorder" FontWeight="Bold" Margin="0,8,0,4"/>
                     <Border BorderThickness="1" BorderBrush="Gray" Padding="5">

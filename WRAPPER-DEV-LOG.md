@@ -470,3 +470,17 @@
 - 次アクション：不足機能の実装と UI テスト。
 - リスク／課題：未実装機能が多くユーザー体験に差異がある。
 - 参照リンク：`wrapper/app/avalonia_ui/MainWindow.axaml`, `wrapper/app/avalonia_ui/MainWindow.axaml.cs`, `README-FOR-WRAPPER.md`。
+
+---
+
+## 2025-08-30
+- 背景／スコープ：Avalonia GUI のレイアウト崩れ（ボタンの重なり、Endpoints 表示の横幅不足）を解消したい。
+- 決定事項：
+  - `Manage models` / `Hugging Face Login` / `Start API` / `Stop API` を Server Settings セクションの最下部へ移動し、操作のまとまりを改善。
+  - Endpoints セクションはネストグリッド構成に変更し、右側の「TextBox + Button」を同一セル内でレイアウト。TextBox は `HorizontalAlignment=Stretch` とし、`MinWidth=240` を付与して極端に狭くならないよう調整。
+  - 右カラム上部の旧ボタン行グリッドを撤去し、重なり要因を排除。
+- 根拠・検討メモ：三列グリッド（Auto,*,Auto）でボタン幅に引っ張られ、中央列が 0 に近くなるケースがあった。ネストにより「ラベル列」と「内容列」を分離し、内容列の中で TextBox が余剰幅を一杯に使用できるようにした。
+- 変更ファイル：`wrapper/app/avalonia_ui/MainWindow.axaml`
+- 未解決事項：極小ウィンドウ幅時の表示最適化（スクロール化の検討余地）。
+- 次アクション：フィードバックに応じて `MinWidth` の微調整と、ボタンラベルの短縮案（ローカライズ含む）を検討。
+- リスク／課題：テーマ差・OS差でパディングやフォントが異なる場合の見え方差分。
