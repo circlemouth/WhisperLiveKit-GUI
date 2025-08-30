@@ -3,12 +3,12 @@ using Xunit;
 
 namespace avalonia_ui.Tests;
 
-public class MainWindowTests
+public class LicenseWindowTests
 {
     [AvaloniaFact]
-    public void MainWindow_Should_Instantiate()
+    public void LicenseWindow_Should_Instantiate()
     {
-        var window = new MainWindow();
+        var window = new LicenseWindow();
         Assert.NotNull(window);
     }
 }

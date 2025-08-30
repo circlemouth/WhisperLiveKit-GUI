@@ -32,6 +32,7 @@
   - 録音→WebSocket 送信、テキスト可視化、保存
 - GUI 層（C# Avalonia）：`wrapper/app/avalonia_ui/*`
   - Tkinter と同等の操作をクロスプラットフォームで提供（進行中）
+  - ヘッダーの「License」ボタンから依存ライブラリのライセンス本文を参照可能
 - API 層（FastAPI）：`wrapper/api/server.py`
   - 受領音声を `ffmpeg` で 16kHz/mono PCM 化 → WebSocket で backend `/asr` へストリーミング → 連結テキスト返却
 - モデル管理：`wrapper/app/model_manager.py` と CLI `wrapper/cli/model_manager_cli.py`
@@ -78,6 +79,7 @@
 - 操作は Tkinter 版と同等（Advanced/VAD/Diarization ダイアログは段階的に整備）
  - 配置: `Manage models` / `Hugging Face Login` / `Start API` / `Stop API` は Server Settings の最下部に集約。
  - 表示安定化: Endpoints の URL 欄は横幅可変で広めに確保（必要に応じてコピー/オープンボタンを右側に配置）。
+ - 依存ライブラリのライセンスはヘッダー右上の「License」ボタンから確認可能。
 
 4) API だけを起動したい場合（手動）
 - Backend: `python -m whisperlivekit.basic_server --host 127.0.0.1 --port 8000 [--model_dir <PATH>] [...options]`

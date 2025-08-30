@@ -261,7 +261,7 @@ public partial class MainWindow : Window
         if (Diarization.IsChecked == true)
         {
             backend.ArgumentList.Add("--diarization");
-            // 詳細は後続�E設定ダイアログで拡張
+            // 詳細は後続設定ダイアログで拡張
         }
 
         if (false && UseVac.IsChecked != true)
@@ -488,11 +488,8 @@ public partial class MainWindow : Window
 
     private void OnShowLicense(object? sender, RoutedEventArgs e)
     {
-        var path = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "LICENSE"));
-        if (File.Exists(path))
-        {
-            try { Process.Start(new ProcessStartInfo { FileName = path, UseShellExecute = true }); } catch { }
-        }
+        var win = new LicenseWindow();
+        win.Show(this);
     }
 
     private Dictionary<string, string> GetBaseEnvWithCaches()
