@@ -15,7 +15,7 @@
 - 必須: Python 3.11+、`ffmpeg`、ネットワークアクセス（モデル取得時）
 - プラットフォーム: Windows/macOS/Linux
 - セキュリティ: 既定は `127.0.0.1` バインド。外部公開はユーザー操作で有効化（`0.0.0.0`）
-- 依存は `requirements.txt` を参照。upstream は `pyproject.toml` に準拠
+- 依存は環境別の `wrapper/requirements-nvidia.txt` または `wrapper/requirements-cpu-amd.txt` を参照。upstream は `pyproject.toml` に準拠
 
 ## ユースケース / ユーザーフロー
 - ローカルでリアルタイム文字起こしを試す（GUI 起動 → Start API → 録音 → 結果表示/保存）
@@ -62,18 +62,21 @@
 
 ## 実行・設定手順
 1) 依存インストール
-- Python 環境を有効化し `pip install -r requirements.txt`
-- `ffmpeg` をインストール（PATH で実行可能に）
+ - NVIDIA GPU 環境: `pip install -r wrapper/requirements-nvidia.txt`
+ - CPU/AMD 環境: `pip install -r wrapper/requirements-cpu-amd.txt`
+ - 互換性のため従来の `requirements.txt` も利用可能
+ - `ffmpeg` をインストール（PATH で実行可能に）
 
 2) 追加依存（機能別）
 - VAD（VAC）を有効化する場合:
-  - `torchaudio` が必須です（`torch` のバージョンと一致させてください）。
-  - 例: `python -c "import torch; print(torch.__version__)"` で確認し、`pip install torchaudio==<上記のtorchバージョン>` を実行
+  - `torchaudio` が必須です（`requirements-*.txt` に含まれますが、`torch` のバージョンと一致させてください）。
+  - 例: `python -c "import torch; print(torch.__version__)"` で確認し、必要に応じて `pip install torchaudio==<上記のtorchバージョン>` を実行
   - macOS/Apple Silicon/py3.13 の一例: `pip install torchaudio==2.8.0`（Torch 2.8.0 の場合）
 - 話者分離（Diarization）を有効化する場合:
   - Sortformer バックエンド: NVIDIA NeMo が必要です。
     - 例: `pip install "git+https://github.com/NVIDIA/NeMo.git@main#egg=nemo_toolkit[asr]"`
     - 注: macOS では環境構築が難しい場合があります。CPU での動作は時間がかかることがあります。
+    - GUI は CUDA と NeMo を検出した場合のみ Sortformer を選択肢に表示します。未検出の場合は自動的に Diart に切り替わります。
   - Diart バックエンド: `diart` と関連依存が必要です。
     - 例: `pip install diart pyannote.audio rx`
   - Hugging Face ログインとモデル取得が前提となります（GUI の Login から設定）。
@@ -104,8 +107,8 @@
 ## トラブルシューティング
 - `ModuleNotFoundError: No module named 'torchaudio'`
   - VAD（VAC）機能が有効なときに発生します。`pip install torchaudio==<torchのバージョン>` を実施してください。
-- Sortformer を選択した場合に起動直後に停止する
-  - NeMo 未導入の可能性があります。`pip install "git+https://github.com/NVIDIA/NeMo.git@main#egg=nemo_toolkit[asr]"`
+- Sortformer が選択肢に表示されない、または選択後に起動直後に停止する
+  - CUDA または NeMo が検出されていない可能性があります。`pip install "git+https://github.com/NVIDIA/NeMo.git@main#egg=nemo_toolkit[asr]"`
   - macOS では依存解決に時間/調整が必要な場合があります。Diart バックエンドへ切替も検討してください。
 - Diart で依存エラー
   - `pip install diart pyannote.audio rx` を実施。Hugging Face モデルの初回ダウンロードにはネットワークが必要です。

@@ -536,3 +536,31 @@
 - 次アクション：必要に応じて検索機能やフィルタを追加。
 - リスク／課題：ライセンス本文が大きいためウィンドウ描画が重くなる可能性。
 - 参照リンク：`wrapper/app/avalonia_ui/LicenseWindow.axaml`, `wrapper/app/avalonia_ui/MainWindow.axaml.cs`, `README-FOR-WRAPPER.md`
+
+---
+
+## 2025-10-03
+- 背景／スコープ：依存ライブラリをGPU/CPU環境別に明確化する要望。
+- 決定事項：
+  - NVIDIA向け `wrapper/requirements-nvidia.txt` と CPU/AMD向け `wrapper/requirements-cpu-amd.txt` を新設。
+  - `README-FOR-WRAPPER.md` に各環境のインストール手順を追記。
+- 根拠・検討メモ：環境ごとに必要なライブラリが異なるため、不要なパッケージの導入を避け設定手順を簡素化する。
+- 未解決事項：AMD ROCm向けホイールの指定方法は今後検討。
+- 次アクション：利用者フィードバックに基づきrequirements内容を見直す。
+- リスク／課題：CUDAバージョン指定の互換性。
+- 参照リンク：
+  - `README-FOR-WRAPPER.md` 実行・設定手順節
+
+---
+
+## 2025-10-04
+- 背景／スコープ：CUDA/NeMo が無い環境で Sortformer を選択すると起動エラーになる問題を避けたい。
+- 決定事項：
+  - GUI 起動時に CUDA と NeMo を検出し、未導入の場合は Sortformer を選択肢から除外。
+  - 既存設定で Sortformer が指定されていた場合は自動的に Diart に切り替え警告を表示。
+  - `README-FOR-WRAPPER.md` に動作と移行方法を追記。
+- 根拠・検討メモ：CPU/AMD ユーザーが誤って Sortformer を選択しないよう UX を改善。
+- 未解決事項：Diart バックエンドの GPU 最適化有無の追加検証。
+- 次アクション：ユーザーフィードバックを踏まえた選択肢の動的更新を検討。
+- リスク／課題：CUDA が利用可能でも NeMo インストールに失敗している場合の検出漏れ。
+- 参照リンク：`wrapper/app/gui.py`, `README-FOR-WRAPPER.md`
