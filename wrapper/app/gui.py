@@ -229,6 +229,7 @@ class WrapperGUI:
         # Wrapper API key settings
         self.use_api_key = tk.BooleanVar(value=False)
         self.api_key = tk.StringVar(value="")
+        self.api_key_show = tk.BooleanVar(value=False)
 
         self.model = tk.StringVar(value=os.getenv("WRAPPER_MODEL", "large-v3"))
         # Use voice activity controller (Silero via torch.hub). Default off to avoid GitHub SSL/network issues.
@@ -363,23 +364,29 @@ class WrapperGUI:
         )
         self.allow_external_chk.grid(row=r, column=0, columnspan=2, sticky=tk.W)
         r += 1
-        # 2) バックエンド接続先（ホスト/ポート）
-        ttk.Label(config_frame, text="Backend host").grid(row=r, column=0, sticky=tk.W)
-        self.backend_host_entry = ttk.Entry(config_frame, textvariable=self.backend_host, width=15)
-        self.backend_host_entry.grid(row=r, column=1, sticky="ew")
+        # 2) バックエンド接続先（ホスト/ポート）を横並びに配置
+        ttk.Label(config_frame, text="Backend").grid(row=r, column=0, sticky=tk.W)
+        be_row = ttk.Frame(config_frame)
+        be_row.grid(row=r, column=1, sticky="ew")
+        be_row.columnconfigure(1, weight=1)
+        ttk.Label(be_row, text="Host").grid(row=0, column=0, padx=(0, 4))
+        self.backend_host_entry = ttk.Entry(be_row, textvariable=self.backend_host, width=18)
+        self.backend_host_entry.grid(row=0, column=1, sticky="ew")
+        ttk.Label(be_row, text="Port").grid(row=0, column=2, padx=(8, 4))
+        self.backend_port_entry = ttk.Entry(be_row, textvariable=self.backend_port, width=8)
+        self.backend_port_entry.grid(row=0, column=3, sticky=tk.W)
         r += 1
-        ttk.Label(config_frame, text="Backend port").grid(row=r, column=0, sticky=tk.W)
-        self.backend_port_entry = ttk.Entry(config_frame, textvariable=self.backend_port, width=15)
-        self.backend_port_entry.grid(row=r, column=1, sticky="ew")
-        r += 1
-        # 3) API 接続先（ホスト/ポート）
-        ttk.Label(config_frame, text="API host").grid(row=r, column=0, sticky=tk.W)
-        self.api_host_entry = ttk.Entry(config_frame, textvariable=self.api_host, width=15)
-        self.api_host_entry.grid(row=r, column=1, sticky="ew")
-        r += 1
-        ttk.Label(config_frame, text="API port").grid(row=r, column=0, sticky=tk.W)
-        self.api_port_entry = ttk.Entry(config_frame, textvariable=self.api_port, width=15)
-        self.api_port_entry.grid(row=r, column=1, sticky="ew")
+        # 3) API 接続先（ホスト/ポート）を横並びに配置
+        ttk.Label(config_frame, text="API").grid(row=r, column=0, sticky=tk.W)
+        api_row = ttk.Frame(config_frame)
+        api_row.grid(row=r, column=1, sticky="ew")
+        api_row.columnconfigure(1, weight=1)
+        ttk.Label(api_row, text="Host").grid(row=0, column=0, padx=(0, 4))
+        self.api_host_entry = ttk.Entry(api_row, textvariable=self.api_host, width=18)
+        self.api_host_entry.grid(row=0, column=1, sticky="ew")
+        ttk.Label(api_row, text="Port").grid(row=0, column=2, padx=(8, 4))
+        self.api_port_entry = ttk.Entry(api_row, textvariable=self.api_port, width=8)
+        self.api_port_entry.grid(row=0, column=3, sticky=tk.W)
         r += 1
         # 4) 起動ポリシー（moved to top）
         # Security (API key)
@@ -401,6 +408,8 @@ class WrapperGUI:
         api_row.columnconfigure(0, weight=1)
         self.api_key_entry = ttk.Entry(api_row, textvariable=self.api_key, show="*")
         self.api_key_entry.grid(row=0, column=0, sticky="ew")
+        self.api_key_show_chk = ttk.Checkbutton(api_row, text="Show", variable=self.api_key_show, command=self._update_api_key_widgets)
+        self.api_key_show_chk.grid(row=0, column=1, padx=(6, 0))
         r += 1
         # 5) Model section header + selection
         ttk.Separator(config_frame, orient="horizontal").grid(row=r, column=0, columnspan=2, sticky="ew", pady=(6, 6))
@@ -437,7 +446,7 @@ class WrapperGUI:
         vad_row = ttk.Frame(config_frame)
         vad_row.grid(row=r, column=0, columnspan=2, sticky="ew")
         vad_row.columnconfigure(0, weight=1)
-        self.vad_settings_btn = ttk.Button(vad_row, text="VAD Settings", command=self._open_vad_settings)
+        self.vad_settings_btn = ttk.Button(vad_row, text="VAD Settings", command=self._open_vad_settings, bootstyle="info")
         self.vad_settings_btn.grid(row=0, column=1, sticky="e")
         r += 1
         # 7) Diarization section
@@ -484,13 +493,6 @@ class WrapperGUI:
         )
         self.emb_model_combo.grid(row=r, column=1, sticky="ew")
         r += 1
-        # Diarization Settings aligned to the right (enabled only if diarization is on)
-        diar_row = ttk.Frame(config_frame)
-        diar_row.grid(row=r, column=0, columnspan=2, sticky="ew")
-        diar_row.columnconfigure(0, weight=1)
-        self.diar_settings_btn = ttk.Button(diar_row, text="Diarization Settings", command=self._open_diarization_settings, bootstyle="info")
-        self.diar_settings_btn.grid(row=0, column=1, sticky="e")
-        r += 1
         # Diarization hint (English)
         self.hf_hint = ttk.Label(
             config_frame,
@@ -502,7 +504,8 @@ class WrapperGUI:
         r += 1
         # Helpful links (token and model license pages)
         hf_links = ttk.Frame(config_frame)
-        hf_links.grid(row=r, column=0, columnspan=2, sticky="w")
+        hf_links.grid(row=r, column=0, columnspan=2, sticky="ew")
+        hf_links.columnconfigure(0, weight=1)
         ttk.Button(
             hf_links,
             text="Get HF token",
@@ -518,6 +521,9 @@ class WrapperGUI:
             text="pyannote/embedding",
             command=lambda: webbrowser.open("https://huggingface.co/pyannote/embedding"),
         ).pack(side="left")
+        # Move Diarization Settings button to the right side of the links row
+        self.diar_settings_btn = ttk.Button(hf_links, text="Diarization Settings", command=self._open_diarization_settings, bootstyle="info")
+        self.diar_settings_btn.pack(side="right")
         r += 1
         # 8) 起動/停止操作
         ttk.Separator(config_frame, orient="horizontal").grid(row=r, column=0, columnspan=2, sticky="ew", pady=(6, 6))
@@ -534,7 +540,8 @@ class WrapperGUI:
         self.adv_btn.pack(side="left")
         # 右端に Start/Stop を配置
         start_stop.columnconfigure(0, weight=1)
-        self.start_btn = ttk.Button(start_stop, text="Start API", command=self.start_api, bootstyle="primary")
+        # より目立つ配色に変更（Start: success, Stop: danger）
+        self.start_btn = ttk.Button(start_stop, text="Start API", command=self.start_api, bootstyle="success")
         self.start_btn.grid(row=0, column=1, padx=(0, 6), pady=2, sticky="e")
         self.stop_btn = ttk.Button(start_stop, text="Stop API", command=self.stop_api, bootstyle="danger")
         self.stop_btn.grid(row=0, column=2, pady=2, sticky="e")
@@ -546,8 +553,8 @@ class WrapperGUI:
         self.right_panel = right_panel
 
         record_frame = ttk.Labelframe(right_panel, text="Recorder")
-        # 横方向のみ拡張（縦は上限を左カラム高さにキャップ）
-        record_frame.grid(row=0, column=0, sticky="new")
+        # ウィンドウ高いっぱいに拡張
+        record_frame.grid(row=0, column=0, sticky="nsew")
         record_frame.columnconfigure(1, weight=1)
         self.record_frame = record_frame
         # Recording controls
@@ -591,27 +598,27 @@ class WrapperGUI:
         self.save_browse_btn = ttk.Button(record_frame, text="Browse", command=self.choose_save_path)
         self.save_browse_btn.grid(row=r, column=2, padx=5)
         r += 1
-        # Endpoints（左カラム下）
+        # Endpoints（左カラムの Server Settings の下に配置）
         endpoints_frame = ttk.Labelframe(left_col, text="Endpoints")
         endpoints_frame.grid(row=1, column=0, sticky="ew", pady=(5, 0))
         endpoints_frame.columnconfigure(1, weight=1)
         endpoints_frame.columnconfigure(2, weight=0)
         self.endpoints_frame = endpoints_frame
-        r = 0
-        ttk.Label(endpoints_frame, text="Backend Web UI").grid(row=r, column=0, sticky=tk.W)
-        ttk.Entry(endpoints_frame, textvariable=self.web_endpoint, width=40, state="readonly").grid(row=r, column=1, sticky="ew")
+        er = 0
+        ttk.Label(endpoints_frame, text="Backend Web UI").grid(row=er, column=0, sticky=tk.W)
+        ttk.Entry(endpoints_frame, textvariable=self.web_endpoint, width=40, state="readonly").grid(row=er, column=1, sticky="ew")
         self.open_web_btn = ttk.Button(endpoints_frame, text="Open Web GUI", command=self.open_web_gui, state=tk.DISABLED)
-        self.open_web_btn.grid(row=r, column=2, padx=5, sticky="ew")
-        r += 1
-        ttk.Label(endpoints_frame, text="Streaming WebSocket /asr").grid(row=r, column=0, sticky=tk.W)
-        ttk.Entry(endpoints_frame, textvariable=self.ws_endpoint, width=40, state="readonly").grid(row=r, column=1, sticky="ew")
-        self.copy_ws_btn = ttk.Button(endpoints_frame, text="Copy", command=lambda: self.copy_to_clipboard(self.ws_endpoint.get()))
-        self.copy_ws_btn.grid(row=r, column=2, padx=5, sticky="ew")
-        r += 1
-        ttk.Label(endpoints_frame, text="File transcription API").grid(row=r, column=0, sticky=tk.W)
-        ttk.Entry(endpoints_frame, textvariable=self.api_endpoint, width=40, state="readonly").grid(row=r, column=1, sticky="ew")
-        self.copy_api_btn = ttk.Button(endpoints_frame, text="Copy", command=lambda: self.copy_to_clipboard(self.api_endpoint.get()))
-        self.copy_api_btn.grid(row=r, column=2, padx=5, sticky="ew")
+        self.open_web_btn.grid(row=er, column=2, padx=5, sticky="ew")
+        er += 1
+        ttk.Label(endpoints_frame, text="Streaming WebSocket /asr").grid(row=er, column=0, sticky=tk.W)
+        ttk.Entry(endpoints_frame, textvariable=self.ws_endpoint, width=40, state="readonly").grid(row=er, column=1, sticky="ew")
+        self.copy_ws_btn = ttk.Button(endpoints_frame, text="Copy", command=lambda: self._copy_with_feedback(self.copy_ws_btn, self.ws_endpoint.get()))
+        self.copy_ws_btn.grid(row=er, column=2, padx=5, sticky="ew")
+        er += 1
+        ttk.Label(endpoints_frame, text="File transcription API").grid(row=er, column=0, sticky=tk.W)
+        ttk.Entry(endpoints_frame, textvariable=self.api_endpoint, width=40, state="readonly").grid(row=er, column=1, sticky="ew")
+        self.copy_api_btn = ttk.Button(endpoints_frame, text="Copy", command=lambda: self._copy_with_feedback(self.copy_api_btn, self.api_endpoint.get()))
+        self.copy_api_btn.grid(row=er, column=2, padx=5, sticky="ew")
         # 列2の最小幅を Open Web GUI の要求幅に合わせる
         try:
             endpoints_frame.update_idletasks()
@@ -619,8 +626,6 @@ class WrapperGUI:
             endpoints_frame.columnconfigure(2, minsize=col2_min)
         except Exception:
             pass
-        row += 1
-
         # ステータスバーは最下段に全幅で配置
         row += 1
         status = ttk.Frame(master)
@@ -652,6 +657,7 @@ class WrapperGUI:
         # Apply initial save widgets state
         self._update_save_widgets()
         self._update_vad_state()
+        self.api_key_show.trace_add("write", lambda *_: self._update_api_key_widgets())
         # reflect token widgets state on startup
         self._update_hf_token_widgets()
         self.use_api_key.trace_add("write", lambda *_: self._update_api_key_widgets())
@@ -683,13 +689,6 @@ class WrapperGUI:
         except Exception:
             pass
         # 最小幅の動的制約は廃止（自由な横幅調整を許容）
-        # 左カラム高さに Recorder をキャップ
-        try:
-            for w in (self.server_frame, self.endpoints_frame, self.left_col):
-                w.bind("<Configure>", self._cap_recorder_height_to_left, add=True)
-            self.master.bind("<Map>", self._cap_recorder_height_to_left, add=True)
-        except Exception:
-            pass
 
     def _apply_fixed_layout(self) -> None:
         # PanedWindow を用いた固定2カラム（左右同高さ）配置
@@ -719,17 +718,18 @@ class WrapperGUI:
             pass
 
     def _lock_minsize_by_content(self) -> None:
-        # 全要素が見切れない最小サイズを設定
+        # 全要素が見切れない最小サイズを設定しつつ、横幅は可能な範囲で縮小を許容
         root = self.master
         try:
             root.update_idletasks()
-            req_w = max(root.winfo_reqwidth(), 900)
+            # 横幅の最低幅を抑えめに設定し、縮小を許容（UIが壊れない目安）
+            min_w = 720
             req_h = max(root.winfo_reqheight(), 650)
             # 幅は最小幅のみ拘束、高さは「現在の最小高さ」で固定
-            cur_w = max(root.winfo_width(), req_w)
+            cur_w = max(root.winfo_width(), min_w)
             # 高さを固定（geometry で設定し、縦方向リサイズを無効化）
             root.geometry(f"{cur_w}x{req_h}")
-            root.minsize(req_w, req_h)
+            root.minsize(min_w, req_h)
             try:
                 # 幅の最大は十分大きく、縦は固定
                 root.maxsize(100000, req_h)
@@ -744,20 +744,7 @@ class WrapperGUI:
 
     # （横幅制約の実装は撤廃）
 
-    def _cap_recorder_height_to_left(self, *_: object) -> None:
-        # Recorder の縦サイズが左カラム（Server+Endpoints）の合計高さを超えないように上限キャップ
-        try:
-            self.master.update_idletasks()
-            left_h = 0
-            try:
-                left_h = self.server_frame.winfo_height() + self.endpoints_frame.winfo_height()
-            except Exception:
-                pass
-            if left_h > 0:
-                self.record_frame.configure(height=left_h)
-                self.record_frame.grid_propagate(False)
-        except Exception:
-            pass
+    # 高さキャップは撤廃（Recorder は右ペインの全高を使用）
 
     def start_api(self):
         if self.api_proc or self.backend_proc:
@@ -1060,10 +1047,53 @@ class WrapperGUI:
             self.api_key_entry.config(state=state)
         except Exception:
             pass
+        # show/hide checkbox mirrors the entry state
+        try:
+            self.api_key_show_chk.config(state=state)
+        except Exception:
+            pass
+        # Apply masking based on checkbox
+        try:
+            self.api_key_entry.config(show=("" if self.api_key_show.get() else "*"))
+        except Exception:
+            pass
 
     def copy_to_clipboard(self, text: str) -> None:
         self.master.clipboard_clear()
         self.master.clipboard_append(text)
+
+    def _copy_with_feedback(self, btn: ttk.Button, text: str) -> None:
+        """コピー後にボタンの表示を一時的に変更してフィードバックを与える。"""
+        try:
+            self.copy_to_clipboard(text)
+        except Exception:
+            return
+        # 現在の表示を保持
+        prev_text = btn.cget("text")
+        prev_state = btn.cget("state")
+        prev_style = None
+        try:
+            prev_style = btn.cget("bootstyle")
+        except Exception:
+            prev_style = None
+        # フィードバック表示
+        try:
+            btn.config(text="Copied!", state=tk.DISABLED)
+            try:
+                btn.config(bootstyle="success")
+            except Exception:
+                pass
+        except Exception:
+            pass
+        # 一定時間後に元に戻す
+        def _restore():
+            try:
+                btn.config(text=prev_text, state=prev_state)
+                if prev_style is not None:
+                    btn.config(bootstyle=prev_style)
+            except Exception:
+                pass
+        self.master.after(1200, _restore)
 
     def choose_save_path(self) -> None:
         path = filedialog.asksaveasfilename(
@@ -1675,6 +1705,12 @@ class WrapperGUI:
         # Not locked:
         if self.hf_logged_in and not self._hf_edit_mode:
             try:
+                # Mask with dummy placeholder and disable editing
+                try:
+                    self.hf_token_entry.config(show="")
+                except Exception:
+                    pass
+                self.hf_token.set("********")
                 self.hf_token_entry.config(state=tk.DISABLED)
                 self.hf_token_btn.config(text="Validated", command=self._confirm_enable_hf_edit, bootstyle="success")
                 self.hf_token_btn.config(state=tk.NORMAL)
@@ -1682,6 +1718,13 @@ class WrapperGUI:
                 pass
         else:
             try:
+                # Enable editing with hidden characters
+                try:
+                    self.hf_token_entry.config(show="*")
+                except Exception:
+                    pass
+                if self.hf_token.get() == "********":
+                    self.hf_token.set("")
                 self.hf_token_entry.config(state=tk.NORMAL)
                 self.hf_token_btn.config(text="Validate", command=self._validate_hf_token, bootstyle="info")
                 self.hf_token_btn.config(state=tk.NORMAL)

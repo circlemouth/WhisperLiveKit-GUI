@@ -21,6 +21,17 @@
 
 ---
 
+## 2025-09-01
+- 背景／スコープ：UI レイアウト改善依頼。「Endpoints を左（Server Settings 下）へ移動し、Recorder をウィンドウ高いっぱいに表示」。
+- 決定事項：
+  - Endpoints セクションを右ペインから左ペイン（`Server Settings` の直下）へ移動。
+  - Recorder の縦方向上限キャップ（左ペイン高さに合わせる処理）を撤廃し、`sticky='nsew'` で右ペイン全高を占有。
+- 根拠・検討メモ：操作頻度の高いサーバー設定とエンドポイント表示をまとめ、視線移動を短縮。Recorder は記録・閲覧領域として最大化が望ましいため全高化。
+- 影響範囲：`wrapper/app/gui.py` のレイアウト構成（Endpoints の配置変更、`_cap_recorder_height_to_left` の撤廃）。
+- 未解決事項：ウィンドウの縦リサイズは固定（`resizable(True, False)`）。将来的に可変高へ見直すかは別途検討。
+- 次アクション：ユーザーフィードバックを踏まえ、左ペインのスクロール化や分割比率の調整を検討。
+- 参照リンク：`wrapper/app/gui.py`
+
 ## 2025-08-31
 - 背景／スコープ：VAD と話者分離を有効化して起動すると backend 側で `ModuleNotFoundError: torchaudio` により停止する事象。
 - 決定事項：
