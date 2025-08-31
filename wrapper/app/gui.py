@@ -16,6 +16,7 @@ import threading
 from pathlib import Path
 import shutil
 from platformdirs import user_config_path
+import locale
 try:
     import keyring  # type: ignore
 except Exception:
@@ -75,6 +76,17 @@ THIRD_PARTY_LICENSES_FILE = Path(__file__).resolve().parents[1] / "licenses.json
 HF_KEYRING_SERVICE = "WhisperLiveKit-Wrapper"
 
 
+def _is_cuda_available() -> bool:
+    try:
+        import torch  # type: ignore
+        return torch.cuda.is_available()
+    except Exception:
+        return False
+
+
+CUDA_AVAILABLE = _is_cuda_available()
+
+
 def _is_sortformer_supported() -> bool:
     """Return True if CUDA and NeMo are available."""
     try:
@@ -88,6 +100,109 @@ def _is_sortformer_supported() -> bool:
 
 
 SORTFORMER_AVAILABLE = _is_sortformer_supported()
+
+
+TRANSLATIONS_JA = {
+    "API": "API",
+    "API key": "APIキー",
+    "Advanced Settings": "詳細設定",
+    "Allow external connections (0.0.0.0)": "外部接続を許可 (0.0.0.0)",
+    "Auto-start API on launch": "起動時にAPIを自動開始",
+    "Backend": "バックエンド",
+    "Backend Web UI": "バックエンドWeb UI",
+    "Browse": "参照",
+    "Browse...": "参照...",
+    "Buffer trimming": "バッファ削除",
+    "Buffer trimming sec": "バッファ削除秒",
+    "Close": "閉じる",
+    "Copied!": "コピーしました!",
+    "Copy": "コピー",
+    "Custom CA certificate": "独自CA証明書",
+    "Delete": "削除",
+    "Diarization": "話者分離",
+    "Diarization Settings": "話者分離設定",
+    "Diarization backend": "話者分離バックエンド",
+    "Download": "ダウンロード",
+    "Embedding model": "埋め込みモデル",
+    "Enable diarization": "話者分離を有効化",
+    "Endpoints": "エンドポイント",
+    "File transcription API": "ファイル文字起こしAPI",
+    "Frame threshold": "フレーム閾値",
+    "Get HF token": "HFトークン取得",
+    "Host": "ホスト",
+    "Hugging Face access token": "Hugging Faceアクセストークン",
+    "Hugging Face login is required to enable diarization.": "話者分離を有効にするにはHugging Faceログインが必要です。",
+    "Language": "言語",
+    "License": "ライセンス",
+    "Log level": "ログレベル",
+    "Manage models": "モデル管理",
+    "Min chunk size": "最小チャンクサイズ",
+    "Model": "モデル",
+    "Open Web GUI": "Web GUIを開く",
+    "Port": "ポート",
+    "Recorder": "レコーダー",
+    "Require API key for Wrapper API": "Wrapper APIにAPIキーを要求",
+    "SSL certfile": "SSL証明書",
+    "SSL keyfile": "SSL鍵ファイル",
+    "Save path": "保存パス",
+    "Save transcript to file": "文字起こしをファイルに保存",
+    "Security": "セキュリティ",
+    "Segmentation model": "セグメンテーションモデル",
+    "Server Settings": "サーバー設定",
+    "Show": "表示",
+    "Start API": "API開始",
+    "Start Recording": "録音開始",
+    "Stop API": "API停止",
+    "Stop Recording": "録音停止",
+    "Streaming WebSocket /asr": "ストリーミングWebSocket /asr",
+    "Task": "タスク",
+    "This app is a wrapper for the above repository.": "本アプリは上記リポジトリのラッパーです。",
+    "Transcript": "トランスクリプト",
+    "Use confidence validation": "信頼度検証を使用",
+    "Use punctuation split": "句読点分割を使用",
+    "Use voice activity controller (VAD)": "音声活動検出(VAD)を使用",
+    "VAC chunk size": "VACチャンクサイズ",
+    "VAD": "VAD",
+    "VAD Settings": "VAD設定",
+    "Validate": "検証",
+    "Validated": "検証済",
+    "Warmup file": "ウォームアップファイル",
+    "Whisper model": "Whisperモデル",
+    "WhisperLiveKit Wrapper": "WhisperLiveKitラッパー",
+    "Settings locked": "設定はロックされています",
+    "Stop API before changing settings.": "設定を変更する前にAPIを停止してください。",
+    "Stop API before changing VAD settings.": "VAD設定を変更する前にAPIを停止してください。",
+    "Stop API before changing diarization settings.": "話者分離設定を変更する前にAPIを停止してください。",
+    "Models locked": "モデルはロックされています",
+    "Stop API before managing models.": "モデル管理の前にAPIを停止してください。",
+    "Enable token editing? You can re-validate a new token.": "トークン編集を有効にしますか? 新しいトークンを再検証できます。",
+    "Please enter an access token.": "アクセス トークンを入力してください。",
+    "Invalid token:": "トークンが無効です:",
+    "Token check failed:": "トークンチェックに失敗しました:",
+    "Token is valid. You can enable Diarization now.": "トークンは有効です。話者分離を有効にできます。",
+    "Note: Token was not saved in keyring; it won't persist across restarts.": "注意: トークンはキーチェーンに保存されなかったため、再起動後は保持されません。",
+    "Token is valid, but saving credentials failed. You may need to login via CLI.": "トークンは有効ですが、資格情報の保存に失敗しました。CLIでログインする必要があるかもしれません。",
+    "Diarization requires Hugging Face login": "話者分離にはHugging Faceログインが必要です",
+    "Download failed:": "ダウンロード失敗:",
+    "Download complete": "ダウンロード完了",
+    "stopped": "停止",
+    "stopping": "停止中",
+    "connecting": "接続中",
+    "recording": "録音中",
+    "error:": "エラー:",
+    "saved:": "保存済:",
+    "save failed:": "保存失敗:",
+    "missing dependency:": "依存関係がありません:",
+    "Hugging Face login succeeded": "Hugging Faceログイン成功",
+    "Token is valid": "トークンは有効です",
+    "but storing credentials failed:": "しかし資格情報の保存に失敗しました:",
+    "Invalid Hugging Face token:": "Hugging Faceトークンが無効:",
+    "Hugging Face token check failed:": "Hugging Faceトークン確認失敗:",
+    "Hugging Face token valid": "Hugging Faceトークン有効",
+    "Downloading": "ダウンロード中",
+    "downloaded": "ダウンロード済",
+    "missing": "未取得",
+}
 
 
 class CollapsibleSection(ttk.Frame):
@@ -214,7 +329,10 @@ class ScrollableFrame(ttk.Frame):
 class WrapperGUI:
     def __init__(self, master: tk.Tk):
         self.master = master
-        master.title("WhisperLiveKit Wrapper")
+        lang = locale.getdefaultlocale()
+        lang_code = lang[0] if lang and lang[0] else ""
+        self._translations = TRANSLATIONS_JA if lang_code.startswith("ja") else {}
+        master.title(self._t("WhisperLiveKit Wrapper"))
 
         # Variables
         # 固定テーマ: ダーク系（ttkbootstrap: darkly）
@@ -345,6 +463,8 @@ class WrapperGUI:
         header.columnconfigure(1, weight=1)
         ttk.Label(header, text="WhisperLiveKit Wrapper", style="Header.TLabel").grid(row=0, column=0, sticky="w")
         ttk.Button(header, text="License", command=self.show_license).grid(row=0, column=2, sticky="e")
+        cuda_char = Emoji.get("check mark button").char if CUDA_AVAILABLE else Emoji.get("cross mark").char
+        ttk.Label(header, text=cuda_char).grid(row=0, column=3, sticky="e", padx=(5, 0))
         # 高さ計算用に参照保持
         self.header = header
         row += 1
@@ -705,6 +825,26 @@ class WrapperGUI:
         except Exception:
             pass
         # 最小幅の動的制約は廃止（自由な横幅調整を許容）
+        self._localize_widgets()
+
+    def _t(self, text: str) -> str:
+        return self._translations.get(text, text)
+
+    def _localize_widgets(self) -> None:
+        if not self._translations:
+            return
+
+        def apply(widget: tk.Widget) -> None:
+            try:
+                txt = widget.cget("text")
+                if txt in self._translations:
+                    widget.config(text=self._translations[txt])
+            except Exception:
+                pass
+            for child in widget.winfo_children():
+                apply(child)
+
+        apply(self.master)
 
     def _apply_fixed_layout(self) -> None:
         # PanedWindow を用いた固定2カラム（左右同高さ）配置
@@ -798,19 +938,19 @@ class WrapperGUI:
         def worker() -> None:
             try:
                 for m in models:
-                    label = f"Downloading {m}"
+                    label = f"{self._t('Downloading')} {m}"
                     self.master.after(0, lambda l=label: self.status_var.set(l))
                     model_manager.download_model(m, progress_cb=progress)
                 self.master.after(0, self._on_download_success)
             except Exception as e:  # pragma: no cover - GUI display
-                self.master.after(0, lambda err=e: self.status_var.set(f"Download failed: {err}"))
+                self.master.after(0, lambda err=e: self.status_var.set(f"{self._t('Download failed:')} {err}"))
                 self.master.after(0, lambda: self.progress.config(value=0))
                 self.master.after(0, lambda: self.start_btn.config(state=tk.NORMAL))
 
         threading.Thread(target=worker, daemon=True).start()
 
     def _on_download_success(self) -> None:
-        self.status_var.set("Download complete")
+        self.status_var.set(self._t("Download complete"))
         self.progress.config(value=0)
         self._launch_server()
 
@@ -995,7 +1135,7 @@ class WrapperGUI:
             except Exception:
                 pass
             # ステータス表示も更新
-            self.status_var.set("stopped")
+            self.status_var.set(self._t("stopped"))
             return False
         return True
 
@@ -1098,7 +1238,7 @@ class WrapperGUI:
             prev_style = None
         # フィードバック表示
         try:
-            btn.config(text="Copied!", state=tk.DISABLED)
+            btn.config(text=self._t("Copied!"), state=tk.DISABLED)
             try:
                 btn.config(bootstyle="success")
             except Exception:
@@ -1127,7 +1267,7 @@ class WrapperGUI:
         # 稼働中/録音中は設定変更不可（ダイアログを開かない）
         if (self.api_proc is not None or self.backend_proc is not None) or self.is_recording:
             try:
-                messagebox.showinfo("Settings locked", "Stop API before changing settings.")
+                messagebox.showinfo(self._t("Settings locked"), self._t("Stop API before changing settings."))
             except Exception:
                 pass
             return
@@ -1136,7 +1276,7 @@ class WrapperGUI:
     def _open_vad_settings(self) -> None:
         if (self.api_proc is not None or self.backend_proc is not None) or self.is_recording:
             try:
-                messagebox.showinfo("Settings locked", "Stop API before changing VAD settings.")
+                messagebox.showinfo(self._t("Settings locked"), self._t("Stop API before changing VAD settings."))
             except Exception:
                 pass
             return
@@ -1145,7 +1285,7 @@ class WrapperGUI:
     def _open_diarization_settings(self) -> None:
         if (self.api_proc is not None or self.backend_proc is not None) or self.is_recording:
             try:
-                messagebox.showinfo("Settings locked", "Stop API before changing diarization settings.")
+                messagebox.showinfo(self._t("Settings locked"), self._t("Stop API before changing diarization settings."))
             except Exception:
                 pass
             return
@@ -1285,7 +1425,7 @@ class WrapperGUI:
                     self._hf_username = username
                     if cli_ok:
                         self.status_var.set(
-                            f"Hugging Face login succeeded{f' as {username}' if username else ''}"
+                            f"{self._t('Hugging Face login succeeded')}{f' as {username}' if username else ''}"
                         )
                         try:
                             messagebox.showinfo(
@@ -1296,12 +1436,12 @@ class WrapperGUI:
                             pass
                     else:
                         self.status_var.set(
-                            f"Token is valid{f' for {username}' if username else ''}, but storing credentials failed: {cli_err}"
+                            f"{self._t('Token is valid')}{f' for {username}' if username else ''}, {self._t('but storing credentials failed:')} {cli_err}"
                         )
                         try:
                             messagebox.showwarning(
                                 "Hugging Face",
-                                "Token is valid, but saving credentials failed. You may need to login via CLI.",
+                                self._t("Token is valid, but saving credentials failed. You may need to login via CLI."),
                             )
                         except Exception:
                             pass
@@ -1309,23 +1449,23 @@ class WrapperGUI:
                 self.master.after(0, _ok)
             else:
                 def _ng():
-                    self.status_var.set(f"Invalid Hugging Face token: {whoami_err}")
+                    self.status_var.set(f"{self._t('Invalid Hugging Face token:')} {whoami_err}")
                     self.hf_logged_in = False
                     self._hf_username = None
                     self._apply_hf_login_state()
                     try:
-                        messagebox.showerror("Hugging Face", f"Invalid token: {whoami_err}")
+                        messagebox.showerror("Hugging Face", f"{self._t('Invalid token:')} {whoami_err}")
                     except Exception:
                         pass
                 self.master.after(0, _ng)
         except Exception as e:  # pragma: no cover - safety net
             def _ng2(err=e):
-                self.status_var.set(f"Hugging Face token check failed: {err}")
+                self.status_var.set(f"{self._t('Hugging Face token check failed:')} {err}")
                 self.hf_logged_in = False
                 self._hf_username = None
                 self._apply_hf_login_state()
                 try:
-                    messagebox.showerror("Hugging Face", f"Token check failed: {err}")
+                    messagebox.showerror("Hugging Face", f"{self._t('Token check failed:')} {err}")
                 except Exception:
                     pass
             self.master.after(0, _ng2)
@@ -1344,13 +1484,13 @@ class WrapperGUI:
         if self.diarization.get() and not self.hf_logged_in:
             # Revert and notify
             self.diarization.set(False)
-            self.status_var.set("Diarization requires Hugging Face login")
+            self.status_var.set(self._t("Diarization requires Hugging Face login"))
         self._update_diarization_fields()
 
     def _open_model_manager(self) -> None:
         if (self.api_proc is not None or self.backend_proc is not None) or self.is_recording:
             try:
-                messagebox.showinfo("Models locked", "Stop API before managing models.")
+                messagebox.showinfo(self._t("Models locked"), self._t("Stop API before managing models."))
             except Exception:
                 pass
             return
@@ -1480,7 +1620,7 @@ class WrapperGUI:
     def toggle_recording(self) -> None:
         if self.is_recording:
             self.is_recording = False
-            self.record_btn.config(text="Start Recording")
+            self.record_btn.config(text=self._t("Start Recording"))
             try:
                 if hasattr(self, "toolbar_record_btn"):
                     # ツールバーが存在する場合のみ反映
@@ -1488,17 +1628,17 @@ class WrapperGUI:
                     self.toolbar_record_btn.config(text=icon_play, bootstyle="success")
             except Exception:
                 pass
-            self.status_var.set("stopping")
+            self.status_var.set(self._t("stopping"))
         else:
             self.is_recording = True
-            self.record_btn.config(text="Stop Recording")
+            self.record_btn.config(text=self._t("Stop Recording"))
             try:
                 if hasattr(self, "toolbar_record_btn"):
                     icon_stop = Emoji.get('black square button').char
                     self.toolbar_record_btn.config(text=icon_stop, bootstyle="danger")
             except Exception:
                 pass
-            self.status_var.set("connecting")
+            self.status_var.set(self._t("connecting"))
             self.timer_var.set("00:00")
             self.transcript_box.configure(state="normal")
             self.transcript_box.delete("1.0", tk.END)
@@ -1511,13 +1651,12 @@ class WrapperGUI:
                 self._set_running_state(self.api_proc is not None or self.backend_proc is not None)
             except Exception:
                 pass
-
     def _recording_worker(self) -> None:
         try:
             import sounddevice as sd
             from websockets.sync.client import connect
         except Exception as e:  # pragma: no cover - dependency missing
-            self.master.after(0, lambda err=e: self.status_var.set(f"missing dependency: {err}"))
+            self.master.after(0, lambda err=e: self.status_var.set(f"{self._t('missing dependency:')} {err}"))
             self.is_recording = False
             return
 
@@ -1531,7 +1670,7 @@ class WrapperGUI:
 
         try:
             with connect(ws_url) as websocket:
-                self.master.after(0, lambda: self.status_var.set("recording"))
+                self.master.after(0, lambda: self.status_var.set(self._t("recording")))
 
                 def receiver():
                     while True:
@@ -1564,7 +1703,7 @@ class WrapperGUI:
                 websocket.send(json.dumps({"eof": 1}))
                 recv_thread.join(timeout=5)
         except Exception as e:
-            self.master.after(0, lambda err=e: self.status_var.set(f"error: {err}"))
+            self.master.after(0, lambda err=e: self.status_var.set(f"{self._t('error:')} {err}"))
         finally:
             self.is_recording = False
             # 設定ロック解除を反映
@@ -1588,16 +1727,16 @@ class WrapperGUI:
         self.master.after(1000, self._update_timer)
 
     def _finalize_recording(self) -> None:
-        self.record_btn.config(text="Start Recording")
-        self.status_var.set("stopped")
+        self.record_btn.config(text=self._t("Start Recording"))
+        self.status_var.set(self._t("stopped"))
         path = self.save_path.get().strip()
         if self.save_enabled.get() and path:
             try:
                 with open(path, "w", encoding="utf-8") as f:
                     f.write(self.transcript_box.get("1.0", tk.END))
-                self.status_var.set(f"saved: {path}")
+                self.status_var.set(f"{self._t('saved:')} {path}")
             except Exception as e:  # pragma: no cover - filesystem errors
-                self.status_var.set(f"save failed: {e}")
+                self.status_var.set(f"{self._t('save failed:')} {e}")
 
     @staticmethod
     def _find_free_port(exclude: set[int] | None = None) -> int:
@@ -1744,7 +1883,7 @@ class WrapperGUI:
                     pass
                 self.hf_token.set("********")
                 self.hf_token_entry.config(state=tk.DISABLED)
-                self.hf_token_btn.config(text="Validated", command=self._confirm_enable_hf_edit, bootstyle="success")
+                self.hf_token_btn.config(text=self._t("Validated"), command=self._confirm_enable_hf_edit, bootstyle="success")
                 self.hf_token_btn.config(state=tk.NORMAL)
             except Exception:
                 pass
@@ -1758,7 +1897,7 @@ class WrapperGUI:
                 if self.hf_token.get() == "********":
                     self.hf_token.set("")
                 self.hf_token_entry.config(state=tk.NORMAL)
-                self.hf_token_btn.config(text="Validate", command=self._validate_hf_token, bootstyle="info")
+                self.hf_token_btn.config(text=self._t("Validate"), command=self._validate_hf_token, bootstyle="info")
                 self.hf_token_btn.config(state=tk.NORMAL)
             except Exception:
                 pass
@@ -1766,7 +1905,7 @@ class WrapperGUI:
     def _confirm_enable_hf_edit(self) -> None:
         """Ask user to enable token editing when already validated."""
         try:
-            if messagebox.askyesno("Hugging Face", "Enable token editing? You can re-validate a new token."):
+            if messagebox.askyesno("Hugging Face", self._t("Enable token editing? You can re-validate a new token.")):
                 self._hf_edit_mode = True
                 self._update_hf_token_widgets()
         except Exception:
@@ -1866,7 +2005,7 @@ class WrapperGUI:
         tok = self.hf_token.get().strip()
         if not tok:
             try:
-                messagebox.showwarning("Hugging Face", "Please enter an access token.")
+                messagebox.showwarning("Hugging Face", self._t("Please enter an access token."))
             except Exception:
                 pass
             return
@@ -1893,11 +2032,11 @@ class WrapperGUI:
                         self._hf_edit_mode = False
                         # Store securely in system keyring if possible (no plaintext config)
                         saved = self._keyring_set_token(token)
-                        self.status_var.set(f"Hugging Face token valid{f' for {username}' if username else ''}.")
+                        self.status_var.set(f"{self._t('Hugging Face token valid')}{f' for {username}' if username else ''}.")
                         try:
-                            info_msg = "Token is valid. You can enable Diarization now."
+                            info_msg = self._t("Token is valid. You can enable Diarization now.")
                             if not saved:
-                                info_msg += "\nNote: Token was not saved in keyring; it won't persist across restarts."
+                                info_msg += "\n" + self._t("Note: Token was not saved in keyring; it won't persist across restarts.")
                             messagebox.showinfo("Hugging Face", info_msg)
                         except Exception:
                             pass
@@ -1906,9 +2045,9 @@ class WrapperGUI:
                         self._hf_username = None
                         # Remove any previously stored token on failure
                         self._keyring_delete_token()
-                        self.status_var.set(f"Invalid Hugging Face token: {err}")
+                        self.status_var.set(f"{self._t('Invalid Hugging Face token:')} {err}")
                         try:
-                            messagebox.showerror("Hugging Face", f"Invalid token: {err}")
+                            messagebox.showerror("Hugging Face", f"{self._t('Invalid token:')} {err}")
                         except Exception:
                             pass
                     # Persist token and refresh UI state
@@ -2044,9 +2183,9 @@ class ModelManagerDialog(tk.Toplevel):
             ttk.Label(self, text=MODEL_USAGE.get(name, "")).grid(row=i, column=1, sticky=tk.W)
             status = tk.StringVar()
             if model_manager.is_model_downloaded(name):
-                status.set("downloaded")
+                status.set(self._t("downloaded"))
             else:
-                status.set("missing")
+                status.set(self._t("missing"))
             ttk.Label(self, textvariable=status).grid(row=i, column=2, sticky=tk.W)
             pb = ttk.Progressbar(self, length=120)
             pb.grid(row=i, column=3, padx=5)
@@ -2062,8 +2201,8 @@ class ModelManagerDialog(tk.Toplevel):
         status, pb, btn = self.rows[name]
         if model_manager.is_model_downloaded(name):
             model_manager.delete_model(name)
-            status.set("missing")
-            btn.config(text="Download")
+            status.set(self._t("missing"))
+            btn.config(text=self._t("Download"))
             pb.config(value=0)
         else:
             btn.config(state=tk.DISABLED)
@@ -2074,8 +2213,8 @@ class ModelManagerDialog(tk.Toplevel):
             def worker() -> None:
                 try:
                     model_manager.download_model(name, progress_cb=progress)
-                    status.set("downloaded")
-                    btn.config(text="Delete")
+                    status.set(self._t("downloaded"))
+                    btn.config(text=self._t("Delete"))
                 except Exception as e:  # pragma: no cover - GUI display
                     status.set(str(e))
                 finally:
