@@ -943,22 +943,22 @@ class WrapperGUI:
         self.master.destroy()
 
     def _check_runtime_dependencies(self) -> bool:
-        """起動前に、ON にされた機能に必要な依存が揃っているか簡易チェックする。
-        欠けていればメッセージ表示し、起動を中止する。
+        """Perform a simple check that required dependencies for enabled features are present.
+        If any are missing, show a message and cancel startup.
         """
         problems: list[str] = []
         suggestions: list[str] = []
 
-        # ffmpeg は API 側で使用（音声変換）。
+        # ffmpeg is used by the API for audio conversion.
         try:
             import shutil as _shutil  # noqa: F401
             if shutil.which("ffmpeg") is None:
-                problems.append("ffmpeg が見つかりません（PATH 未登録）。")
-                suggestions.append("macOS: brew install ffmpeg / Windows: choco install ffmpeg 等")
+                problems.append("ffmpeg not found (not on PATH).")
+                suggestions.append("macOS: brew install ffmpeg / Windows: choco install ffmpeg, etc")
         except Exception:
             pass
 
-        # VAD (VAC) を有効にしている場合は torchaudio が必要
+        # torchaudio is required when VAD (VAC) is enabled
         if self.use_vac.get():
             try:
                 import torchaudio  # type: ignore  # noqa: F401
@@ -968,29 +968,29 @@ class WrapperGUI:
                     torch_ver = getattr(torch, "__version__", "<torch_version>")
                 except Exception:
                     torch_ver = "<torch_version>"
-                problems.append("VAD を有効にするには torchaudio が必要です。")
+                problems.append("torchaudio is required to enable VAD.")
                 suggestions.append(f"pip install torchaudio=={torch_ver}")
 
-        # 話者分離の依存
+        # Dependencies for diarization
         if self.diarization.get():
             backend = self.diarization_backend.get().strip()
             if backend == "sortformer":
                 if not SORTFORMER_AVAILABLE:
-                    problems.append("Sortformer バックエンドには CUDA と NVIDIA NeMo が必要です。")
+                    problems.append("Sortformer backend requires CUDA and NVIDIA NeMo.")
                     suggestions.append('pip install "git+https://github.com/NVIDIA/NeMo.git@main#egg=nemo_toolkit[asr]"')
             elif backend == "diart":
                 try:
                     import diart  # type: ignore  # noqa: F401
                 except Exception:
-                    problems.append("Diart バックエンドには diart が必要です。")
+                    problems.append("Diart backend requires diart.")
                     suggestions.append("pip install diart pyannote.audio rx")
 
         if problems:
             try:
                 from tkinter import messagebox as _mb
-                msg = "\n".join(["\u26a0\ufe0f 依存関係の不足により起動できません:"] + problems)
+                msg = "\n".join(["\u26a0\ufe0f Cannot start due to missing dependencies:"] + problems)
                 if suggestions:
-                    msg += "\n\nインストール例:\n- " + "\n- ".join(suggestions)
+                    msg += "\n\nInstallation examples:\n- " + "\n- ".join(suggestions)
                 _mb.showerror("Missing dependencies", msg)
             except Exception:
                 pass
@@ -1000,7 +1000,7 @@ class WrapperGUI:
         return True
 
     def _setup_autosave(self) -> None:
-        """主要設定の Tk 変数に trace を貼って自動保存する。"""
+        """Attach traces to main Tk variables for automatic saving."""
         vars_to_watch: list[tk.Variable] = [
             self.backend_host,
             self.backend_port,
@@ -1083,7 +1083,7 @@ class WrapperGUI:
         self.master.clipboard_append(text)
 
     def _copy_with_feedback(self, btn: ttk.Button, text: str) -> None:
-        """コピー後にボタンの表示を一時的に変更してフィードバックを与える。"""
+        """After copying, temporarily change the button to provide feedback."""
         try:
             self.copy_to_clipboard(text)
         except Exception:
@@ -1416,7 +1416,7 @@ class WrapperGUI:
                 from tkinter import messagebox as _mb
                 _mb.showwarning(
                     "Sortformer unavailable",
-                    "CUDA と NeMo が見つからないため、話者分離バックエンドを 'diart' に切り替えました。",
+                    "CUDA and NeMo not found; switched diarization backend to 'diart'.",
                 )
             except Exception:
                 pass

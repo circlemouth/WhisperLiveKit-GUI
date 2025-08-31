@@ -16,6 +16,7 @@
 - プラットフォーム: Windows/macOS/Linux
 - セキュリティ: 既定は `127.0.0.1` バインド。外部公開はユーザー操作で有効化（`0.0.0.0`）
 - 依存は環境別の `wrapper/requirements-nvidia.txt` または `wrapper/requirements-cpu-amd.txt` を参照。upstream は `pyproject.toml` に準拠
+- GUI 表示言語: 英語（警告などのメッセージを含む）
 
 ## ユースケース / ユーザーフロー
 - ローカルでリアルタイム文字起こしを試す（GUI 起動 → Start API → 録音 → 結果表示/保存）
