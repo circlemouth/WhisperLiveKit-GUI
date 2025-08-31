@@ -5,7 +5,7 @@ import sys
 import time
 import webbrowser
 import tkinter as tk
-from tkinter import filedialog, simpledialog, font
+from tkinter import filedialog, simpledialog, font, messagebox
 import ttkbootstrap as ttkb
 from ttkbootstrap import ttk
 from ttkbootstrap.icons import Emoji
@@ -16,6 +16,10 @@ import threading
 from pathlib import Path
 import shutil
 from platformdirs import user_config_path
+try:
+    import keyring  # type: ignore
+except Exception:
+    keyring = None
 
 from . import model_manager
 
@@ -68,6 +72,7 @@ CONFIG_FILE = CONFIG_DIR / "settings.json"
 OLD_CONFIG_FILE = Path.home() / ".whisperlivekit-wrapper.json"
 LICENSE_FILE = Path(__file__).resolve().parents[2] / "LICENSE"
 THIRD_PARTY_LICENSES_FILE = Path(__file__).resolve().parents[1] / "licenses.json"
+HF_KEYRING_SERVICE = "WhisperLiveKit-Wrapper"
 
 
 class CollapsibleSection(ttk.Frame):
@@ -221,6 +226,10 @@ class WrapperGUI:
         self._last_local_backend_host = "127.0.0.1"
         self._last_local_api_host = "127.0.0.1"
 
+        # Wrapper API key settings
+        self.use_api_key = tk.BooleanVar(value=False)
+        self.api_key = tk.StringVar(value="")
+
         self.model = tk.StringVar(value=os.getenv("WRAPPER_MODEL", "large-v3"))
         # Use voice activity controller (Silero via torch.hub). Default off to avoid GitHub SSL/network issues.
         self.use_vac = tk.BooleanVar(value=os.getenv("WRAPPER_USE_VAC", "0") == "1")
@@ -256,6 +265,9 @@ class WrapperGUI:
         # HF login state (for diarization gating)
         self.hf_logged_in: bool = False
         self._hf_username: str | None = None
+        self.hf_token = tk.StringVar(value=os.getenv("HF_TOKEN", ""))
+        # HF token edit mode (when true, allow re-input even if logged in)
+        self._hf_edit_mode: bool = False
 
         # Recording-related variables
         self.ws_url = tk.StringVar()
@@ -267,8 +279,12 @@ class WrapperGUI:
         self.save_enabled = tk.BooleanVar(value=False)
 
         self._load_settings()
-        # テーマは darkly を強制（既存設定を上書き）
-        self.theme.set("darkly")
+        # テーマは設定を尊重（既定は darkly）。
+        if not self.theme.get():
+            self.theme.set("darkly")
+
+        # 設定のオートセーブ: 主要な設定変数に対して変更検知で保存
+        self._setup_autosave()
 
         self.style = ttkb.Style(theme=self.theme.get())
         # ダークテーマでクラシックTk要素にも配色を適用
@@ -366,6 +382,26 @@ class WrapperGUI:
         self.api_port_entry.grid(row=r, column=1, sticky="ew")
         r += 1
         # 4) 起動ポリシー（moved to top）
+        # Security (API key)
+        ttk.Separator(config_frame, orient="horizontal").grid(row=r, column=0, columnspan=2, sticky="ew", pady=(6, 6))
+        r += 1
+        ttk.Label(config_frame, text="Security", style="SectionHeader.TLabel").grid(row=r, column=0, columnspan=2, sticky=tk.W)
+        r += 1
+        self.api_key_chk = ttk.Checkbutton(
+            config_frame,
+            text="Require API key for Wrapper API",
+            variable=self.use_api_key,
+            command=self._update_api_key_widgets,
+        )
+        self.api_key_chk.grid(row=r, column=0, columnspan=2, sticky=tk.W)
+        r += 1
+        ttk.Label(config_frame, text="API key").grid(row=r, column=0, sticky=tk.W)
+        api_row = ttk.Frame(config_frame)
+        api_row.grid(row=r, column=1, sticky="ew")
+        api_row.columnconfigure(0, weight=1)
+        self.api_key_entry = ttk.Entry(api_row, textvariable=self.api_key, show="*")
+        self.api_key_entry.grid(row=0, column=0, sticky="ew")
+        r += 1
         # 5) Model section header + selection
         ttk.Separator(config_frame, orient="horizontal").grid(row=r, column=0, columnspan=2, sticky="ew", pady=(6, 6))
         r += 1
@@ -381,12 +417,7 @@ class WrapperGUI:
         )
         self.model_combo.grid(row=r, column=1, sticky="ew")
         r += 1
-        # Advanced settings on the right edge
-        adv_row = ttk.Frame(config_frame)
-        adv_row.grid(row=r, column=0, columnspan=2, sticky="ew")
-        adv_row.columnconfigure(0, weight=1)
-        self.adv_btn = ttk.Button(adv_row, text="Advanced Settings", command=self._open_backend_settings)
-        self.adv_btn.grid(row=0, column=1, sticky="e")
+        # (Advanced Settings button was moved next to Hugging Face Login in Start/Stop row)
         r += 1
         # 6) VAD section
         ttk.Separator(config_frame, orient="horizontal").grid(row=r, column=0, columnspan=2, sticky="ew", pady=(6, 6))
@@ -400,14 +431,7 @@ class WrapperGUI:
         )
         self.vac_chk.grid(row=r, column=0, columnspan=2, sticky=tk.W)
         r += 1
-        ttk.Label(config_frame, text="VAD certificate").grid(row=r, column=0, sticky=tk.W)
-        cert_input = ttk.Frame(config_frame)
-        cert_input.grid(row=r, column=1, sticky="ew")
-        cert_input.columnconfigure(0, weight=1)
-        self.vad_cert_entry = ttk.Entry(cert_input, textvariable=self.vad_certfile, width=20)
-        self.vad_cert_entry.grid(row=0, column=0, sticky="ew")
-        self.vad_cert_browse = ttk.Button(cert_input, text="Browse...", command=self.choose_vad_certfile)
-        self.vad_cert_browse.grid(row=0, column=1, padx=(4,0))
+        # (VAD certificate moved into Advanced Settings dialog)
         r += 1
         # VAD Settings aligned to the right (enabled only if VAD is on)
         vad_row = ttk.Frame(config_frame)
@@ -421,12 +445,22 @@ class WrapperGUI:
         r += 1
         ttk.Label(config_frame, text="Diarization", style="SectionHeader.TLabel").grid(row=r, column=0, columnspan=2, sticky=tk.W)
         r += 1
-        # Hugging Face Login は Start/Stop 行の左に移動
+        # Hugging Face access token (top of section)
+        ttk.Label(config_frame, text="Hugging Face access token").grid(row=r, column=0, sticky=tk.W)
+        token_row = ttk.Frame(config_frame)
+        token_row.grid(row=r, column=1, sticky="ew")
+        token_row.columnconfigure(0, weight=1)
+        self.hf_token_entry = ttk.Entry(token_row, textvariable=self.hf_token, show="*")
+        self.hf_token_entry.grid(row=0, column=0, sticky="ew")
+        self.hf_token_btn = ttk.Button(token_row, text="Validate", command=self._validate_hf_token, bootstyle="info")
+        self.hf_token_btn.grid(row=0, column=1, padx=(4,0))
+        r += 1
         self.diarization_chk = ttk.Checkbutton(
             config_frame,
             text="Enable diarization",
             variable=self.diarization,
             command=self._on_diarization_toggle,
+            bootstyle="info",
         )
         self.diarization_chk.grid(row=r, column=0, columnspan=2, sticky=tk.W)
         # トークン未検証の間は無効化
@@ -454,7 +488,7 @@ class WrapperGUI:
         diar_row = ttk.Frame(config_frame)
         diar_row.grid(row=r, column=0, columnspan=2, sticky="ew")
         diar_row.columnconfigure(0, weight=1)
-        self.diar_settings_btn = ttk.Button(diar_row, text="Diarization Settings", command=self._open_diarization_settings)
+        self.diar_settings_btn = ttk.Button(diar_row, text="Diarization Settings", command=self._open_diarization_settings, bootstyle="info")
         self.diar_settings_btn.grid(row=0, column=1, sticky="e")
         r += 1
         # Diarization hint (English)
@@ -466,15 +500,38 @@ class WrapperGUI:
         )
         self.hf_hint.grid(row=r, column=0, columnspan=2, sticky=tk.W)
         r += 1
+        # Helpful links (token and model license pages)
+        hf_links = ttk.Frame(config_frame)
+        hf_links.grid(row=r, column=0, columnspan=2, sticky="w")
+        ttk.Button(
+            hf_links,
+            text="Get HF token",
+            command=lambda: webbrowser.open("https://huggingface.co/settings/tokens"),
+        ).pack(side="left", padx=(0, 6))
+        ttk.Button(
+            hf_links,
+            text="pyannote/segmentation-3.0",
+            command=lambda: webbrowser.open("https://huggingface.co/pyannote/segmentation-3.0"),
+        ).pack(side="left", padx=(0, 6))
+        ttk.Button(
+            hf_links,
+            text="pyannote/embedding",
+            command=lambda: webbrowser.open("https://huggingface.co/pyannote/embedding"),
+        ).pack(side="left")
+        r += 1
         # 8) 起動/停止操作
+        ttk.Separator(config_frame, orient="horizontal").grid(row=r, column=0, columnspan=2, sticky="ew", pady=(6, 6))
+        r += 1
         start_stop = ttk.Frame(config_frame)
         start_stop.grid(row=r, column=0, columnspan=2, sticky="ew", pady=(4, 0))
         # 左端に Manage models と Hugging Face Login を配置
         left_actions = ttk.Frame(start_stop)
         left_actions.grid(row=0, column=0, sticky="w")
-        ttk.Button(left_actions, text="Manage models", command=self._open_model_manager).pack(side="left", padx=(0, 6))
-        self.hf_login_btn = ttk.Button(left_actions, text="Hugging Face Login", command=self.login_hf)
-        self.hf_login_btn.pack(side="left")
+        self.manage_models_btn = ttk.Button(left_actions, text="Manage models", command=self._open_model_manager)
+        self.manage_models_btn.pack(side="left", padx=(0, 6))
+        # Advanced Settings button
+        self.adv_btn = ttk.Button(left_actions, text="Advanced Settings", command=self._open_backend_settings)
+        self.adv_btn.pack(side="left")
         # 右端に Start/Stop を配置
         start_stop.columnconfigure(0, weight=1)
         self.start_btn = ttk.Button(start_stop, text="Start API", command=self.start_api, bootstyle="primary")
@@ -580,6 +637,8 @@ class WrapperGUI:
         self.api_proc: subprocess.Popen | None = None
 
         self._update_diarization_fields()
+        self._update_hf_token_widgets()
+        self._update_api_key_widgets()
 
         for var in [self.backend_host, self.backend_port, self.api_host, self.api_port]:
             var.trace_add("write", self.update_endpoints)
@@ -593,6 +652,9 @@ class WrapperGUI:
         # Apply initial save widgets state
         self._update_save_widgets()
         self._update_vad_state()
+        # reflect token widgets state on startup
+        self._update_hf_token_widgets()
+        self.use_api_key.trace_add("write", lambda *_: self._update_api_key_widgets())
 
         master.protocol("WM_DELETE_WINDOW", self.on_close)
         # Initialize external toggle effect
@@ -700,10 +762,15 @@ class WrapperGUI:
     def start_api(self):
         if self.api_proc or self.backend_proc:
             return
+        # 起動前の依存関係チェック（VAD/話者分離など可否を事前確認）
+        if not self._check_runtime_dependencies():
+            return
         missing: list[str] = []
         model = self.model.get().strip()
-        if model and not model_manager.is_model_downloaded(model):
-            missing.append(model)
+        # For SimulStreaming, backend downloads weights itself; skip HF snapshot prefetch
+        if model and self.backend.get().strip() != "simulstreaming":
+            if not model_manager.is_model_downloaded(model):
+                missing.append(model)
         if self.diarization.get() and self.hf_logged_in:
             seg = self.segmentation_model.get().strip()
             if seg and not model_manager.is_model_downloaded(seg):
@@ -761,6 +828,13 @@ class WrapperGUI:
         cert = self.vad_certfile.get().strip()
         if cert and Path(cert).is_file():
             env["SSL_CERT_FILE"] = cert
+        # Fallback: if no SSL_CERT_FILE is provided, try to use certifi CA bundle
+        if "SSL_CERT_FILE" not in env:
+            try:
+                import certifi  # type: ignore
+                env["SSL_CERT_FILE"] = certifi.where()
+            except Exception:
+                pass
 
         backend_cmd = [
             sys.executable,
@@ -773,7 +847,15 @@ class WrapperGUI:
         ]
         model = self.model.get().strip()
         if model:
-            backend_cmd += ["--model_dir", str(model_manager.get_model_path(model))]
+            # SimulStreaming expects a model name (e.g. 'large-v3') or a --model-path
+            # pointing to '<dir>/<name>.pt' so that load_model(name=<name>, download_root=<dir>) works.
+            if self.backend.get().strip() == "simulstreaming":
+                cache_dir = str(model_manager.HF_CACHE_DIR)
+                backend_cmd += ["--model", model]
+                backend_cmd += ["--model-path", str(Path(cache_dir) / f"{model}.pt")]
+            else:
+                # Other backends can consume a local snapshot directory
+                backend_cmd += ["--model_dir", str(model_manager.get_model_path(model))]
         if self.diarization.get() and self.hf_logged_in:
             backend_cmd.append("--diarization")
             seg = self.segmentation_model.get().strip()
@@ -816,11 +898,14 @@ class WrapperGUI:
         backend_cmd += ["--frame-threshold", str(self.frame_threshold.get())]
 
         self.backend_proc = subprocess.Popen(backend_cmd)
+        # 自動でブラウザは開かない（必要なら Endpoints の "Open Web GUI" ボタンから開く）
         time.sleep(2)
-        try:
-            webbrowser.open(f"http://{b_host}:{b_port}")
-        except Exception:
-            pass
+
+        # API key settings for wrapper API
+        use_key = bool(self.use_api_key.get()) and bool(self.api_key.get().strip())
+        env["WRAPPER_REQUIRE_API_KEY"] = "1" if use_key else "0"
+        if use_key:
+            env["WRAPPER_API_KEY"] = self.api_key.get().strip()
 
         self.api_proc = subprocess.Popen(
             [
@@ -854,6 +939,128 @@ class WrapperGUI:
         self._save_settings()
         self.master.destroy()
 
+    def _check_runtime_dependencies(self) -> bool:
+        """起動前に、ON にされた機能に必要な依存が揃っているか簡易チェックする。
+        欠けていればメッセージ表示し、起動を中止する。
+        """
+        problems: list[str] = []
+        suggestions: list[str] = []
+
+        # ffmpeg は API 側で使用（音声変換）。
+        try:
+            import shutil as _shutil  # noqa: F401
+            if shutil.which("ffmpeg") is None:
+                problems.append("ffmpeg が見つかりません（PATH 未登録）。")
+                suggestions.append("macOS: brew install ffmpeg / Windows: choco install ffmpeg 等")
+        except Exception:
+            pass
+
+        # VAD (VAC) を有効にしている場合は torchaudio が必要
+        if self.use_vac.get():
+            try:
+                import torchaudio  # type: ignore  # noqa: F401
+            except Exception:
+                try:
+                    import torch  # type: ignore
+                    torch_ver = getattr(torch, "__version__", "<torch_version>")
+                except Exception:
+                    torch_ver = "<torch_version>"
+                problems.append("VAD を有効にするには torchaudio が必要です。")
+                suggestions.append(f"pip install torchaudio=={torch_ver}")
+
+        # 話者分離の依存
+        if self.diarization.get():
+            backend = self.diarization_backend.get().strip()
+            if backend == "sortformer":
+                try:
+                    import nemo.collections.asr  # type: ignore  # noqa: F401
+                except Exception:
+                    problems.append("Sortformer バックエンドには NVIDIA NeMo が必要です。")
+                    suggestions.append('pip install "git+https://github.com/NVIDIA/NeMo.git@main#egg=nemo_toolkit[asr]"')
+            elif backend == "diart":
+                try:
+                    import diart  # type: ignore  # noqa: F401
+                except Exception:
+                    problems.append("Diart バックエンドには diart が必要です。")
+                    suggestions.append("pip install diart pyannote.audio rx")
+
+        if problems:
+            try:
+                from tkinter import messagebox as _mb
+                msg = "\n".join(["\u26a0\ufe0f 依存関係の不足により起動できません:"] + problems)
+                if suggestions:
+                    msg += "\n\nインストール例:\n- " + "\n- ".join(suggestions)
+                _mb.showerror("Missing dependencies", msg)
+            except Exception:
+                pass
+            # ステータス表示も更新
+            self.status_var.set("stopped")
+            return False
+        return True
+
+    def _setup_autosave(self) -> None:
+        """主要設定の Tk 変数に trace を貼って自動保存する。"""
+        vars_to_watch: list[tk.Variable] = [
+            self.backend_host,
+            self.backend_port,
+            self.api_host,
+            self.api_port,
+            self.auto_start,
+            self.allow_external,
+            self.model,
+            self.use_api_key,
+            self.api_key,
+            self.use_vac,
+            self.vad_certfile,
+            self.diarization,
+            self.segmentation_model,
+            self.embedding_model,
+            self.warmup_file,
+            self.confidence_validation,
+            self.punctuation_split,
+            self.diarization_backend,
+            self.min_chunk_size,
+            self.language,
+            self.task,
+            self.backend,
+            self.vac_chunk_size,
+            self.buffer_trimming,
+            self.buffer_trimming_sec,
+            self.log_level,
+            self.ssl_certfile,
+            self.ssl_keyfile,
+            self.frame_threshold,
+            self.save_path,
+            self.save_enabled,
+            self.theme,
+        ]
+
+        def _autosave(*_args):  # pragma: no cover - UI event
+            try:
+                self._save_settings()
+            except Exception:
+                pass
+
+        for v in vars_to_watch:
+            try:
+                v.trace_add("write", _autosave)
+            except Exception:
+                pass
+
+    def _update_api_key_widgets(self) -> None:
+        # Lock API key controls while running or recording; enable only when Use API key is ON
+        running = self.api_proc is not None or self.backend_proc is not None
+        locked = running or bool(self.is_recording)
+        try:
+            self.api_key_chk.config(state=(tk.DISABLED if locked else tk.NORMAL))
+        except Exception:
+            pass
+        state = tk.NORMAL if (self.use_api_key.get() and not locked) else tk.DISABLED
+        try:
+            self.api_key_entry.config(state=state)
+        except Exception:
+            pass
+
     def copy_to_clipboard(self, text: str) -> None:
         self.master.clipboard_clear()
         self.master.clipboard_append(text)
@@ -867,12 +1074,31 @@ class WrapperGUI:
             self.save_path.set(path)
 
     def _open_backend_settings(self) -> None:
+        # 稼働中/録音中は設定変更不可（ダイアログを開かない）
+        if (self.api_proc is not None or self.backend_proc is not None) or self.is_recording:
+            try:
+                messagebox.showinfo("Settings locked", "Stop API before changing settings.")
+            except Exception:
+                pass
+            return
         BackendSettingsDialog(self.master, self)
 
     def _open_vad_settings(self) -> None:
+        if (self.api_proc is not None or self.backend_proc is not None) or self.is_recording:
+            try:
+                messagebox.showinfo("Settings locked", "Stop API before changing VAD settings.")
+            except Exception:
+                pass
+            return
         VADSettingsDialog(self.master, self)
 
     def _open_diarization_settings(self) -> None:
+        if (self.api_proc is not None or self.backend_proc is not None) or self.is_recording:
+            try:
+                messagebox.showinfo("Settings locked", "Stop API before changing diarization settings.")
+            except Exception:
+                pass
+            return
         DiarizationSettingsDialog(self.master, self)
 
     def choose_vad_certfile(self) -> None:
@@ -1011,10 +1237,24 @@ class WrapperGUI:
                         self.status_var.set(
                             f"Hugging Face login succeeded{f' as {username}' if username else ''}"
                         )
+                        try:
+                            messagebox.showinfo(
+                                "Hugging Face",
+                                f"Login successful{f' as {username}' if username else ''}. Diarization can be enabled.",
+                            )
+                        except Exception:
+                            pass
                     else:
                         self.status_var.set(
                             f"Token is valid{f' for {username}' if username else ''}, but storing credentials failed: {cli_err}"
                         )
+                        try:
+                            messagebox.showwarning(
+                                "Hugging Face",
+                                "Token is valid, but saving credentials failed. You may need to login via CLI.",
+                            )
+                        except Exception:
+                            pass
                     self._apply_hf_login_state()
                 self.master.after(0, _ok)
             else:
@@ -1023,6 +1263,10 @@ class WrapperGUI:
                     self.hf_logged_in = False
                     self._hf_username = None
                     self._apply_hf_login_state()
+                    try:
+                        messagebox.showerror("Hugging Face", f"Invalid token: {whoami_err}")
+                    except Exception:
+                        pass
                 self.master.after(0, _ng)
         except Exception as e:  # pragma: no cover - safety net
             def _ng2(err=e):
@@ -1030,6 +1274,10 @@ class WrapperGUI:
                 self.hf_logged_in = False
                 self._hf_username = None
                 self._apply_hf_login_state()
+                try:
+                    messagebox.showerror("Hugging Face", f"Token check failed: {err}")
+                except Exception:
+                    pass
             self.master.after(0, _ng2)
 
     def _update_diarization_fields(self, *_: object) -> None:
@@ -1050,6 +1298,12 @@ class WrapperGUI:
         self._update_diarization_fields()
 
     def _open_model_manager(self) -> None:
+        if (self.api_proc is not None or self.backend_proc is not None) or self.is_recording:
+            try:
+                messagebox.showinfo("Models locked", "Stop API before managing models.")
+            except Exception:
+                pass
+            return
         ModelManagerDialog(self.master)
 
     def _toggle_allow_external(self) -> None:
@@ -1090,6 +1344,8 @@ class WrapperGUI:
         elif config_present:
             self.auto_start.set(False)
         self.model.set(data.get("model", self.model.get()))
+        self.use_api_key.set(data.get("use_api_key", self.use_api_key.get()))
+        self.api_key.set(data.get("api_key", self.api_key.get()))
         self.use_vac.set(data.get("use_vac", self.use_vac.get()))
         self.vad_certfile.set(data.get("vad_certfile", self.vad_certfile.get()))
         self.diarization.set(data.get("diarization", self.diarization.get()))
@@ -1124,6 +1380,8 @@ class WrapperGUI:
             "api_port": self.api_port.get(),
             "auto_start": self.auto_start.get(),
             "model": self.model.get(),
+            "use_api_key": self.use_api_key.get(),
+            "api_key": self.api_key.get(),
             "use_vac": self.use_vac.get(),
             "vad_certfile": self.vad_certfile.get(),
             "diarization": self.diarization.get(),
@@ -1186,6 +1444,11 @@ class WrapperGUI:
             threading.Thread(target=self._recording_worker, daemon=True).start()
             self.start_time = time.time()
             self._update_timer()
+            # 設定をロック（サーバー稼働中と同様に）
+            try:
+                self._set_running_state(self.api_proc is not None or self.backend_proc is not None)
+            except Exception:
+                pass
 
     def _recording_worker(self) -> None:
         try:
@@ -1242,6 +1505,11 @@ class WrapperGUI:
             self.master.after(0, lambda err=e: self.status_var.set(f"error: {err}"))
         finally:
             self.is_recording = False
+            # 設定ロック解除を反映
+            try:
+                self.master.after(0, lambda: self._set_running_state(self.api_proc is not None or self.backend_proc is not None))
+            except Exception:
+                pass
             self.master.after(0, self._finalize_recording)
 
     def _append_transcript(self, text: str) -> None:
@@ -1304,8 +1572,9 @@ class WrapperGUI:
         return sorted(ips)
 
     def _set_running_state(self, running: bool) -> None:
-        # Lock settings that affect server process while running
-        state_entry = tk.DISABLED if running else tk.NORMAL
+        # Lock settings that affect server process while running OR recording
+        locked = running or bool(self.is_recording)
+        state_entry = tk.DISABLED if locked else tk.NORMAL
         # Entries（host/port）
         self.backend_host_entry.config(state=state_entry)
         self.backend_port_entry.config(state=state_entry)
@@ -1314,22 +1583,50 @@ class WrapperGUI:
         # Checkbuttons
         self.auto_start_chk.config(state=state_entry)
         # Diarization also gated by HF login
-        self.diarization_chk.config(state=(tk.DISABLED if running or not self.hf_logged_in else tk.NORMAL))
+        self.diarization_chk.config(state=(tk.DISABLED if locked or not self.hf_logged_in else tk.NORMAL))
         self.allow_external_chk.config(state=state_entry)
+        # HF token controls
+        try:
+            self.hf_token_entry.config(state=state_entry)
+            self.hf_token_btn.config(state=state_entry)
+        except Exception:
+            pass
         # Comboboxes
-        self.model_combo.config(state="disabled" if running else "readonly")
+        self.model_combo.config(state="disabled" if locked else "readonly")
         # Respect diarization toggle for related combos
-        if running:
+        if locked:
             self.seg_model_combo.config(state="disabled")
             self.emb_model_combo.config(state="disabled")
         else:
             self._update_diarization_fields()
         # Buttons
-        self.hf_login_btn.config(state=state_entry)
+        try:
+            self.hf_login_btn.config(state=state_entry)
+        except Exception:
+            pass
+        try:
+            self.manage_models_btn.config(state=state_entry)
+        except Exception:
+            pass
+        try:
+            self.adv_btn.config(state=state_entry)
+        except Exception:
+            pass
+        try:
+            # Diarization Settings button should also be locked while running/recording
+            if locked:
+                self.diar_settings_btn.config(state=tk.DISABLED)
+            else:
+                self._update_diarization_fields()
+        except Exception:
+            pass
+        # Start/Stop/Open Web are tied to running state (not recording)
         self.start_btn.config(state=tk.DISABLED if running else tk.NORMAL)
         self.stop_btn.config(state=tk.NORMAL if running else tk.DISABLED)
         self.open_web_btn.config(state=tk.NORMAL if running else tk.DISABLED)
         self._update_vad_state()
+        self._update_hf_token_widgets()
+        self._update_api_key_widgets()
 
     def _update_save_widgets(self) -> None:
         state = tk.NORMAL if self.save_enabled.get() else tk.DISABLED
@@ -1338,20 +1635,69 @@ class WrapperGUI:
 
     def _update_vad_state(self) -> None:
         running = self.api_proc is not None or self.backend_proc is not None
-        # VAD toggle is available when not running
-        if running:
+        locked = running or bool(self.is_recording)
+        # VAD toggle is available when not running/recording
+        if locked:
             self.vac_chk.config(state=tk.DISABLED)
         else:
             self.vac_chk.config(state=tk.NORMAL)
-        # Certificate selection is only available when VAD is enabled and not running
-        cert_controls_state = tk.NORMAL if (self.use_vac.get() and not running) else tk.DISABLED
-        self.vad_cert_entry.config(state=cert_controls_state)
-        self.vad_cert_browse.config(state=cert_controls_state)
-        # VAD Settings button is enabled only when VAD is ON and not running
+        # Certificate selection is only available when VAD is enabled and not locked
+        cert_controls_state = tk.NORMAL if (self.use_vac.get() and not locked) else tk.DISABLED
         try:
-            self.vad_settings_btn.config(state=(tk.NORMAL if (self.use_vac.get() and not running) else tk.DISABLED))
+            self.vad_cert_entry.config(state=cert_controls_state)
+            self.vad_cert_browse.config(state=cert_controls_state)
         except Exception:
             pass
+        # VAD Settings button is enabled only when VAD is ON and not locked
+        try:
+            self.vad_settings_btn.config(state=(tk.NORMAL if (self.use_vac.get() and not locked) else tk.DISABLED))
+        except Exception:
+            pass
+
+    def _update_hf_token_widgets(self) -> None:
+        """Present HF token controls based on login and edit mode.
+        - When logged in and not in edit mode: disable entry, show button as "Validated"; clicking asks to enable editing.
+        - When not logged in or in edit mode: enable entry (unless locked), show button as "Validate".
+        """
+        # If widgets not yet created, return
+        if not hasattr(self, 'hf_token_entry') or not hasattr(self, 'hf_token_btn'):
+            return
+        running = self.api_proc is not None or self.backend_proc is not None
+        locked = running or bool(self.is_recording)
+        # If locked, both disabled regardless of state
+        if locked:
+            try:
+                self.hf_token_entry.config(state=tk.DISABLED)
+                self.hf_token_btn.config(state=tk.DISABLED)
+            except Exception:
+                pass
+            return
+        # Not locked:
+        if self.hf_logged_in and not self._hf_edit_mode:
+            try:
+                self.hf_token_entry.config(state=tk.DISABLED)
+                self.hf_token_btn.config(text="Validated", command=self._confirm_enable_hf_edit, bootstyle="success")
+                self.hf_token_btn.config(state=tk.NORMAL)
+            except Exception:
+                pass
+        else:
+            try:
+                self.hf_token_entry.config(state=tk.NORMAL)
+                self.hf_token_btn.config(text="Validate", command=self._validate_hf_token, bootstyle="info")
+                self.hf_token_btn.config(state=tk.NORMAL)
+            except Exception:
+                pass
+
+    def _confirm_enable_hf_edit(self) -> None:
+        """Ask user to enable token editing when already validated."""
+        try:
+            if messagebox.askyesno("Hugging Face", "Enable token editing? You can re-validate a new token."):
+                self._hf_edit_mode = True
+                self._update_hf_token_widgets()
+        except Exception:
+            # Fallback without prompt
+            self._hf_edit_mode = True
+            self._update_hf_token_widgets()
 
     def _apply_allow_external_initial(self) -> None:
         # Apply initial allow_external state to hosts without losing user's explicit values
@@ -1369,11 +1715,18 @@ class WrapperGUI:
         try:
             token: str | None = None
             try:
-                # Prefer env vars if provided explicitly
-                for k in ("HF_TOKEN", "HUGGINGFACEHUB_API_TOKEN", "HUGGING_FACE_HUB_TOKEN"):
-                    if os.getenv(k):
-                        token = os.getenv(k)
-                        break
+                # Prefer token from system keyring (if available)
+                token = self._keyring_get_token() if self._keyring_available() else None
+                # Then explicit GUI token (not persisted)
+                if not token and self.hf_token.get().strip():
+                    token = self.hf_token.get().strip()
+                # Then env vars
+                if not token:
+                    for k in ("HF_TOKEN", "HUGGINGFACEHUB_API_TOKEN", "HUGGING_FACE_HUB_TOKEN"):
+                        if os.getenv(k):
+                            token = os.getenv(k)
+                            break
+                # Then huggingface_hub stored token
                 if token is None:
                     from huggingface_hub import HfFolder  # type: ignore
                     token = HfFolder.get_token()
@@ -1406,6 +1759,90 @@ class WrapperGUI:
             self._hf_username = username if logged else None
             self.master.after(0, self._apply_hf_login_state)
 
+    def _keyring_available(self) -> bool:
+        return keyring is not None
+
+    def _keyring_get_token(self) -> str | None:
+        if not self._keyring_available():
+            return None
+        try:
+            return keyring.get_password(HF_KEYRING_SERVICE, "huggingface")  # type: ignore
+        except Exception:
+            return None
+
+    def _keyring_set_token(self, token: str) -> bool:
+        if not self._keyring_available():
+            return False
+        try:
+            keyring.set_password(HF_KEYRING_SERVICE, "huggingface", token)  # type: ignore
+            return True
+        except Exception:
+            return False
+
+    def _keyring_delete_token(self) -> None:
+        if not self._keyring_available():
+            return
+        try:
+            keyring.delete_password(HF_KEYRING_SERVICE, "huggingface")  # type: ignore
+        except Exception:
+            pass
+
+    def _validate_hf_token(self) -> None:
+        tok = self.hf_token.get().strip()
+        if not tok:
+            try:
+                messagebox.showwarning("Hugging Face", "Please enter an access token.")
+            except Exception:
+                pass
+            return
+
+        def worker(token: str) -> None:
+            valid = False
+            username: str | None = None
+            err: Exception | None = None
+            try:
+                from huggingface_hub import HfApi  # type: ignore
+                api = HfApi()
+                info = api.whoami(token=token)
+                username = info.get("name") if isinstance(info, dict) else None
+                valid = True
+            except Exception as e:
+                err = e
+                valid = False
+            finally:
+                def _apply():
+                    if valid:
+                        self.hf_logged_in = True
+                        self._hf_username = username
+                        # Exit edit mode after successful validation
+                        self._hf_edit_mode = False
+                        # Store securely in system keyring if possible (no plaintext config)
+                        saved = self._keyring_set_token(token)
+                        self.status_var.set(f"Hugging Face token valid{f' for {username}' if username else ''}.")
+                        try:
+                            info_msg = "Token is valid. You can enable Diarization now."
+                            if not saved:
+                                info_msg += "\nNote: Token was not saved in keyring; it won't persist across restarts."
+                            messagebox.showinfo("Hugging Face", info_msg)
+                        except Exception:
+                            pass
+                    else:
+                        self.hf_logged_in = False
+                        self._hf_username = None
+                        # Remove any previously stored token on failure
+                        self._keyring_delete_token()
+                        self.status_var.set(f"Invalid Hugging Face token: {err}")
+                        try:
+                            messagebox.showerror("Hugging Face", f"Invalid token: {err}")
+                        except Exception:
+                            pass
+                    # Persist token and refresh UI state
+                    # Do not save token to settings.json (avoid plaintext persistence)
+                    self._apply_hf_login_state()
+                self.master.after(0, _apply)
+
+        threading.Thread(target=worker, args=(tok,), daemon=True).start()
+
     def _apply_hf_login_state(self) -> None:
         # Force-disable diarization if not logged in
         if not self.hf_logged_in and self.diarization.get():
@@ -1416,6 +1853,8 @@ class WrapperGUI:
         self._update_diarization_fields()
         # Update controls with current running state
         self._set_running_state(self.api_proc is not None or self.backend_proc is not None)
+        # Token widgets (entry/button) presentation
+        self._update_hf_token_widgets()
 
 class BackendSettingsDialog(tk.Toplevel):
     def __init__(self, master: tk.Misc, gui: 'WrapperGUI'):
@@ -1423,6 +1862,18 @@ class BackendSettingsDialog(tk.Toplevel):
         self.title("Advanced Settings")
         self.resizable(False, False)
         r = 0
+        # Networking / Certificates
+        ttk.Label(self, text="Custom CA certificate").grid(row=r, column=0, sticky=tk.W)
+        ca = ttk.Frame(self)
+        ca.grid(row=r, column=1, sticky="ew")
+        ca.columnconfigure(0, weight=1)
+        # Show and edit the path bound to gui.vad_certfile
+        self._ca_entry = ttk.Entry(ca, textvariable=gui.vad_certfile, width=30)
+        self._ca_entry.grid(row=0, column=0, sticky="ew")
+        self._ca_browse = ttk.Button(ca, text="Custom CA certificate", command=lambda: self._choose_file(gui.vad_certfile))
+        self._ca_browse.grid(row=0, column=1, padx=4)
+        # Always enabled (independent from VAD toggle)
+        r += 1
         ttk.Label(self, text="Warmup file").grid(row=r, column=0, sticky=tk.W)
         wf = ttk.Frame(self)
         wf.grid(row=r, column=1, sticky="ew")

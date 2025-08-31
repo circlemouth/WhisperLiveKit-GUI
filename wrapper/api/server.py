@@ -3,7 +3,7 @@ import os
 import subprocess
 from typing import List
 
-from fastapi import FastAPI, File, UploadFile, HTTPException, Form
+from fastapi import FastAPI, File, UploadFile, HTTPException, Form, Request, Depends
 from fastapi.responses import JSONResponse
 
 import websockets
@@ -11,6 +11,10 @@ import websockets
 BACKEND_HOST = os.getenv("WRAPPER_BACKEND_HOST", "localhost")
 BACKEND_PORT = os.getenv("WRAPPER_BACKEND_PORT", "8000")
 BACKEND_WS_URL = f"ws://{BACKEND_HOST}:{BACKEND_PORT}/asr"
+
+# API key settings (provided by GUI via environment variables)
+REQUIRE_API_KEY = os.getenv("WRAPPER_REQUIRE_API_KEY", "0") == "1"
+API_KEY = os.getenv("WRAPPER_API_KEY", "")
 
 app = FastAPI(title="WhisperLiveKit Wrapper API")
 
@@ -72,10 +76,33 @@ async def _stream_to_backend(pcm_bytes: bytes) -> List[str]:
     return texts
 
 
+def _extract_api_key_from_request(request: Request) -> str | None:
+    # Prefer X-API-Key header; fallback to Authorization: Bearer <key>
+    key = request.headers.get("x-api-key")
+    if key:
+        return key
+    auth = request.headers.get("authorization")
+    if auth and auth.lower().startswith("bearer "):
+        return auth.split(None, 1)[1].strip()
+    return None
+
+
+def require_api_key_dep(request: Request) -> None:
+    if not REQUIRE_API_KEY:
+        return
+    if not API_KEY:
+        # Misconfiguration: key required but not set
+        raise HTTPException(status_code=500, detail="api_key_not_configured")
+    provided = _extract_api_key_from_request(request)
+    if provided != API_KEY:
+        raise HTTPException(status_code=401, detail="unauthorized")
+
+
 @app.post("/v1/audio/transcriptions")
 async def transcribe(
     file: UploadFile = File(...),
     model: str = Form("whisper-1"),
+    _auth: None = Depends(require_api_key_dep),
 ):
     """Whisper API compatible transcription endpoint."""
     raw = await file.read()

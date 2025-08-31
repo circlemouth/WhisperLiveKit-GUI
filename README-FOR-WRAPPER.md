@@ -42,7 +42,10 @@
 - REST API:
   - エンドポイント: `POST http://<api_host>:<api_port>/v1/audio/transcriptions`
   - フォーム: `file=@audio.wav`、`model=whisper-1`
-  - 例: `curl -X POST -F "file=@sample.wav" -F "model=whisper-1" http://127.0.0.1:8001/v1/audio/transcriptions`
+  - 例（APIキーなし）: `curl -X POST -F "file=@sample.wav" -F "model=whisper-1" http://127.0.0.1:8001/v1/audio/transcriptions`
+  - APIキー（任意・GUIで有効化）:
+    - ヘッダ `X-API-Key: <your_key>` または `Authorization: Bearer <your_key>` を付与
+    - 例: `curl -H "X-API-Key: 1234" -F "file=@sample.wav" -F "model=whisper-1" http://127.0.0.1:8001/v1/audio/transcriptions`
   - レスポンス: `{ "text": "...", "model": "whisper-1" }`
 - WebSocket（upstream 提供）:
   - `ws://<backend_host>:<backend_port>/asr`（GUI の Recorder もこれを利用）
@@ -61,12 +64,26 @@
 1) 依存インストール
 - Python 環境を有効化し `pip install -r requirements.txt`
 - `ffmpeg` をインストール（PATH で実行可能に）
+
+2) 追加依存（機能別）
+- VAD（VAC）を有効化する場合:
+  - `torchaudio` が必須です（`torch` のバージョンと一致させてください）。
+  - 例: `python -c "import torch; print(torch.__version__)"` で確認し、`pip install torchaudio==<上記のtorchバージョン>` を実行
+  - macOS/Apple Silicon/py3.13 の一例: `pip install torchaudio==2.8.0`（Torch 2.8.0 の場合）
+- 話者分離（Diarization）を有効化する場合:
+  - Sortformer バックエンド: NVIDIA NeMo が必要です。
+    - 例: `pip install "git+https://github.com/NVIDIA/NeMo.git@main#egg=nemo_toolkit[asr]"`
+    - 注: macOS では環境構築が難しい場合があります。CPU での動作は時間がかかることがあります。
+  - Diart バックエンド: `diart` と関連依存が必要です。
+    - 例: `pip install diart pyannote.audio rx`
+  - Hugging Face ログインとモデル取得が前提となります（GUI の Login から設定）。
  
 
-2) GUI 起動と基本操作（Tkinter）
+3) GUI 起動と基本操作（Tkinter）
 - 起動: `python -m wrapper.cli.main`
 - Server Settings で host/port を確認（既定は空きポート自動割当）
-- Start API で backend と API を起動（Stop API で停止）
+- Start API で backend と API を起動（Stop API で停止）。起動時にブラウザは自動起動しません。必要に応じて Endpoints 欄の「Open Web GUI」から開いてください。
+- 稼働中（Start API 中）および録音中は、即時反映されない設定はロックされます。停止後に編集してください。
 - Recorder で録音開始/停止、テキスト表示、保存先指定が可能
 - Manage models で Whisper/VAD/関連モデルの取得・削除
 - Hugging Face Login でトークン登録（話者分離の有効化に必須）
@@ -84,11 +101,24 @@
 - ログ: backend と API は標準出力へログ出力（GUI から起動時も同様）
 - テレメトリ: 送信なし。モデル取得時に Hugging Face へのアクセスが発生
 
+## トラブルシューティング
+- `ModuleNotFoundError: No module named 'torchaudio'`
+  - VAD（VAC）機能が有効なときに発生します。`pip install torchaudio==<torchのバージョン>` を実施してください。
+- Sortformer を選択した場合に起動直後に停止する
+  - NeMo 未導入の可能性があります。`pip install "git+https://github.com/NVIDIA/NeMo.git@main#egg=nemo_toolkit[asr]"`
+  - macOS では依存解決に時間/調整が必要な場合があります。Diart バックエンドへ切替も検討してください。
+- Diart で依存エラー
+  - `pip install diart pyannote.audio rx` を実施。Hugging Face モデルの初回ダウンロードにはネットワークが必要です。
+
 ## セキュリティ / プライバシー
 - 既定は `127.0.0.1` バインド。`Allow external connections` を有効にすると `0.0.0.0` で待受
 - 公開時はファイアウォール/ポート開放/反向プロキシ（TLS/認証）の考慮が必須
-- API に認証は付与していないため、インターネット直結は非推奨
-- `--ssl-certfile`/`--ssl-keyfile`（backend 引数）で TLS 終端に対応可能
+- APIキー（オプション）: GUI の「Security > Require API key for Wrapper API」を有効にし、キーを設定
+  - 保存先: `~/.config/WhisperLiveKit/wrapper/settings.json`（平文保存）
+  - リクエスト時は `X-API-Key` ヘッダ、または `Authorization: Bearer <key>` を使用
+  - 認証失敗: `401 unauthorized`、キー未設定で要件ON: `500 api_key_not_configured`
+- 上流の Backend（Web UI と WebSocket `/asr`）にはラッパー側で認証を付与していません（上流コード非改変方針のため）。
+  - `--ssl-certfile`/`--ssl-keyfile`（backend 引数）で TLS 終端に対応可能
 
 ## パフォーマンス目標（参考）
 - 低遅延（< 数百 ms レベルのバッファリング）での逐次文字起こし

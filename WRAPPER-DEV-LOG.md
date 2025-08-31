@@ -22,6 +22,16 @@
 ---
 
 ## 2025-08-31
+- 背景／スコープ：VAD と話者分離を有効化して起動すると backend 側で `ModuleNotFoundError: torchaudio` により停止する事象。
+- 決定事項：
+  - 起動前の依存関係チェックを GUI に追加（`torchaudio`／`NeMo`／`diart`／`ffmpeg`）。不足時は起動せずメッセージ表示。
+  - README に機能別の追加依存とインストール例（Torch 版合わせの `torchaudio`、NeMo、diart）を追記。
+  - Wrapper API に共通 API キー機能を追加。GUI で ON/OFF とキー入力に対応、FastAPI 側で `X-API-Key`/`Authorization: Bearer` を検証。
+- 根拠・検討メモ：上流（whisperlivekit）は `torch.hub` により Silero VAD をロードし、その内部が `torchaudio` に依存する。欠如時は FastAPI の lifespan で例外となりサーバーが停止するため、ラッパーで事前検知・誘導が有効。
+- 未解決事項：NeMo の macOS/CPU サポートは限定的。Diart 併用や設定ガイドの拡充が今後の課題。
+- 次アクション：GUI 上で不足依存の一括インストール補助（スクリプト化）を検討。
+- リスク／課題：依存の重さ（NeMo/pyannote）が大きく、利用環境により導入難度が高い。
+- 参照リンク：`README-FOR-WRAPPER.md` 実行・設定手順／トラブルシューティング、`wrapper/app/gui.py` `_check_runtime_dependencies`
 - 背景／スコープ：dotnet/Avalonia ベースの GUI を廃止し、Tkinter 版へ一本化。
 - 決定事項：
   - `wrapper/app/avalonia_ui/*` と `wrapper/app/avalonia_ui.Tests/*` を削除。
