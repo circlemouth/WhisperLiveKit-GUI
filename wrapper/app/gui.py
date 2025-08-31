@@ -75,6 +75,21 @@ THIRD_PARTY_LICENSES_FILE = Path(__file__).resolve().parents[1] / "licenses.json
 HF_KEYRING_SERVICE = "WhisperLiveKit-Wrapper"
 
 
+def _is_sortformer_supported() -> bool:
+    """Return True if CUDA and NeMo are available."""
+    try:
+        import torch  # type: ignore
+        if not torch.cuda.is_available():
+            return False
+        import nemo.collections.asr  # type: ignore  # noqa: F401
+    except Exception:
+        return False
+    return True
+
+
+SORTFORMER_AVAILABLE = _is_sortformer_supported()
+
+
 class CollapsibleSection(ttk.Frame):
     def __init__(self, master: tk.Widget, title: str):
         super().__init__(master)
@@ -247,7 +262,8 @@ class WrapperGUI:
         self.warmup_file = tk.StringVar(value="")
         self.confidence_validation = tk.BooleanVar(value=False)
         self.punctuation_split = tk.BooleanVar(value=False)
-        self.diarization_backend = tk.StringVar(value="sortformer")
+        default_backend = "sortformer" if SORTFORMER_AVAILABLE else "diart"
+        self.diarization_backend = tk.StringVar(value=default_backend)
         self.min_chunk_size = tk.DoubleVar(value=0.5)
         self.language = tk.StringVar(value="auto")
         self.task = tk.StringVar(value="transcribe")
@@ -959,10 +975,8 @@ class WrapperGUI:
         if self.diarization.get():
             backend = self.diarization_backend.get().strip()
             if backend == "sortformer":
-                try:
-                    import nemo.collections.asr  # type: ignore  # noqa: F401
-                except Exception:
-                    problems.append("Sortformer バックエンドには NVIDIA NeMo が必要です。")
+                if not SORTFORMER_AVAILABLE:
+                    problems.append("Sortformer バックエンドには CUDA と NVIDIA NeMo が必要です。")
                     suggestions.append('pip install "git+https://github.com/NVIDIA/NeMo.git@main#egg=nemo_toolkit[asr]"')
             elif backend == "diart":
                 try:
@@ -1033,6 +1047,12 @@ class WrapperGUI:
                 v.trace_add("write", _autosave)
             except Exception:
                 pass
+
+    def available_diarization_backends(self) -> list[str]:
+        backs = ["diart"]
+        if SORTFORMER_AVAILABLE:
+            backs.insert(0, "sortformer")
+        return backs
 
     def _update_api_key_widgets(self) -> None:
         # Lock API key controls while running or recording; enable only when Use API key is ON
@@ -1389,7 +1409,19 @@ class WrapperGUI:
         self.warmup_file.set(data.get("warmup_file", self.warmup_file.get()))
         self.confidence_validation.set(data.get("confidence_validation", self.confidence_validation.get()))
         self.punctuation_split.set(data.get("punctuation_split", self.punctuation_split.get()))
-        self.diarization_backend.set(data.get("diarization_backend", self.diarization_backend.get()))
+        backend_cfg = data.get("diarization_backend", self.diarization_backend.get())
+        if not SORTFORMER_AVAILABLE and backend_cfg == "sortformer":
+            self.diarization_backend.set("diart")
+            try:
+                from tkinter import messagebox as _mb
+                _mb.showwarning(
+                    "Sortformer unavailable",
+                    "CUDA と NeMo が見つからないため、話者分離バックエンドを 'diart' に切り替えました。",
+                )
+            except Exception:
+                pass
+        else:
+            self.diarization_backend.set(backend_cfg)
         self.min_chunk_size.set(data.get("min_chunk_size", self.min_chunk_size.get()))
         self.language.set(data.get("language", self.language.get()))
         self.task.set(data.get("task", self.task.get()))
@@ -1993,7 +2025,7 @@ class DiarizationSettingsDialog(tk.Toplevel):
         ttk.Combobox(
             self,
             textvariable=gui.diarization_backend,
-            values=["sortformer", "diart"],
+            values=gui.available_diarization_backends(),
             state="readonly",
             width=15,
         ).grid(row=0, column=1, sticky=tk.W)

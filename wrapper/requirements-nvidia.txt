@@ -1,0 +1,15 @@
+--extra-index-url https://download.pytorch.org/whl/cu121
+fastapi
+uvicorn
+websockets
+sounddevice
+platformdirs
+whisperlivekit
+python-multipart
+huggingface_hub
+ttkbootstrap
+keyring
+certifi
+torch
+torchaudio
+nemo_toolkit[asr] @ git+https://github.com/NVIDIA/NeMo.git@main

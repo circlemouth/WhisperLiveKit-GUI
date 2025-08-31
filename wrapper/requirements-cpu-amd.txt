@@ -1,0 +1,17 @@
+--extra-index-url https://download.pytorch.org/whl/cpu
+fastapi
+uvicorn
+websockets
+sounddevice
+platformdirs
+whisperlivekit
+python-multipart
+huggingface_hub
+ttkbootstrap
+keyring
+certifi
+torch
+torchaudio
+diart
+pyannote.audio
+rx
