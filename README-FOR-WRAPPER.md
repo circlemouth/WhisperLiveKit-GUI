@@ -16,7 +16,7 @@
 - プラットフォーム: Windows/macOS/Linux
 - セキュリティ: 既定は `127.0.0.1` バインド。外部公開はユーザー操作で有効化（`0.0.0.0`）
 - 依存は環境別の `wrapper/requirements-nvidia.txt` または `wrapper/requirements-cpu-amd.txt` を参照。upstream は `pyproject.toml` に準拠
-- GUI 表示言語: 英語（警告などのメッセージを含む）
+- GUI 表示言語: OS が日本語の場合は日本語、それ以外は英語
 
 ## ユースケース / ユーザーフロー
 - ローカルでリアルタイム文字起こしを試す（GUI 起動 → Start API → 録音 → 結果表示/保存）
@@ -85,6 +85,8 @@
 
 3) GUI 起動と基本操作（Tkinter）
 - 起動: `python -m wrapper.cli.main`
+- ヘッダーのライセンスボタン右に CUDA 検出状況アイコン（✅/❌）を表示
+- 日本語環境ではラベルやメッセージが自動的に日本語表示になる
 - Server Settings で host/port を確認（既定は空きポート自動割当）
 - Start API で backend と API を起動（Stop API で停止）。起動時にブラウザは自動起動しません。必要に応じて Endpoints 欄の「Open Web GUI」から開いてください。
 - 稼働中（Start API 中）および録音中は、即時反映されない設定はロックされます。停止後に編集してください。
