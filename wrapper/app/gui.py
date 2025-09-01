@@ -10,6 +10,7 @@ import ttkbootstrap as ttkb
 from ttkbootstrap import ttk
 from ttkbootstrap.icons import Emoji
 import audioop
+import importlib
 import json
 import queue
 import threading
@@ -17,6 +18,7 @@ from pathlib import Path
 import shutil
 from platformdirs import user_config_path
 import locale
+from typing import Callable
 try:
     import keyring  # type: ignore
 except Exception:
@@ -93,7 +95,7 @@ def _is_sortformer_supported() -> bool:
         import torch  # type: ignore
         if not torch.cuda.is_available():
             return False
-        import nemo.collections.asr  # type: ignore  # noqa: F401
+        importlib.import_module("nemo.collections.asr")
     except Exception:
         return False
     return True
@@ -1111,7 +1113,6 @@ class WrapperGUI:
 
         # ffmpeg is used by the API for audio conversion.
         try:
-            import shutil as _shutil  # noqa: F401
             if shutil.which("ffmpeg") is None:
                 problems.append("ffmpeg not found (not on PATH).")
                 suggestions.append("macOS: brew install ffmpeg / Windows: choco install ffmpeg, etc")
@@ -1121,7 +1122,7 @@ class WrapperGUI:
         # torchaudio is required when VAD (VAC) is enabled
         if self.use_vac.get():
             try:
-                import torchaudio  # type: ignore  # noqa: F401
+                importlib.import_module("torchaudio")
             except Exception:
                 try:
                     import torch  # type: ignore
@@ -1140,7 +1141,7 @@ class WrapperGUI:
                     suggestions.append('pip install "git+https://github.com/NVIDIA/NeMo.git@main#egg=nemo_toolkit[asr]"')
             elif backend == "diart":
                 try:
-                    import diart  # type: ignore  # noqa: F401
+                    importlib.import_module("diart")
                 except Exception:
                     problems.append("Diart backend requires diart.")
                     suggestions.append("pip install diart pyannote.audio rx")
@@ -1310,16 +1311,6 @@ class WrapperGUI:
                 pass
             return
         DiarizationSettingsDialog(self.master, self)
-
-    def choose_vad_certfile(self) -> None:
-        path = filedialog.askopenfilename(
-            filetypes=[
-                ("Certificate files", "*.pem *.crt *.cer"),
-                ("All files", "*.*"),
-            ]
-        )
-        if path:
-            self.vad_certfile.set(path)
 
     def update_endpoints(self, *_: object) -> None:
         b_host = self.backend_host.get()
@@ -1519,7 +1510,7 @@ class WrapperGUI:
             except Exception:
                 pass
             return
-        ModelManagerDialog(self.master)
+        ModelManagerDialog(self.master, self._t)
 
     def _toggle_allow_external(self) -> None:
         # Save current local hosts when enabling
@@ -2197,9 +2188,10 @@ class DiarizationSettingsDialog(tk.Toplevel):
 
 
 class ModelManagerDialog(tk.Toplevel):
-    def __init__(self, master: tk.Misc):
+    def __init__(self, master: tk.Misc, t: Callable[[str], str]):
         super().__init__(master)
-        self.title("Model Manager")
+        self._t = t
+        self.title(self._t("Model Manager"))
         self.resizable(False, False)
 
         self.rows: dict[str, tuple[tk.StringVar, ttk.Progressbar, ttk.Button]] = {}
@@ -2216,7 +2208,7 @@ class ModelManagerDialog(tk.Toplevel):
             pb.grid(row=i, column=3, padx=5)
             action = ttk.Button(
                 self,
-                text="Delete" if model_manager.is_model_downloaded(name) else "Download",
+                text=self._t("Delete") if model_manager.is_model_downloaded(name) else self._t("Download"),
                 command=lambda n=name: self._on_action(n),
             )
             action.grid(row=i, column=4, padx=5)
