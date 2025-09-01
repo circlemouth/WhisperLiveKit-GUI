@@ -1903,6 +1903,7 @@ class WrapperGUI:
             except Exception:
                 pass
     def _recording_worker(self) -> None:
+        """Record PCM, encode to audio/webm(opus) via FFmpeg, stream over WS."""
         try:
             import sounddevice as sd
             from websockets.sync.client import connect
@@ -1919,10 +1920,30 @@ class WrapperGUI:
             rms = audioop.rms(indata, 2) / 32768
             self.master.after(0, lambda v=rms: self.level_var.set(v))
 
+        # Prepare FFmpeg command to take raw PCM and produce audio/webm (opus)
+        ffmpeg_cmd = [
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel", "error",
+            "-f", "s16le",
+            "-ac", "1",
+            "-ar", "16000",
+            "-i", "pipe:0",
+            "-c:a", "libopus",
+            "-b:a", "48k",
+            "-f", "webm",
+            "pipe:1",
+        ]
+
+        ffmpeg_proc: subprocess.Popen | None = None
+        feeder_thread: threading.Thread | None = None
+        sender_thread: threading.Thread | None = None
+
         try:
             with connect(ws_url) as websocket:
                 self.master.after(0, lambda: self.status_var.set(self._t("recording")))
 
+                # WebSocket receiver (backend -> GUI)
                 def receiver():
                     while True:
                         try:
@@ -1940,6 +1961,59 @@ class WrapperGUI:
                 recv_thread = threading.Thread(target=receiver, daemon=True)
                 recv_thread.start()
 
+                # Start FFmpeg encoder process
+                try:
+                    ffmpeg_proc = subprocess.Popen(
+                        ffmpeg_cmd,
+                        stdin=subprocess.PIPE,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        bufsize=0,
+                    )
+                except FileNotFoundError as e:
+                    self.master.after(0, lambda err=e: self.status_var.set(f"{self._t('error:')} ffmpeg not found"))
+                    return
+
+                # Feed PCM to FFmpeg.stdin
+                def feed_ffmpeg():  # pragma: no cover - realtime
+                    assert ffmpeg_proc is not None and ffmpeg_proc.stdin is not None
+                    while self.is_recording or not q.empty():
+                        try:
+                            data = q.get(timeout=0.1)
+                        except Exception:
+                            data = None
+                        if not data:
+                            continue
+                        try:
+                            ffmpeg_proc.stdin.write(data)
+                            ffmpeg_proc.stdin.flush()
+                        except Exception:
+                            break
+                    # Close stdin to flush/finish encoder
+                    try:
+                        ffmpeg_proc.stdin.close()
+                    except Exception:
+                        pass
+
+                # Read encoded webm bytes from FFmpeg.stdout and send to WS
+                def send_webm():  # pragma: no cover - realtime
+                    assert ffmpeg_proc is not None and ffmpeg_proc.stdout is not None
+                    try:
+                        while True:
+                            chunk = ffmpeg_proc.stdout.read(4096)
+                            if not chunk:
+                                break
+                            try:
+                                websocket.send(chunk)
+                            except Exception:
+                                break
+                    except Exception:
+                        pass
+
+                feeder_thread = threading.Thread(target=feed_ffmpeg, daemon=True)
+                sender_thread = threading.Thread(target=send_webm, daemon=True)
+
+                # Start audio capture
                 with sd.RawInputStream(
                     samplerate=16000,
                     channels=1,
@@ -1947,11 +2021,32 @@ class WrapperGUI:
                     blocksize=1600,
                     callback=audio_callback,
                 ):
+                    feeder_thread.start()
+                    sender_thread.start()
+                    # Wait until user stops recording
                     while self.is_recording:
-                        data = q.get()
-                        websocket.send(data)
+                        time.sleep(0.05)
 
-                websocket.send(json.dumps({"eof": 1}))
+                # After stopping: ensure FFmpeg finishes, then signal EOF to backend
+                if feeder_thread:
+                    feeder_thread.join(timeout=5)
+                if ffmpeg_proc:
+                    try:
+                        ffmpeg_proc.wait(timeout=5)
+                    except Exception:
+                        try:
+                            ffmpeg_proc.kill()
+                        except Exception:
+                            pass
+                if sender_thread:
+                    sender_thread.join(timeout=5)
+
+                # Explicit EOF for backend (empty binary frame)
+                try:
+                    websocket.send(b"")
+                except Exception:
+                    pass
+
                 recv_thread.join(timeout=5)
         except Exception as e:
             self.master.after(0, lambda err=e: self.status_var.set(f"{self._t('error:')} {err}"))
