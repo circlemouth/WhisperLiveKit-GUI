@@ -87,6 +87,13 @@ def _is_cuda_available() -> bool:
 CUDA_AVAILABLE = _is_cuda_available()
 
 
+def _is_ffmpeg_available() -> bool:
+    return shutil.which("ffmpeg") is not None
+
+
+FFMPEG_AVAILABLE = _is_ffmpeg_available()
+
+
 def _is_sortformer_supported() -> bool:
     """Return True if CUDA and NeMo are available."""
     try:
@@ -136,6 +143,8 @@ TRANSLATIONS_JA = {
     "License": "ライセンス",
     "CUDA: Available": "CUDA: 利用可",
     "CUDA: Not available": "CUDA: 利用不可",
+    "FFmpeg: Available": "FFmpeg: 利用可",
+    "FFmpeg: Not available": "FFmpeg: 利用不可",
     "Log level": "ログレベル",
     "Manage models": "モデル管理",
     "Min chunk size": "最小チャンクサイズ",
@@ -455,7 +464,6 @@ class WrapperGUI:
         header.grid(row=row, column=0, sticky="ew", padx=10, pady=(8, 0))
         header.columnconfigure(1, weight=1)
         ttk.Label(header, text="WhisperLiveKit Wrapper", style="Header.TLabel").grid(row=0, column=0, sticky="w")
-        ttk.Button(header, text="Licenses", command=self.show_license).grid(row=0, column=2, sticky="e")
         # Be tolerant: Emoji.get may return None on some platforms/themes
         try:
             ok_emoji = Emoji.get("check mark button")
@@ -466,7 +474,11 @@ class WrapperGUI:
             ok_char, ng_char = "✓", "✗"
         cuda_char = ok_char if CUDA_AVAILABLE else ng_char
         cuda_text = self._t("CUDA: Available") if CUDA_AVAILABLE else self._t("CUDA: Not available")
-        ttk.Label(header, text=f"{cuda_char} {cuda_text}").grid(row=0, column=3, sticky="e", padx=(5, 0))
+        ffmpeg_char = ok_char if FFMPEG_AVAILABLE else ng_char
+        ffmpeg_text = self._t("FFmpeg: Available") if FFMPEG_AVAILABLE else self._t("FFmpeg: Not available")
+        ttk.Label(header, text=f"{cuda_char} {cuda_text}").grid(row=0, column=2, sticky="e", padx=(5, 0))
+        ttk.Label(header, text=f"{ffmpeg_char} {ffmpeg_text}").grid(row=0, column=3, sticky="e", padx=(5, 0))
+        ttk.Button(header, text="Licenses", command=self.show_license).grid(row=0, column=4, sticky="e")
         # 高さ計算用に参照保持
         self.header = header
         row += 1

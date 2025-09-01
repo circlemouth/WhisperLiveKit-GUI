@@ -24,6 +24,7 @@
     - API: `uvicorn wrapper.api.server:app`
   - 録音パイプライン: 生PCM → FFmpeg で `audio/webm`(Opus) へ変換 → WebSocket `/asr` へストリーミング
   - Web UI（upstream）をブラウザで開く導線あり
+  - ヘッダー右上に CUDA/FFmpeg の利用可否を表示し、最右にライセンスボタンを配置
 - API 層（FastAPI）: `wrapper/api/server.py`
   - `POST /v1/audio/transcriptions`: 受領音声を FFmpeg で 16kHz/mono PCM 化 → backend `/asr` へWS中継 → テキスト連結返却
 - 依存:
