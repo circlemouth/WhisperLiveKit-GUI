@@ -74,6 +74,30 @@
 - 対応: GUI は FFmpeg で `audio/webm`(Opus) にエンコードして送信（本リポで実装済）。録音停止時は空バイトで EOF を明示。
   - 参照: `wrapper/app/gui.py:_recording_worker`
 
+## トラブルシューティング: 「Diart backend requires diart」
+- 症状: GUI 起動時（Start API）に「Cannot start due to missing dependencies: Diart backend requires diart.」が表示される。
+- 前提: 話者分離（Diarization）を有効化し、バックエンドに `diart` を選択している場合にチェックが走る。
+- 原因: 実行中の Python 環境に `diart`（および関連依存 `pyannote.audio`, `rx`）がインストールされていない、または別環境に入っている。
+- 解決手順:
+  - 1) 現在GUIを起動している Python を特定する。
+    - 例: `which python`（Windowsは `where python`）、`python -V`
+  - 2) 同じ Python でモジュールを確認する。
+    - 例: `python -c "import diart, pkgutil; print('diart OK')"`
+  - 3) 未導入ならインストール（CPU/AMD環境の例）:
+    - `pip install -r wrapper/requirements-cpu-amd.txt`
+    - または最小構成: `pip install diart pyannote.audio rx`
+  - 4) それでも失敗する場合は、仮想環境の混在を疑い、GUI と同じ環境で再度インストールする（`python -m pip install ...` 形式を推奨）。
+- 備考:
+  - `wrapper/requirements-cpu-amd.txt` には `diart`, `pyannote.audio`, `rx` を含めています。NVIDIA 環境では `wrapper/requirements-nvidia.txt` を使用してください。
+  - `diart` のモデル取得には Hugging Face のネットワークアクセスが必要です（初回のみ）。
+
+## 依存関係のインストール（例）
+- CPU/AMD 環境: `pip install -r wrapper/requirements-cpu-amd.txt`
+- NVIDIA 環境: `pip install -r wrapper/requirements-nvidia.txt`
+- 追加オプション（任意）:
+  - VAD 有効時の `torchaudio` は Torch のバージョンに揃えてください（GUIが不足時に案内を表示）。
+  - Sortformer バックエンドを使う場合は CUDA + NVIDIA NeMo が必要です。
+
 ## 主要ファイル
 - GUI: `wrapper/app/gui.py`（エントリ: `python -m wrapper.cli.main`）
 - API: `wrapper/api/server.py`
@@ -81,4 +105,3 @@
 - ライセンス一覧: `wrapper/licenses.json`
 
 本仕様書と `WRAPPER-DEV-LOG.md` は、仕様変更・意思決定に合わせて更新します。
-

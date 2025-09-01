@@ -205,6 +205,7 @@ TRANSLATIONS_JA = {
     "downloaded": "ダウンロード済",
     "For commercial use of the SimulStreaming backend, please check the SimulStreaming license.": "SimulStreaming をバックエンドとして商用利用する場合、SimulStreaming のライセンスを確認してください。",
     "missing": "未取得",
+    "Server is not running. Please press Start API before recording.": "サーバー未起動です。録音するには先に『Start API』を押してください。",
 }
 
 
@@ -713,6 +714,15 @@ class WrapperGUI:
         # 録音時間はボタンの右隣に大きく表示
         self.timer_label = ttk.Label(record_frame, textvariable=self.timer_var, style="Timer.TLabel")
         self.timer_label.grid(row=r, column=1, sticky=tk.W, padx=(8, 0))
+        r += 1
+        # サーバー未起動時のガイダンス（録音ボタン直下）
+        self.record_hint_label = ttk.Label(
+            record_frame,
+            text=self._t("Server is not running. Please press Start API before recording."),
+            wraplength=520,
+            justify="left",
+        )
+        self.record_hint_label.grid(row=r, column=0, columnspan=3, sticky=tk.W, pady=(0, 2))
         r += 1
         ttk.Progressbar(record_frame, variable=self.level_var, maximum=1.0).grid(row=r, column=0, columnspan=3, sticky="ew")
         r += 1
@@ -2170,6 +2180,20 @@ class WrapperGUI:
         self._update_vad_state()
         self._update_hf_token_widgets()
         self._update_api_key_widgets()
+        # 録音ボタンとヒント表示の制御（サーバー未起動時は録音不可）
+        try:
+            if running or self.is_recording:
+                # サーバー起動中（または録音中）はボタン有効・ヒント非表示
+                self.record_btn.config(state=tk.NORMAL)
+                if hasattr(self, "record_hint_label"):
+                    self.record_hint_label.grid_remove()
+            else:
+                # 未起動時はボタン無効・ヒント表示
+                self.record_btn.config(state=tk.DISABLED)
+                if hasattr(self, "record_hint_label"):
+                    self.record_hint_label.grid()
+        except Exception:
+            pass
 
     def _update_save_widgets(self) -> None:
         state = tk.NORMAL if self.save_enabled.get() else tk.DISABLED
