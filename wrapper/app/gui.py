@@ -464,7 +464,7 @@ class WrapperGUI:
         header.grid(row=row, column=0, sticky="ew", padx=10, pady=(8, 0))
         header.columnconfigure(1, weight=1)
         ttk.Label(header, text="WhisperLiveKit Wrapper", style="Header.TLabel").grid(row=0, column=0, sticky="w")
-        ttk.Button(header, text="License", command=self.show_license).grid(row=0, column=2, sticky="e")
+        ttk.Button(header, text="Licenses", command=self.show_license).grid(row=0, column=2, sticky="e")
         cuda_char = Emoji.get("check mark button").char if CUDA_AVAILABLE else Emoji.get("cross mark").char
         cuda_text = self._t("CUDA: Available") if CUDA_AVAILABLE else self._t("CUDA: Not available")
         ttk.Label(header, text=f"{cuda_char} {cuda_text}").grid(row=0, column=3, sticky="e", padx=(5, 0))
@@ -1350,8 +1350,9 @@ class WrapperGUI:
             pass
 
     def show_license(self) -> None:
+        """Display project and third-party licenses."""
         top = tk.Toplevel(self.master)
-        top.title("License")
+        top.title("Licenses")
         text = tk.Text(top, wrap="word")
         text.pack(fill=tk.BOTH, expand=True)
         scroll = ttk.Scrollbar(top, orient="vertical", command=text.yview)
@@ -1362,26 +1363,30 @@ class WrapperGUI:
             text.configure(bg=self._bg, fg=self._fg, insertbackground=self._fg)
         except Exception:
             pass
+
         try:
-            with open(LICENSE_FILE, "r", encoding="utf-8") as f:
-                content = f.read()
+            content = LICENSE_FILE.read_text(encoding="utf-8")
         except Exception as e:
             content = f"Failed to load license: {e}"
-        text.insert("1.0", content)
-        text.insert("end", "\n\nThird-Party Licenses:\n")
+
+        content += "\n\nThird-Party Licenses\n\n"
         try:
-            with open(THIRD_PARTY_LICENSES_FILE, "r", encoding="utf-8") as f:
-                third_party = json.load(f)
+            third_party = json.loads(
+                THIRD_PARTY_LICENSES_FILE.read_text(encoding="utf-8")
+            )
         except Exception:
             third_party = []
         for item in third_party:
-            name = item.get("name")
-            version = item.get("version")
-            lic = item.get("license")
-            text.insert("end", f"- {name} {version}: {lic}\n")
-            lic_text = item.get("license_text")
+            name = item.get("name", "")
+            version = item.get("version", "")
+            lic = item.get("license", "")
+            content += f"{name} {version}\n{lic}\n"
+            lic_text = item.get("license_text", "")
             if lic_text:
-                text.insert("end", lic_text.strip() + "\n")
+                content += lic_text.strip() + "\n"
+            content += "\n"
+
+        text.insert("1.0", content)
         text.config(state="disabled")
 
         link_frame = ttk.Frame(top)

@@ -69,6 +69,7 @@
  - CPU/AMD 環境: `pip install -r wrapper/requirements-cpu-amd.txt`
  - 互換性のため従来の `requirements.txt` も利用可能
  - `ffmpeg` をインストール（PATH で実行可能に）
+ - 依存ライブラリを更新した場合は `python wrapper/scripts/generate_licenses.py` を実行し、`wrapper/licenses.json` を再生成
 
 2) 追加依存（機能別）
 - VAD（VAC）を有効化する場合:
@@ -143,7 +144,7 @@
 - API: `wrapper/api/server.py`（FFmpeg 変換 → WS `/asr`）
 - モデル管理: `wrapper/app/model_manager.py`、`wrapper/cli/model_manager_cli.py`
 - 設定テンプレート: `wrapper/config/settings.example.json`
-- ライセンス一覧: `wrapper/licenses.json`（GUI の License ボタンから参照）
+- ライセンス一覧: `wrapper/licenses.json`（GUI の Licenses ボタンから参照、`python wrapper/scripts/generate_licenses.py` で再生成）
 
 ## 動作確認チェック
 - `python -m wrapper.cli.main` で GUI が起動し、Start/Stop が機能する

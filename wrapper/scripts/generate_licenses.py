@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Generate third-party license information for project dependencies.
 
-This script reads the top-level ``requirements.txt`` to determine which
-packages to inspect. For each dependency installed in the current
+This script reads ``wrapper/requirements-nvidia.txt`` to determine
+which packages to inspect. For each dependency installed in the current
 Python environment, the script extracts its license metadata **and**
 bundles the corresponding license text when available. Entries with
 missing or ``UNKNOWN`` license values are skipped. The resulting
@@ -20,9 +20,10 @@ import re
 from pathlib import Path
 from importlib import metadata
 
-ROOT = Path(__file__).resolve().parents[2]
-REQUIREMENTS = ROOT / "requirements.txt"
-OUTPUT = Path(__file__).resolve().parents[1] / "licenses.json"
+# ``wrapper/scripts`` -> parent ``wrapper``
+ROOT = Path(__file__).resolve().parents[1]
+REQUIREMENTS = ROOT / "requirements-nvidia.txt"
+OUTPUT = ROOT / "licenses.json"
 
 name_pattern = re.compile(r"^[A-Za-z0-9_.-]+")
 
