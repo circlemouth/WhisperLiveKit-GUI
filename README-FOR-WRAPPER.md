@@ -25,7 +25,7 @@
   - 録音パイプライン: 生PCM → FFmpeg で `audio/webm`(Opus) へ変換 → WebSocket `/asr` へストリーミング
   - Web UI（upstream）をブラウザで開く導線あり
 - API 層（FastAPI）: `wrapper/api/server.py`
-  - `POST /v1/audio/transcriptions`: 受領音声を FFmpeg で 16kHz/mono PCM 化 → backend `/asr` へWS中継 → テキスト連結返却
+  - `POST /v1/audio/transcriptions`: 入力音声を必要に応じて FFmpeg で 16kHz/mono PCM 化（既に同一形式なら変換を省略）→ backend `/asr` へWS中継 → テキスト連結返却
 - 依存:
   - upstream パッケージ `whisperlivekit`（モデル推論・WSサーバ・Web UI 等）
   - `ffmpeg`（GUI録音のエンコード/REST入力のデコード）
@@ -37,6 +37,7 @@
   - 録音停止時は「空バイト（b""）」を送信して EOF を明示。
 - REST API（Wrapper）: `POST http://<api_host>:<api_port>/v1/audio/transcriptions`
   - multipart フォーム: `file=@sample.wav`, `model=whisper-1`
+  - 入力が 16kHz モノラル PCM（wav/raw）の場合は再変換を省略。それ以外の形式は内部で ffmpeg により変換。
   - APIキー（任意）: `X-API-Key: <key>` または `Authorization: Bearer <key>`
   - レスポンス例: `{ "text": "...", "model": "whisper-1" }`
 

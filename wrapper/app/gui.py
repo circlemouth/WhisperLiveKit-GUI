@@ -127,6 +127,7 @@ TRANSLATIONS_JA = {
     "Enable diarization": "話者分離を有効化",
     "Endpoints": "エンドポイント",
     "File transcription API": "ファイル文字起こしAPI",
+    "16kHz mono (wav/raw) input recommended": "16kHzモノラル(wav/raw)形式での入力を推奨",
     "Frame threshold": "フレーム閾値",
     "Get HF token": "HFトークン取得",
     "Host": "ホスト",
@@ -795,6 +796,15 @@ class WrapperGUI:
         ttk.Entry(endpoints_frame, textvariable=self.api_endpoint, width=40, state="readonly").grid(row=er, column=1, sticky="ew")
         self.copy_api_btn = ttk.Button(endpoints_frame, text="Copy", command=lambda: self._copy_with_feedback(self.copy_api_btn, self.api_endpoint.get()))
         self.copy_api_btn.grid(row=er, column=2, padx=5, sticky="ew")
+        er += 1
+        note_font = font.nametofont("TkDefaultFont").copy()
+        note_font.configure(size=max(int(note_font.cget("size")) - 2, 8))
+        ttk.Label(
+            endpoints_frame,
+            text="16kHz mono (wav/raw) input recommended",
+            font=note_font,
+        ).grid(row=er, column=1, columnspan=2, sticky=tk.W)
+        er += 1
         # 列2の最小幅を Open Web GUI の要求幅に合わせる
         try:
             endpoints_frame.update_idletasks()
