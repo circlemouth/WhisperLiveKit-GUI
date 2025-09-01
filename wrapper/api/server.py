@@ -10,7 +10,10 @@ import websockets
 
 BACKEND_HOST = os.getenv("WRAPPER_BACKEND_HOST", "localhost")
 BACKEND_PORT = os.getenv("WRAPPER_BACKEND_PORT", "8000")
-BACKEND_WS_URL = f"ws://{BACKEND_HOST}:{BACKEND_PORT}/asr"
+# Choose ws/wss based on backend SSL flag from GUI
+BACKEND_SSL = os.getenv("WRAPPER_BACKEND_SSL", "0") == "1"
+BACKEND_WS_SCHEME = "wss" if BACKEND_SSL else "ws"
+BACKEND_WS_URL = f"{BACKEND_WS_SCHEME}://{BACKEND_HOST}:{BACKEND_PORT}/asr"
 
 # API key settings (provided by GUI via environment variables)
 REQUIRE_API_KEY = os.getenv("WRAPPER_REQUIRE_API_KEY", "0") == "1"

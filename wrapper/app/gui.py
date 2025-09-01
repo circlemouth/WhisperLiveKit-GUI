@@ -355,7 +355,8 @@ class WrapperGUI:
         else:
             a_port = str(self._find_free_port(exclude={int(b_port)}))
         self.api_port = tk.StringVar(value=a_port)
-        self.auto_start = tk.BooleanVar(value=os.getenv("WRAPPER_API_AUTOSTART", "1") == "1")
+        # Default OFF: do not auto-start API unless explicitly enabled
+        self.auto_start = tk.BooleanVar(value=os.getenv("WRAPPER_API_AUTOSTART", "0") == "1")
         # Allow external connections (bind 0.0.0.0)
         self.allow_external = tk.BooleanVar(value=os.getenv("WRAPPER_ALLOW_EXTERNAL") == "1")
         # Keep last local-only hosts to restore when toggled off
@@ -1076,6 +1077,11 @@ class WrapperGUI:
         if use_key:
             env["WRAPPER_API_KEY"] = self.api_key.get().strip()
 
+        # Inform API server whether backend uses SSL (for ws/wss selection)
+        env["WRAPPER_BACKEND_SSL"] = (
+            "1" if (bool(self.ssl_certfile.get().strip()) and bool(self.ssl_keyfile.get().strip())) else "0"
+        )
+
         self.api_proc = subprocess.Popen(
             [
                 sys.executable,
@@ -1410,11 +1416,16 @@ class WrapperGUI:
             if ips:
                 display_b_host = ips[0]
                 display_a_host = ips[0]
-        self.web_endpoint.set(f"http://{display_b_host}:{b_port}/")
-        ws = f"ws://{display_b_host}:{b_port}/asr"
+        # HTTPS/WSS if SSL cert+key specified for backend
+        use_ssl = bool(self.ssl_certfile.get().strip()) and bool(self.ssl_keyfile.get().strip())
+        http_scheme = "https" if use_ssl else "http"
+        ws_scheme = "wss" if use_ssl else "ws"
+        self.web_endpoint.set(f"{http_scheme}://{display_b_host}:{b_port}/")
+        ws = f"{ws_scheme}://{display_b_host}:{b_port}/asr"
         self.ws_endpoint.set(ws)
         # Recorder follows the backend WebSocket endpoint
         self.ws_url.set(ws)
+        # Wrapper API (this process) runs without SSL; keep http
         self.api_endpoint.set(f"http://{display_a_host}:{a_port}/v1/audio/transcriptions")
         # Note: in external mode, endpoints already display LAN IPs directly
 
@@ -1994,10 +2005,6 @@ class WrapperGUI:
         else:
             self._update_diarization_fields()
         # Buttons
-        try:
-            self.hf_login_btn.config(state=state_entry)
-        except Exception:
-            pass
         try:
             self.manage_models_btn.config(state=state_entry)
         except Exception:
