@@ -700,3 +700,14 @@
 - æ¬¡ã‚¢ã‚¯ã‚·ãƒ§ãƒ³ï¼šä»–è¨€èªã¸ã®æ‹¡å¼µå¯¾å¿œã‚’æ¤œè¨ã€‚
 - ãƒªã‚¹ã‚¯ï¼èª²é¡Œï¼šç¿»è¨³æ¼ã‚Œã«ã‚ˆã‚‹è¡¨ç¤ºæ··åœ¨ã€‚
 - å‚ç…§ãƒªãƒ³ã‚¯ï¼š`wrapper/app/gui.py`, `README-FOR-WRAPPER.md`
+
+## 2025-09-01 (FFmpeg‘‚«‚İƒGƒ‰[: GUIƒŒƒR[ƒ_[‚ÌƒtƒH[ƒ}ƒbƒg•sˆê’v)
+- ”wŒiEƒXƒR[ƒvFGUI‚ÌRecorderg—p‚É FFmpeg "Connection lost" ‚ª˜A”­‚µˆ—‚ªi‚Ü‚È‚¢–ÛB
+- Œˆ’è–€FREADME-FOR-WRAPPER.md ‚ÉŒ´ˆö/‰ñ”ğô‚ğ–¾‹Liƒgƒ‰ƒuƒ‹ƒVƒ…[ƒeƒBƒ“ƒO‚ğ’Ç‰ÁjB
+- ª‹’EŒŸ“¢ƒƒ‚F
+  - ã—¬FFmpeg‚Í -i pipe:0 ‚ÅƒRƒ“ƒeƒi‰¹º‚ğ‘z’èBWeb UI‚Í audio/webmi³íjBGUIƒŒƒR[ƒ_[‚Í¶PCM16‚ğ‘—M¨©“®”»•Ê•s”\‚ÅFFmpeg‚ª‘ŠúI—¹B
+  - QÆ: whisperlivekit/ffmpeg_manager.py:62, whisperlivekit/web/live_transcription.js:388, wrapper/app/gui.py:1943
+- –¢‰ğŒˆ–€FGUIƒŒƒR[ƒ_[Œo˜H‚Å‚Ì“ü—Íw’èØ‘Öi-f s16le -ac 1 -ar 16000 -i pipe:0j‚Ü‚½‚Í webm ‘—M‰»B
+- ŸƒAƒNƒVƒ‡ƒ“Fƒ‰ƒbƒp[‘¤‚ÅƒtƒH[ƒ}ƒbƒg®‡‚ÌÀ‘•ˆÄ‚ğŒŸ“¢‚µAupstream”ñ‰ü•Ï‚Å‰ğŒˆi‹N“®ˆø”/‘—MŒ`®‚ÌØ‘ÖjB
+- ƒŠƒXƒNE‰Û‘èFƒuƒ‰ƒEƒUŠO‚ÅwebmƒGƒ“ƒR[ƒh‚ğs‚¤ê‡‚ÌˆË‘¶‘A‚ ‚é‚¢‚ÍFFmpeg‹N“®ƒ‚[ƒh‚Ì•ªŠò‚Ì•¡G‰»B
+- QÆƒŠƒ“ƒNFREADME-FOR-WRAPPER.mdi–{ßj

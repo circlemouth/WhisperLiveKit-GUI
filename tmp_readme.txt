@@ -163,25 +163,3 @@
 - 險ｭ螳壹′ `settings.json` 縺ｫ菫晏ｭ・蠕ｩ蜈・＆繧後ｋ
 
 縺薙・ README 縺ｨ `WRAPPER-DEV-LOG.md` 縺ｯ縲∽ｻ墓ｧ伜､画峩繧・э諤晄ｱｺ螳壹↓蜷医ｏ縺帙※髫乗凾譖ｴ譁ｰ縺励∪縺吶・
-
-## トラブルシューティング: FFmpeg "Connection lost" が出続ける
-
-- 症状: サーバーは起動するが、ログに下記の繰り返しが出続け、音声処理が進まない。
-  - ERROR:whisperlivekit.ffmpeg_manager:Error writing to FFmpeg: Connection lost
-  - ERROR:whisperlivekit.audio_processor:FFmpeg error: write_error
-  - WARNING:whisperlivekit.audio_processor:Failed to write audio data to FFmpeg
-- 原因: 入力音声のフォーマット不一致。
-  - 上流の FFmpeg は標準入力からコンテナ音声を自動判別して PCM16 に変換する想定（-i pipe:0）。
-    - 参照: whisperlivekit/ffmpeg_manager.py:62
-  - ブラウザ版 Web UI は audio/webm（Opus）で送信するためこの想定と一致（正常動作）。
-    - 参照: whisperlivekit/web/live_transcription.js:388
-  - 一方、GUI の Recorder は 16kHz/mono の生 PCM16（s16le）をそのまま WebSocket へ送信。
-    - 参照: wrapper/app/gui.py:1943
-  - 生 PCM はコンテナではないため、FFmpeg が入力を解釈できず早期終了→以降の書き込みが Connection lost となる。
-- 回避策（現状）:
-  - 推奨: GUI 右ペインではなく、バックエンドの Web UI（Open Web GUI）から録音する。
-  - あるいは REST API にファイルで送る（/v1/audio/transcriptions）。
-- 今後の改善方針（ラッパー側で対応予定）:
-  - GUI レコーダー経路では、FFmpeg 起動時の入力指定を「生 PCM 明示」に切り替える（例: -f s16le -ac 1 -ar 16000 -i pipe:0）。
-  - もしくは GUI レコーダーでも audio/webm にエンコードして送信する。
-  - upstream を直接改変せず、ラッパー側の起動・入出力制御で整合を取る。

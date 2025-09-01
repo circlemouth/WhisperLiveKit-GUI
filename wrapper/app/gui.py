@@ -996,8 +996,46 @@ class WrapperGUI:
         env["WRAPPER_API_HOST"] = a_host
         env["WRAPPER_API_PORT"] = a_port
         env["HUGGINGFACE_HUB_CACHE"] = str(model_manager.HF_CACHE_DIR)
-        env["HF_HOME"] = str(model_manager.HF_CACHE_DIR)
         env["TORCH_HOME"] = str(model_manager.TORCH_CACHE_DIR)
+        # Propagate Hugging Face token to backend process if available
+        try:
+            token: str | None = None
+            # Prefer token from system keyring when available
+            if self._keyring_available():
+                token = self._keyring_get_token()
+            # Fallback to GUI entry (avoid masked placeholder)
+            if not token:
+                t = (self.hf_token.get() or "").strip()
+                if t and t != "********":
+                    token = t
+            # Fallback to huggingface_hub stored token
+            if not token:
+                try:
+                    from huggingface_hub import HfFolder  # type: ignore
+                    token = HfFolder.get_token()
+                except Exception:
+                    token = None
+            # Fallback to pre-set environment
+            if not token:
+                for k in ("HUGGING_FACE_HUB_TOKEN", "HUGGINGFACEHUB_API_TOKEN", "HF_TOKEN"):
+                    if os.getenv(k):
+                        token = os.getenv(k)
+                        break
+            if token:
+                # Set common aliases used by huggingface_hub/pyannote
+                env["HUGGING_FACE_HUB_TOKEN"] = token
+                env["HUGGINGFACEHUB_API_TOKEN"] = token
+                env["HF_TOKEN"] = token
+                # Also persist token to huggingface_hub store if not already present,
+                # because some libs pass use_auth_token=True which reads from HfFolder.
+                try:
+                    from huggingface_hub import HfFolder, login as hf_login  # type: ignore
+                    if not HfFolder.get_token():
+                        hf_login(token=token, add_to_git_credential=False)
+                except Exception:
+                    pass
+        except Exception:
+            pass
         cert = self.vad_certfile.get().strip()
         if cert and Path(cert).is_file():
             env["SSL_CERT_FILE"] = cert
@@ -1075,7 +1113,8 @@ class WrapperGUI:
             backend_cmd += ["--ssl-keyfile", keyfile]
         backend_cmd += ["--frame-threshold", str(self.frame_threshold.get())]
 
-        self.backend_proc = subprocess.Popen(backend_cmd)
+        # Launch backend with propagated environment (includes HF token/cache paths)
+        self.backend_proc = subprocess.Popen(backend_cmd, env=env)
         # 自動でブラウザは開かない（必要なら Endpoints の "Open Web GUI" ボタンから開く）
         time.sleep(2)
 
