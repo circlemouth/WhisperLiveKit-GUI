@@ -21,6 +21,22 @@
 
 ---
 
+## 2025-10-05 (ライセンス生成の参照元を統一)
+- 背景／スコープ：依存ライブラリのライセンス情報がCPU向けrequirementsに基づいていた。
+- 決定事項：
+  - `wrapper/scripts/generate_licenses.py` の参照先を `wrapper/requirements-nvidia.txt` に変更。
+  - GUI のライセンスウィンドウを再構成し、`licenses.json` の内容を一覧表示。
+- 根拠・検討メモ：
+  - NVIDIA環境を標準とするため。
+- 未解決事項：
+  - 未インストールパッケージのライセンスは生成されない。
+- 次アクション：
+  - 必要に応じてCPU/AMD用requirementsへの切替オプションを検討。
+- リスク／課題：
+  - ライセンス本文が増えることでファイルサイズが増加。
+- 参照リンク：
+  - `wrapper/scripts/generate_licenses.py`, `wrapper/app/gui.py`, `README-FOR-WRAPPER.md`
+
 ## 2025-09-01 (DL状態不一致の解消)
 - 背景／スコープ：GUI が「ダウンロード完了」と表示する一方、バックエンドが実際には Whisper モデルを追加DLしてしまう事象の解消。
 - 決定事項：
