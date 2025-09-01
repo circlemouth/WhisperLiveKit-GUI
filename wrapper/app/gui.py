@@ -147,7 +147,7 @@ TRANSLATIONS_JA = {
     "SSL certfile": "SSL証明書",
     "SSL keyfile": "SSL鍵ファイル",
     "Save path": "保存パス",
-    "Save transcript to file": "文字起こしをファイルに保存",
+    "Save transcript to file": "ファイルに保存",
     "Security": "セキュリティ",
     "Segmentation model": "セグメンテーションモデル",
     "Server Settings": "サーバー設定",
@@ -170,7 +170,7 @@ TRANSLATIONS_JA = {
     "Validated": "検証済",
     "Warmup file": "ウォームアップファイル",
     "Whisper model": "Whisperモデル",
-    "WhisperLiveKit Wrapper": "WhisperLiveKitラッパー",
+    "WhisperLiveKit Wrapper": "WhisperLiveKit Wrapper",
     "Settings locked": "設定はロックされています",
     "Stop API before changing settings.": "設定を変更する前にAPIを停止してください。",
     "Stop API before changing VAD settings.": "VAD設定を変更する前にAPIを停止してください。",
@@ -224,28 +224,8 @@ class CollapsibleSection(ttk.Frame):
         self.container.pack(fill="both", expand=True)
 
     def _resize_to_content(self) -> None:
-        # 画面状態が最大化の場合はサイズ変更しない
-        root = self.winfo_toplevel()
-        try:
-            if root.state() == "zoomed":
-                return
-        except Exception:
-            pass
-        # 現在の幅を維持しつつ、高さを内容に合わせて調整
-        def _apply():
-            try:
-                root.update_idletasks()
-                cur_w = root.winfo_width()
-                # コンテンツに基づく推奨サイズ
-                req_h = root.winfo_reqheight()
-                # あまりに小さくならないよう最小高さを設定
-                min_h = 480
-                new_h = max(req_h, min_h)
-                root.geometry(f"{cur_w}x{new_h}")
-            except Exception:
-                pass
-        # レイアウト反映後に実施
-        root.after(0, _apply)
+        # スクロール対応：自動リサイズを無効化（ユーザーによる手動リサイズを尊重）
+        pass
 
     def toggle(self) -> None:
         if self._open.get():
@@ -437,8 +417,16 @@ class WrapperGUI:
             pass
         self.style.configure("TLabel", padding=6)
         self.style.configure("TButton", padding=6)
-        # Start/Stop（primary/danger）も Manage models と同じ高さになるよう統一
+        # API Start/Stopボタン用の目立つスタイル
         try:
+            # より大きくて目立つAPIコントロールボタン
+            self.style.configure("ApiStart.TButton", 
+                               font=("Segoe UI", 12, "bold"),
+                               padding=(12, 8))
+            self.style.configure("ApiStop.TButton", 
+                               font=("Segoe UI", 12, "bold"),
+                               padding=(12, 8))
+            # 通常ボタンのスタイル
             self.style.configure("primary.TButton", padding=6)
             self.style.configure("danger.TButton", padding=6)
         except Exception:
@@ -450,14 +438,14 @@ class WrapperGUI:
             primary_fg = self.style.colors.primary
         except Exception:
             primary_fg = None
-        self.style.configure("Header.TLabel", font=("Segoe UI", 18, "bold"))
+        self.style.configure("Header.TLabel", font=("Segoe UI", 24, "bold"))
         self.style.configure(
             "SectionHeader.TLabel",
             font=("Segoe UI", 14, "bold"),
             foreground=primary_fg if primary_fg else None,
         )
         # 録音時間表示用の大きめフォント
-        self.style.configure("Timer.TLabel", font=("Segoe UI", 16, "bold"))
+        self.style.configure("Timer.TLabel", font=("Segoe UI", 20, "bold"))
 
         master.columnconfigure(0, weight=1)
 
@@ -485,10 +473,15 @@ class WrapperGUI:
 
         # Toolbar（再生/設定アイコン）は機能重複のため削除
 
-        # 2カラムのメインコンテンツ領域（PanedWindowで左右同高さ）
-        content = ttk.Panedwindow(master, orient=tk.HORIZONTAL)
-        content.grid(row=row, column=0, sticky="nsew", padx=10, pady=5)
+        # スクロール可能な2カラムメインコンテンツ領域
+        scroll_container = ScrollableFrame(master)
+        scroll_container.grid(row=row, column=0, sticky="nsew", padx=10, pady=5)
         master.rowconfigure(row, weight=1)
+        
+        # PanedWindowをスクロール可能フレーム内に配置
+        content = ttk.Panedwindow(scroll_container.inner, orient=tk.HORIZONTAL)
+        content.grid(row=0, column=0, sticky="ew")
+        scroll_container.inner.columnconfigure(0, weight=1)
         self.content = content
 
         # 左カラム: Server Settings + Endpoints（スクロールなし、常時表示）
@@ -671,30 +664,42 @@ class WrapperGUI:
             text="pyannote/embedding",
             command=lambda: webbrowser.open("https://huggingface.co/pyannote/embedding"),
         ).pack(side="left")
-        # Move Diarization Settings button to the right side of the links row
-        self.diar_settings_btn = ttk.Button(hf_links, text="Diarization Settings", command=self._open_diarization_settings, bootstyle="info")
-        self.diar_settings_btn.pack(side="right")
+        r += 1
+        # Diarization Settings button を独立した行に配置（潰れ防止、右寄せ）
+        diar_settings_frame = ttk.Frame(config_frame)
+        diar_settings_frame.grid(row=r, column=0, columnspan=2, sticky="ew", pady=(4, 0))
+        diar_settings_frame.columnconfigure(0, weight=1)
+        self.diar_settings_btn = ttk.Button(diar_settings_frame, text="Diarization Settings", command=self._open_diarization_settings, bootstyle="info")
+        self.diar_settings_btn.grid(row=0, column=0, sticky="e")
         r += 1
         # 8) 起動/停止操作
         ttk.Separator(config_frame, orient="horizontal").grid(row=r, column=0, columnspan=2, sticky="ew", pady=(6, 6))
         r += 1
-        start_stop = ttk.Frame(config_frame)
-        start_stop.grid(row=r, column=0, columnspan=2, sticky="ew", pady=(4, 0))
-        # 左端に Manage models と Hugging Face Login を配置
-        left_actions = ttk.Frame(start_stop)
-        left_actions.grid(row=0, column=0, sticky="w")
-        self.manage_models_btn = ttk.Button(left_actions, text="Manage models", command=self._open_model_manager)
+        # 左側ボタン群を独立した行に配置（重なり防止）
+        left_actions_row = ttk.Frame(config_frame)
+        left_actions_row.grid(row=r, column=0, columnspan=2, sticky="ew", pady=(4, 0))
+        self.manage_models_btn = ttk.Button(left_actions_row, text="Manage models", command=self._open_model_manager)
         self.manage_models_btn.pack(side="left", padx=(0, 6))
         # Advanced Settings button
-        self.adv_btn = ttk.Button(left_actions, text="Advanced Settings", command=self._open_backend_settings)
+        self.adv_btn = ttk.Button(left_actions_row, text="Advanced Settings", command=self._open_backend_settings)
         self.adv_btn.pack(side="left")
-        # 右端に Start/Stop を配置
-        start_stop.columnconfigure(0, weight=1)
-        # より目立つ配色に変更（Start: success, Stop: danger）
-        self.start_btn = ttk.Button(start_stop, text="Start API", command=self.start_api, bootstyle="success")
-        self.start_btn.grid(row=0, column=1, padx=(0, 6), pady=2, sticky="e")
-        self.stop_btn = ttk.Button(start_stop, text="Stop API", command=self.stop_api, bootstyle="danger")
-        self.stop_btn.grid(row=0, column=2, pady=2, sticky="e")
+        r += 1
+        
+        # API Start/Stopボタンを独立した行に配置（目立つ＆重ならない）
+        api_control_row = ttk.Frame(config_frame)
+        api_control_row.grid(row=r, column=0, columnspan=2, sticky="ew", pady=(8, 0))
+        api_control_row.columnconfigure(0, weight=1)
+        
+        # 最も目立つAPIコントロールボタン（大きく、明確な配色、カスタムスタイル）
+        api_buttons = ttk.Frame(api_control_row)
+        api_buttons.grid(row=0, column=0, sticky="e")
+        
+        self.start_btn = ttk.Button(api_buttons, text="🚀 Start API", command=self.start_api, 
+                                  bootstyle="success", width=15, style="ApiStart.TButton")
+        self.start_btn.pack(side="left", padx=(0, 8), ipadx=8, ipady=4)
+        self.stop_btn = ttk.Button(api_buttons, text="🛑 Stop API", command=self.stop_api, 
+                                 bootstyle="danger", width=15, style="ApiStop.TButton")
+        self.stop_btn.pack(side="right", ipadx=8, ipady=4)
 
         # 右カラム: Recorder（PanedWindow右ペイン）
         right_panel = ttk.Frame(content)
@@ -719,10 +724,22 @@ class WrapperGUI:
         self.record_hint_label = ttk.Label(
             record_frame,
             text=self._t("Server is not running. Please press Start API before recording."),
-            wraplength=520,
             justify="left",
         )
-        self.record_hint_label.grid(row=r, column=0, columnspan=3, sticky=tk.W, pady=(0, 2))
+        self.record_hint_label.grid(row=r, column=0, columnspan=3, sticky="ew", pady=(0, 2))
+        
+        # 動的な折り返し調整のため、wraplengthを親フレーム幅に合わせて更新
+        def _update_wraplength():
+            try:
+                width = record_frame.winfo_width()
+                if width > 1:  # ウィンドウが実際にレンダリングされている場合のみ
+                    self.record_hint_label.configure(wraplength=max(width - 40, 200))
+            except:
+                pass
+        
+        # 初期設定と定期更新
+        record_frame.after(100, _update_wraplength)
+        record_frame.bind('<Configure>', lambda e: _update_wraplength())
         r += 1
         ttk.Progressbar(record_frame, variable=self.level_var, maximum=1.0).grid(row=r, column=0, columnspan=3, sticky="ew")
         r += 1
@@ -902,25 +919,22 @@ class WrapperGUI:
             pass
 
     def _lock_minsize_by_content(self) -> None:
-        # 全要素が見切れない最小サイズを設定しつつ、横幅は可能な範囲で縮小を許容
+        # スクロール対応：最小サイズのみ設定し、縦方向リサイズを許可
         root = self.master
         try:
             root.update_idletasks()
-            # 横幅の最低幅を抑えめに設定し、縮小を許容（UIが壊れない目安）
+            # 横幅の最小幅を設定
             min_w = 720
-            req_h = max(root.winfo_reqheight(), 650)
-            # 幅は最小幅のみ拘束、高さは「現在の最小高さ」で固定
-            cur_w = max(root.winfo_width(), min_w)
-            # 高さを固定（geometry で設定し、縦方向リサイズを無効化）
-            root.geometry(f"{cur_w}x{req_h}")
-            root.minsize(min_w, req_h)
+            min_h = 500  # 縦方向の最小高さを設定（スクロール可能）
+            # 最小サイズのみ設定（固定サイズは設定しない）
+            root.minsize(min_w, min_h)
             try:
-                # 幅の最大は十分大きく、縦は固定
-                root.maxsize(100000, req_h)
+                # 最大サイズ制限を削除（縦方向も自由にリサイズ可能）
+                root.maxsize(100000, 100000)
             except Exception:
                 pass
             try:
-                root.resizable(True, False)
+                root.resizable(True, True)
             except Exception:
                 pass
         except Exception:
