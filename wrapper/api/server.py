@@ -1,6 +1,8 @@
 import json
 import os
 import subprocess
+import io
+import wave
 from typing import List
 
 from fastapi import FastAPI, File, UploadFile, HTTPException, Form, Request, Depends
@@ -56,6 +58,25 @@ def _convert_to_pcm16(file_bytes: bytes) -> bytes:
     except subprocess.CalledProcessError as e:
         raise HTTPException(status_code=400, detail="ffmpeg_failed") from e
     return proc.stdout
+
+
+def _extract_pcm16(upload: UploadFile, file_bytes: bytes) -> bytes:
+    """Return 16kHz mono PCM, skipping conversion when possible."""
+    name = (upload.filename or "").lower()
+    if name.endswith(".raw"):
+        return file_bytes
+    if name.endswith(".wav"):
+        try:
+            with wave.open(io.BytesIO(file_bytes)) as wf:
+                if (
+                    wf.getframerate() == 16000
+                    and wf.getnchannels() == 1
+                    and wf.getsampwidth() == 2
+                ):
+                    return wf.readframes(wf.getnframes())
+        except wave.Error:
+            pass
+    return _convert_to_pcm16(file_bytes)
 
 
 async def _stream_to_backend(pcm_bytes: bytes) -> List[str]:
@@ -117,7 +138,7 @@ async def transcribe(
 ):
     """Whisper API compatible transcription endpoint."""
     raw = await file.read()
-    pcm = _convert_to_pcm16(raw)
+    pcm = _extract_pcm16(file, raw)
     texts = await _stream_to_backend(pcm)
     final_text = " ".join(t.strip() for t in texts if t).strip()
     return JSONResponse({"text": final_text, "model": model})
