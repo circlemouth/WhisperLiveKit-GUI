@@ -467,7 +467,15 @@ class WrapperGUI:
         header.columnconfigure(1, weight=1)
         ttk.Label(header, text="WhisperLiveKit Wrapper", style="Header.TLabel").grid(row=0, column=0, sticky="w")
         ttk.Button(header, text="Licenses", command=self.show_license).grid(row=0, column=2, sticky="e")
-        cuda_char = Emoji.get("check mark button").char if CUDA_AVAILABLE else Emoji.get("cross mark").char
+        # Be tolerant: Emoji.get may return None on some platforms/themes
+        try:
+            ok_emoji = Emoji.get("check mark button")
+            ng_emoji = Emoji.get("cross mark")
+            ok_char = ok_emoji.char if ok_emoji is not None else "✓"
+            ng_char = ng_emoji.char if ng_emoji is not None else "✗"
+        except Exception:
+            ok_char, ng_char = "✓", "✗"
+        cuda_char = ok_char if CUDA_AVAILABLE else ng_char
         cuda_text = self._t("CUDA: Available") if CUDA_AVAILABLE else self._t("CUDA: Not available")
         ttk.Label(header, text=f"{cuda_char} {cuda_text}").grid(row=0, column=3, sticky="e", padx=(5, 0))
         # 高さ計算用に参照保持

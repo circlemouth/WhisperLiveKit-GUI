@@ -10,10 +10,18 @@ import websockets
 
 BACKEND_HOST = os.getenv("WRAPPER_BACKEND_HOST", "localhost")
 BACKEND_PORT = os.getenv("WRAPPER_BACKEND_PORT", "8000")
+# Optional override for connect host (can differ from bind host)
+BACKEND_CONNECT_HOST = os.getenv("WRAPPER_BACKEND_CONNECT_HOST")
+if not BACKEND_CONNECT_HOST:
+    # If backend bound to 0.0.0.0/::, prefer loopback for local connect
+    if BACKEND_HOST in ("0.0.0.0", "::", ""):
+        BACKEND_CONNECT_HOST = "127.0.0.1"
+    else:
+        BACKEND_CONNECT_HOST = BACKEND_HOST
 # Choose ws/wss based on backend SSL flag from GUI
 BACKEND_SSL = os.getenv("WRAPPER_BACKEND_SSL", "0") == "1"
 BACKEND_WS_SCHEME = "wss" if BACKEND_SSL else "ws"
-BACKEND_WS_URL = f"{BACKEND_WS_SCHEME}://{BACKEND_HOST}:{BACKEND_PORT}/asr"
+BACKEND_WS_URL = f"{BACKEND_WS_SCHEME}://{BACKEND_CONNECT_HOST}:{BACKEND_PORT}/asr"
 
 # API key settings (provided by GUI via environment variables)
 REQUIRE_API_KEY = os.getenv("WRAPPER_REQUIRE_API_KEY", "0") == "1"
