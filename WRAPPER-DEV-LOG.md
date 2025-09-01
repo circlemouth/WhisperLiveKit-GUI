@@ -21,6 +21,38 @@
 
 ---
 
+## 2025-09-01 (DL状態不一致の解消)
+- 背景／スコープ：GUI が「ダウンロード完了」と表示する一方、バックエンドが実際には Whisper モデルを追加DLしてしまう事象の解消。
+- 決定事項：
+  - faster-whisper バックエンド選択時、事前DL対象を OpenAI 版ではなく CTranslate2 版（例：Systran/faster-whisper-<size>）に切替。
+  - バックエンド起動引数へ `--model_cache_dir <wrapperのHFキャッシュ>` を常付与し、キャッシュを共有。
+  - `--model_dir` にはバックエンド種別に応じたローカルスナップショットパスを渡す（faster-whisper では CT2 レイアウト）。
+- 根拠・検討メモ：
+  - 現状 `wrapper/app/model_manager.py` は `openai/whisper-<size>` を事前DLし、`wrapper/app/gui.py` はそれを完了判定。しかし faster-whisper は CTranslate2 版を必要とし、起動時に追加DLが走るため不一致が発生。
+  - 事前DLと起動引数を faster-whisper の要件に合わせることで、GUI表示と実DLの整合が取れる。
+- 未解決事項：
+  - 「Manage models」ダイアログは現在、Whisper サイズ名を OpenAI 版基準で判定。backend に応じた表示・操作切替は今後対応候補。
+- 次アクション：
+  - Model Manager の backend 連動（faster-whisper 時は CT2 を対象に）を検討。
+- リスク：
+  - Systran 以外の配布先に切替が必要になる可能性。マッピングの拡張余地あり。
+- 参照：`wrapper/app/model_manager.py`, `wrapper/app/gui.py`, `README-FOR-WRAPPER.md`
+
+---
+
+## 2025-10-04 (CUDA表示の明確化)
+- 背景／スコープ：ヘッダーのCUDA利用可否アイコン（✅/❌）だけでは意味が分かりづらい。
+- 決定事項：
+  - アイコンの右に文言を追加（英: "CUDA: Available/Not available"、日: "CUDA: 利用可/利用不可"）。
+  - ロケールに応じて `_t()` 経由で翻訳表示。
+- 変更箇所：
+  - `wrapper/app/gui.py` ヘッダー生成部（アイコン→テキスト併記）、`TRANSLATIONS_JA` に文言を追加。
+- リスク／影響：
+  - ヘッダー右側の占有幅がわずかに増加（崩れは軽微）。
+- 参照：`wrapper/app/gui.py`
+
+---
+
 ## 2025-09-01
 - 背景／スコープ：UI レイアウト改善依頼。「Endpoints を左（Server Settings 下）へ移動し、Recorder をウィンドウ高いっぱいに表示」。
 - 決定事項：

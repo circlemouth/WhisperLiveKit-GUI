@@ -22,13 +22,15 @@
 - ローカルでリアルタイム文字起こしを試す（GUI 起動 → Start API → 録音 → 結果表示/保存）
 - 既存アプリから Whisper API 互換 REST を叩く（GUI/CLI で API 起動 → `POST /v1/audio/transcriptions`）
 - モデルを事前に取得し、オフラインで利用（モデル管理 → Whisper/VAD/ダイアリゼーションモデル）
+  - faster-whisper バックエンド選択時は、Whisper の重みは OpenAI 版ではなく CTranslate2 版
+   （例: `Systran/faster-whisper-<size>`）を事前取得します。
 - 話者分離を有効化（Hugging Face ログイン → モデル選択 → Start API）
 
 ## アーキテクチャ
 - GUI 層（Python Tkinter）：`wrapper/cli/main.py` → `wrapper/app/gui.py`
   - WhisperLiveKit の Web UI（`http://<backend_host>:<backend_port>`）をブラウザで開く
   - Start/Stop で 2 プロセス起動/停止
-    - Backend: `python -m whisperlivekit.basic_server`
+    - Backend: `python -m whisperlivekit.basic_server`（`--model_cache_dir` にラッパー管理のHFキャッシュを付与）
     - API: `uvicorn wrapper.api.server:app`
   - 録音→WebSocket 送信、テキスト可視化、保存
  

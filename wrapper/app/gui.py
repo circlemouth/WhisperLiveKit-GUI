@@ -134,6 +134,8 @@ TRANSLATIONS_JA = {
     "Hugging Face login is required to enable diarization.": "話者分離を有効にするにはHugging Faceログインが必要です。",
     "Language": "言語",
     "License": "ライセンス",
+    "CUDA: Available": "CUDA: 利用可",
+    "CUDA: Not available": "CUDA: 利用不可",
     "Log level": "ログレベル",
     "Manage models": "モデル管理",
     "Min chunk size": "最小チャンクサイズ",
@@ -464,7 +466,8 @@ class WrapperGUI:
         ttk.Label(header, text="WhisperLiveKit Wrapper", style="Header.TLabel").grid(row=0, column=0, sticky="w")
         ttk.Button(header, text="License", command=self.show_license).grid(row=0, column=2, sticky="e")
         cuda_char = Emoji.get("check mark button").char if CUDA_AVAILABLE else Emoji.get("cross mark").char
-        ttk.Label(header, text=cuda_char).grid(row=0, column=3, sticky="e", padx=(5, 0))
+        cuda_text = self._t("CUDA: Available") if CUDA_AVAILABLE else self._t("CUDA: Not available")
+        ttk.Label(header, text=f"{cuda_char} {cuda_text}").grid(row=0, column=3, sticky="e", padx=(5, 0))
         # 高さ計算用に参照保持
         self.header = header
         row += 1
@@ -911,9 +914,15 @@ class WrapperGUI:
         missing: list[str] = []
         model = self.model.get().strip()
         # For SimulStreaming, backend downloads weights itself; skip HF snapshot prefetch
-        if model and self.backend.get().strip() != "simulstreaming":
-            if not model_manager.is_model_downloaded(model):
-                missing.append(model)
+        backend_choice = self.backend.get().strip()
+        if model and backend_choice != "simulstreaming":
+            # For faster-whisper backend, ensure CT2 weights are cached
+            if backend_choice == "faster-whisper":
+                if not model_manager.is_model_downloaded(model, backend="faster-whisper"):
+                    missing.append(model)
+            else:
+                if not model_manager.is_model_downloaded(model):
+                    missing.append(model)
         if self.diarization.get() and self.hf_logged_in:
             seg = self.segmentation_model.get().strip()
             if seg and not model_manager.is_model_downloaded(seg):
@@ -937,10 +946,16 @@ class WrapperGUI:
 
         def worker() -> None:
             try:
+                backend_choice = self.backend.get().strip()
                 for m in models:
                     label = f"{self._t('Downloading')} {m}"
                     self.master.after(0, lambda l=label: self.status_var.set(l))
-                    model_manager.download_model(m, progress_cb=progress)
+                    # If current backend is faster-whisper and target is a Whisper size name,
+                    # download the CTranslate2 weights instead of openai/whisper.
+                    if backend_choice == "faster-whisper" and m in WHISPER_MODELS:
+                        model_manager.download_model(m, backend="faster-whisper", progress_cb=progress)
+                    else:
+                        model_manager.download_model(m, progress_cb=progress)
                 self.master.after(0, self._on_download_success)
             except Exception as e:  # pragma: no cover - GUI display
                 self.master.after(0, lambda err=e: self.status_var.set(f"{self._t('Download failed:')} {err}"))
@@ -988,6 +1003,8 @@ class WrapperGUI:
             "--port",
             b_port,
         ]
+        # Share wrapper-managed cache directory with backend for consistency
+        backend_cmd += ["--model_cache_dir", str(model_manager.HF_CACHE_DIR)]
         model = self.model.get().strip()
         if model:
             # SimulStreaming expects a model name (e.g. 'large-v3') or a --model-path
@@ -998,7 +1015,10 @@ class WrapperGUI:
                 backend_cmd += ["--model-path", str(Path(cache_dir) / f"{model}.pt")]
             else:
                 # Other backends can consume a local snapshot directory
-                backend_cmd += ["--model_dir", str(model_manager.get_model_path(model))]
+                if self.backend.get().strip() == "faster-whisper":
+                    backend_cmd += ["--model_dir", str(model_manager.get_model_path(model, backend="faster-whisper"))]
+                else:
+                    backend_cmd += ["--model_dir", str(model_manager.get_model_path(model))]
         if self.diarization.get() and self.hf_logged_in:
             backend_cmd.append("--diarization")
             seg = self.segmentation_model.get().strip()

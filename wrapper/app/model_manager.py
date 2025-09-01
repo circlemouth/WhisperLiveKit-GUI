@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import shutil
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Optional
 
 from platformdirs import user_cache_path
 
@@ -26,9 +26,19 @@ VAD_REPO = "snakers4/silero-vad"
 VAD_MODEL = "silero_vad"
 
 
-def _resolve_repo_id(name: str) -> str:
-    """Return full repo id for a given model name."""
-    return name if "/" in name else f"openai/whisper-{name}"
+def _resolve_repo_id(name: str, *, backend: Optional[str] = None) -> str:
+    """Return full Hugging Face repo id for a given model name.
+
+    - default/OpenAI whisper: openai/whisper-<name>
+    - faster-whisper backend: prefer Systran/faster-whisper-<name>
+      (falls back to the provided name if it already contains '/').
+    """
+    if "/" in name:
+        return name
+    if backend == "faster-whisper":
+        # CTranslate2 weights commonly distributed under Systran
+        return f"Systran/faster-whisper-{name}"
+    return f"openai/whisper-{name}"
 
 
 def _cache_dir(repo_id: str) -> Path:
@@ -60,12 +70,12 @@ def _delete_vad_model() -> None:
         shutil.rmtree(p, ignore_errors=True)
 
 
-def get_model_path(name: str) -> Path:
+def get_model_path(name: str, *, backend: Optional[str] = None) -> Path:
     """Return local snapshot path for the model (latest if multiple)."""
     if name == VAD_REPO:
         dirs = _vad_cache_dirs()
         return dirs[0] if dirs else TORCH_CACHE_DIR
-    repo = _resolve_repo_id(name)
+    repo = _resolve_repo_id(name, backend=backend)
     base = _cache_dir(repo)
     snapshots = base / "snapshots"
     if snapshots.exists():
@@ -75,10 +85,10 @@ def get_model_path(name: str) -> Path:
     return base
 
 
-def is_model_downloaded(name: str) -> bool:
+def is_model_downloaded(name: str, *, backend: Optional[str] = None) -> bool:
     if name == VAD_REPO:
         return _is_vad_downloaded()
-    repo = _resolve_repo_id(name)
+    repo = _resolve_repo_id(name, backend=backend)
     snapshots = _cache_dir(repo) / "snapshots"
     return snapshots.exists() and any(p.is_dir() for p in snapshots.iterdir())
 
@@ -126,13 +136,18 @@ def _make_tqdm_with_cb(progress_cb: Callable[[float], None] | None):
     return _BoundTqdm
 
 
-def download_model(name: str, progress_cb: Callable[[float], None] | None = None) -> Path:
+def download_model(
+    name: str,
+    *,
+    backend: Optional[str] = None,
+    progress_cb: Callable[[float], None] | None = None,
+) -> Path:
     """Download model into cache directory."""
     if name == VAD_REPO:
         return _download_vad_model(progress_cb)
     if snapshot_download is None:
         raise RuntimeError("huggingface_hub is required to download models")
-    repo = _resolve_repo_id(name)
+    repo = _resolve_repo_id(name, backend=backend)
     TqdmCls = _make_tqdm_with_cb(progress_cb)
     return Path(snapshot_download(repo_id=repo, cache_dir=HF_CACHE_DIR, tqdm_class=TqdmCls))
 
