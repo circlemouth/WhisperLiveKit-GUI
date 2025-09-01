@@ -21,6 +21,24 @@
 
 ---
 
+## 2025-09-01 (ライセンス表示の方式を切替)
+- 背景／スコープ：ライセンス表記を一覧テキストから、ライブラリごとに本文を個別表示する方式に変更したい。
+- 決定事項：
+  - GUI の「Licenses」ダイアログを改修し、左にライブラリ一覧、右に選択したライブラリのライセンス本文を表示。
+  - 本体（Wrapper）の `LICENSE` も同一UI内で選択可能に統合。
+  - 参照データは `wrapper/licenses.json`（`generate_licenses.py` で再生成）。
+- 根拠・検討メモ：
+  - 各ライセンス条件の原文をそのまま提示することで誤読を避ける。
+  - 大量の依存でも目的のライセンスに素早くアクセス可能。
+- 未解決事項：
+  - 一部パッケージはライセンス本文を配布しておらず、`license_text` が空になる場合がある（メタデータのみ表示）。
+- 次アクション：
+  - 必要に応じて検索/フィルタ（パッケージ名）を追加検討。
+- リスク／課題：
+  - `licenses.json` のサイズ増。配布形態によっては別配布も検討。
+- 参照リンク：
+  - `wrapper/app/gui.py:show_license`, `wrapper/scripts/generate_licenses.py`, `README-FOR-WRAPPER.md`
+
 ## 2025-10-05 (ライセンス生成の参照元を統一)
 - 背景／スコープ：依存ライブラリのライセンス情報がCPU向けrequirementsに基づいていた。
 - 決定事項：
@@ -55,6 +73,53 @@
 - 参照：`wrapper/app/model_manager.py`, `wrapper/app/gui.py`, `README-FOR-WRAPPER.md`
 
 ---
+
+## 2025-09-01 (Advanced Settingsに選択式UIを導入)
+- 背景／スコープ：Advanced Settings 内で文言が固定の項目にフリーテキストがあり入力ミスが発生しやすい。
+- 決定事項：
+  - `Task` をプルダウン（`transcribe` / `translate`）。
+  - `Backend` をプルダウン（`simulstreaming` / `faster-whisper`）。
+  - `Log level` をプルダウン（`DEBUG` / `INFO` / `WARNING` / `ERROR` / `CRITICAL`）。
+- 根拠・検討メモ：
+  - 入力ミス防止と設定の一貫性確保。
+- 未解決事項：
+  - `Language` / `Buffer trimming` は受理可能値が上流実装依存で確定困難なため現状維持（今後、上流仕様が固まり次第検討）。
+- 次アクション：
+  - 必要に応じて `Language` の候補（代表的な言語コード）を提示する補助UIを検討。
+- リスク／課題：
+  - 候補外の値が必要な利用者向けに上級者設定の導線を検討する余地あり。
+- 参照リンク：
+  - `wrapper/app/gui.py:BackendSettingsDialog`, `README-FOR-WRAPPER.md`
+
+## 2025-09-01 (言語選択とフォールバック強化)
+- 背景／スコープ：Language を主要言語＋autoから選べるようにし、必要な場合のみ「その他」で任意入力を許容。保存済みの未知値に対するフォールバックも導入。
+- 決定事項：
+  - `Language` をコンボボックス化し「Other...」選択でダイアログ入力を受け付ける。
+  - `Buffer trimming` を上流CLIの `segment`/`sentence` に固定。
+  - 既存設定の正規化を追加（`Log level` 大文字化、`Task`/`Backend`/`Buffer trimming` の未知値を既定値へ補正）。
+- 根拠・検討メモ：
+  - 誤設定を起動前に排除し、ダイアログ表示が空白になる問題を解消。
+- 未解決事項：
+  - 言語コードは多岐に渡るため、全候補の網羅は行わず「その他」で代替。
+- 次アクション：
+  - よく使われる追加言語コードがあれば候補に加える。
+- リスク／課題：
+  - CLIが受け付ける短縮表記とISOコードの差異に注意（必要に応じヘルプ表示）。
+- 参照リンク：
+  - `wrapper/app/gui.py:BackendSettingsDialog`, `wrapper/app/gui.py:_normalize_saved_choices`, `README-FOR-WRAPPER.md`
+
+## 2025-09-01 (Model Manager ダイアログの視認性改善)
+- 背景／スコープ：Model Manager を開くと極小ウィンドウになり、一覧が見えないことがある。
+- 決定事項：
+  - スクロール可能な一覧（`ScrollableFrame`）に置き換え。
+  - 初期サイズを `760x520` に設定し、リサイズを許可。
+  - 下部に Close ボタンを追加。
+- 根拠・検討メモ：
+  - モデル数が多い場合でも一覧性と操作性を確保。
+- 未解決事項：
+  - 進捗バーの横幅はテーマにより見え方が変わる（必要に応じ調整）。
+- 参照リンク：
+  - `wrapper/app/gui.py:ModelManagerDialog`
 
 ## 2025-10-04 (CUDA表示の明確化)
 - 背景／スコープ：ヘッダーのCUDA利用可否アイコン（✅/❌）だけでは意味が分かりづらい。
