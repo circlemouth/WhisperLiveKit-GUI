@@ -97,6 +97,7 @@
 - ヘッダーのライセンスボタン右に CUDA 検出状況アイコン（✅/❌）を表示
 - 日本語環境ではラベルやメッセージが自動的に日本語表示になる
 - Server Settings で host/port を確認（既定は空きポート自動割当）
+- Backend 設定で SimulStreaming を選択して商用利用する場合は、SimulStreaming のライセンスを別途確認してください。
 - Start API で backend と API を起動（Stop API で停止）。起動時にブラウザは自動起動しません。必要に応じて Endpoints 欄の「Open Web GUI」から開いてください。
 - 稼働中（Start API 中）および録音中は、即時反映されない設定はロックされます。停止後に編集してください。
 - Recorder で録音開始/停止、テキスト表示、保存先指定が可能
