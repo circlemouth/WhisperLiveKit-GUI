@@ -455,6 +455,11 @@ class WrapperGUI:
         )
         # 録音時間表示用の大きめフォント
         self.style.configure("Timer.TLabel", font=("Segoe UI", 20, "bold"))
+        # Small note text
+        try:
+            self.style.configure("Small.TLabel", font=("Segoe UI", 8))
+        except Exception:
+            pass
 
         master.columnconfigure(0, weight=1)
 
@@ -807,6 +812,12 @@ class WrapperGUI:
         ttk.Entry(endpoints_frame, textvariable=self.api_endpoint, width=40, state="readonly").grid(row=er, column=1, sticky="ew")
         self.copy_api_btn = ttk.Button(endpoints_frame, text="Copy", command=lambda: self._copy_with_feedback(self.copy_api_btn, self.api_endpoint.get()))
         self.copy_api_btn.grid(row=er, column=2, padx=5, sticky="ew")
+        er += 1
+        ttk.Label(
+            endpoints_frame,
+            text="※16kHzモノラル(wav, raw)形式での入力を推奨",
+            style="Small.TLabel",
+        ).grid(row=er, column=1, columnspan=2, sticky=tk.W)
         # 列2の最小幅を Open Web GUI の要求幅に合わせる
         try:
             endpoints_frame.update_idletasks()

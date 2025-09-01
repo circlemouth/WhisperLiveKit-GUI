@@ -38,6 +38,8 @@
   - 録音停止時は「空バイト（b""）」を送信して EOF を明示。
 - REST API（Wrapper）: `POST http://<api_host>:<api_port>/v1/audio/transcriptions`
   - multipart フォーム: `file=@sample.wav`, `model=whisper-1`
+  - 入力音声は内部で 16kHz モノラル PCM に変換される（既に 16kHz/モノラル PCM の wav/raw であれば再変換を省略）
+  - 推奨入力フォーマット: 16kHz モノラルの wav または raw（変換コストを避けるため）
   - APIキー（任意）: `X-API-Key: <key>` または `Authorization: Bearer <key>`
   - レスポンス例: `{ "text": "...", "model": "whisper-1" }`
 

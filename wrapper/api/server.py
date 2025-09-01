@@ -1,6 +1,8 @@
+import io
 import json
 import os
 import subprocess
+import wave
 from typing import List
 
 from fastapi import FastAPI, File, UploadFile, HTTPException, Form, Request, Depends
@@ -30,8 +32,24 @@ API_KEY = os.getenv("WRAPPER_API_KEY", "")
 app = FastAPI(title="WhisperLiveKit Wrapper API")
 
 
-def _convert_to_pcm16(file_bytes: bytes) -> bytes:
-    """Convert arbitrary audio bytes to 16kHz mono PCM using ffmpeg."""
+def _convert_to_pcm16(file_bytes: bytes, filename: str | None = None) -> bytes:
+    """Return 16kHz mono PCM. Skip ffmpeg when input already matches."""
+    # Raw PCM16 (assumed little-endian) can be passed through directly.
+    if filename and filename.lower().endswith((".raw", ".pcm")):
+        return file_bytes
+    # Try to parse WAV header and extract PCM if already 16kHz mono 16-bit.
+    try:
+        with wave.open(io.BytesIO(file_bytes), "rb") as wf:
+            if (
+                wf.getframerate() == 16000
+                and wf.getnchannels() == 1
+                and wf.getsampwidth() == 2
+                and wf.getcomptype() == "NONE"
+            ):
+                return wf.readframes(wf.getnframes())
+    except wave.Error:
+        pass
+    # Fallback to ffmpeg conversion for other formats.
     try:
         proc = subprocess.run(
             [
@@ -117,7 +135,7 @@ async def transcribe(
 ):
     """Whisper API compatible transcription endpoint."""
     raw = await file.read()
-    pcm = _convert_to_pcm16(raw)
+    pcm = _convert_to_pcm16(raw, file.filename)
     texts = await _stream_to_backend(pcm)
     final_text = " ".join(t.strip() for t in texts if t).strip()
     return JSONResponse({"text": final_text, "model": model})
