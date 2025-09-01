@@ -203,6 +203,7 @@ TRANSLATIONS_JA = {
     "Hugging Face token valid": "Hugging Faceトークン有効",
     "Downloading": "ダウンロード中",
     "downloaded": "ダウンロード済",
+    "For commercial use of the SimulStreaming backend, please check the SimulStreaming license.": "SimulStreaming をバックエンドとして商用利用する場合、SimulStreaming のライセンスを確認してください。",
     "missing": "未取得",
 }
 
@@ -2135,6 +2136,14 @@ class BackendSettingsDialog(tk.Toplevel):
         r += 1
         ttk.Label(self, text="Backend").grid(row=r, column=0, sticky=tk.W)
         ttk.Entry(self, textvariable=gui.backend, width=20).grid(row=r, column=1, sticky=tk.W)
+        r += 1
+        ttk.Label(
+            self,
+            text=gui._t(
+                "For commercial use of the SimulStreaming backend, please check the SimulStreaming license."
+            ),
+            wraplength=300,
+        ).grid(row=r, column=0, columnspan=2, sticky=tk.W, pady=(0, 8))
         r += 1
         ttk.Label(self, text="Buffer trimming").grid(row=r, column=0, sticky=tk.W)
         ttk.Entry(self, textvariable=gui.buffer_trimming, width=10).grid(row=r, column=1, sticky=tk.W)
