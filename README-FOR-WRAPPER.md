@@ -33,6 +33,12 @@
     - Backend: `python -m whisperlivekit.basic_server`（`--model_cache_dir` にラッパー管理のHFキャッシュを付与）
     - API: `uvicorn wrapper.api.server:app`
   - 録音→WebSocket 送信、テキスト可視化、保存
+  - Advanced Settings は選択式UIを採用（誤入力防止）
+    - `Task`: `transcribe` / `translate`
+    - `Backend`: `simulstreaming` / `faster-whisper`
+    - `Log level`: `DEBUG` / `INFO` / `WARNING` / `ERROR` / `CRITICAL`
+    - `Language`: 主要コード（`auto`, `en`, `ja`, `zh`, `ko`, `fr`, `de`, `es`, `it`, `pt`, `ru`, `hi`, `th`, `vi`, `ar`, `id`, `nl`, `pl`, `tr`, `uk`）+ `Other...`（任意入力）
+    - `Buffer trimming`: `segment` / `sentence`（上流CLI仕様に合わせて選択式）
  
 - API 層（FastAPI）：`wrapper/api/server.py`
   - 受領音声を `ffmpeg` で 16kHz/mono PCM 化 → WebSocket で backend `/asr` へストリーミング → 連結テキスト返却
@@ -145,7 +151,9 @@
 - API: `wrapper/api/server.py`（FFmpeg 変換 → WS `/asr`）
 - モデル管理: `wrapper/app/model_manager.py`、`wrapper/cli/model_manager_cli.py`
 - 設定テンプレート: `wrapper/config/settings.example.json`
-- ライセンス一覧: `wrapper/licenses.json`（GUI の Licenses ボタンから参照、`python wrapper/scripts/generate_licenses.py` で再生成）
+- ライセンス一覧: `wrapper/licenses.json`
+  - GUI の Licenses ボタンから「各ライブラリごとにライセンス本文」を選択表示
+  - 依存更新時は `python wrapper/scripts/generate_licenses.py` を実行し再生成
 
 ## 動作確認チェック
 - `python -m wrapper.cli.main` で GUI が起動し、Start/Stop が機能する

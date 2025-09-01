@@ -801,6 +801,11 @@ class WrapperGUI:
         # reflect token widgets state on startup
         self._update_hf_token_widgets()
         self.use_api_key.trace_add("write", lambda *_: self._update_api_key_widgets())
+        # Normalize saved string choices to avoid invalid values in readonly combos
+        try:
+            self._normalize_saved_choices()
+        except Exception:
+            pass
 
         master.protocol("WM_DELETE_WINDOW", self.on_close)
         # Initialize external toggle effect
@@ -1215,6 +1220,76 @@ class WrapperGUI:
             backs.insert(0, "sortformer")
         return backs
 
+    def available_backends(self) -> list[str]:
+        """Selectable ASR backend implementations for the upstream server."""
+        # 現状の想定バックエンド（実装分岐あり）
+        return [
+            "simulstreaming",
+            "faster-whisper",
+        ]
+
+    def available_tasks(self) -> list[str]:
+        return ["transcribe", "translate"]
+
+    def available_log_levels(self) -> list[str]:
+        return ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+
+    def available_languages(self) -> list[str]:
+        """Common language codes plus 'auto'."""
+        return [
+            "auto",
+            "en",  # English
+            "ja",  # Japanese
+            "zh",  # Chinese (generic)
+            "ko",  # Korean
+            "fr",  # French
+            "de",  # German
+            "es",  # Spanish
+            "it",  # Italian
+            "pt",  # Portuguese
+            "ru",  # Russian
+            "hi",  # Hindi
+            "th",  # Thai
+            "vi",  # Vietnamese
+            "ar",  # Arabic
+            "id",  # Indonesian
+            "nl",  # Dutch
+            "pl",  # Polish
+            "tr",  # Turkish
+            "uk",  # Ukrainian
+        ]
+
+    def _normalize_saved_choices(self) -> None:
+        """Normalize saved string choices to known sets with safe fallbacks."""
+        try:
+            lv = (self.log_level.get() or "").strip().upper()
+            if lv not in self.available_log_levels():
+                lv = "DEBUG"
+            self.log_level.set(lv)
+        except Exception:
+            pass
+        try:
+            be = (self.backend.get() or "").strip()
+            if be not in self.available_backends():
+                be = "simulstreaming"
+            self.backend.set(be)
+        except Exception:
+            pass
+        try:
+            task = (self.task.get() or "").strip()
+            if task not in self.available_tasks():
+                task = "transcribe"
+            self.task.set(task)
+        except Exception:
+            pass
+        try:
+            buf = (self.buffer_trimming.get() or "").strip()
+            if buf not in ("segment", "sentence"):
+                buf = "segment"
+            self.buffer_trimming.set(buf)
+        except Exception:
+            pass
+
     def _update_api_key_widgets(self) -> None:
         # Lock API key controls while running or recording; enable only when Use API key is ON
         running = self.api_proc is not None or self.backend_proc is not None
@@ -1351,13 +1426,37 @@ class WrapperGUI:
             pass
 
     def show_license(self) -> None:
-        """Display project and third-party licenses."""
+        """Display project and third-party licenses per library with full text.
+
+        左にライブラリ一覧、右に選択項目のライセンス本文を表示する。
+        """
         top = tk.Toplevel(self.master)
         top.title("Licenses")
-        text = tk.Text(top, wrap="word")
-        text.pack(fill=tk.BOTH, expand=True)
-        scroll = ttk.Scrollbar(top, orient="vertical", command=text.yview)
-        scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        top.geometry("960x600")
+
+        # ルート横分割
+        paned = ttk.Panedwindow(top, orient=tk.HORIZONTAL)
+        paned.pack(fill=tk.BOTH, expand=True)
+
+        # 左: ライブラリ一覧
+        left = ttk.Frame(paned)
+        left.columnconfigure(0, weight=1)
+        left.rowconfigure(1, weight=1)
+        ttk.Label(left, text=self._t("License"), style="SectionHeader.TLabel").grid(row=0, column=0, sticky="w", padx=6, pady=(6, 2))
+        listbox = tk.Listbox(left, activestyle="dotbox")
+        listbox.grid(row=1, column=0, sticky="nsew", padx=6, pady=(0, 6))
+        lb_scroll = ttk.Scrollbar(left, orient="vertical", command=listbox.yview)
+        lb_scroll.grid(row=1, column=1, sticky="ns", pady=(0, 6))
+        listbox.configure(yscrollcommand=lb_scroll.set)
+
+        # 右: ライセンス本文
+        right = ttk.Frame(paned)
+        right.columnconfigure(0, weight=1)
+        right.rowconfigure(0, weight=1)
+        text = tk.Text(right, wrap="word", state="disabled")
+        text.grid(row=0, column=0, sticky="nsew")
+        scroll = ttk.Scrollbar(right, orient="vertical", command=text.yview)
+        scroll.grid(row=0, column=1, sticky="ns")
         text.configure(yscrollcommand=scroll.set)
         # テーマカラーに合わせて配色
         try:
@@ -1365,50 +1464,118 @@ class WrapperGUI:
         except Exception:
             pass
 
+        # 下: リンク/操作
+        bottom = ttk.Frame(top)
+        bottom.pack(fill=tk.X, padx=6, pady=6)
+        ttk.Button(
+            bottom,
+            text="QuentinFuxa/WhisperLiveKit",
+            command=lambda: webbrowser.open("https://github.com/QuentinFuxa/WhisperLiveKit"),
+        ).pack(side=tk.LEFT)
         try:
-            content = LICENSE_FILE.read_text(encoding="utf-8")
-        except Exception as e:
-            content = f"Failed to load license: {e}"
+            small_font = font.nametofont("TkDefaultFont").copy()
+            size = int(small_font.cget("size"))
+        except Exception:
+            small_font = None
+            size = 10
+        if small_font is not None:
+            small_font.configure(size=max(size - 2, 8))
+        ttk.Label(
+            bottom,
+            text=self._t("This app is a wrapper for the above repository."),
+            font=small_font if small_font is not None else None,
+        ).pack(side=tk.LEFT, padx=8)
+        copy_btn = ttk.Button(bottom, text=self._t("Copy"))
+        copy_btn.pack(side=tk.RIGHT)
 
-        content += "\n\nThird-Party Licenses\n\n"
+        # ペインに追加
+        paned.add(left, weight=1)
+        paned.add(right, weight=3)
+
+        # データソース: 先頭に本体 LICENSE、その後にサードパーティ
+        entries: list[dict[str, str]] = []
+        # 本体
         try:
-            third_party = json.loads(
-                THIRD_PARTY_LICENSES_FILE.read_text(encoding="utf-8")
-            )
+            proj_text = LICENSE_FILE.read_text(encoding="utf-8")
+        except Exception as e:
+            proj_text = f"Failed to load license: {e}"
+        entries.append({
+            "display": "Project: WhisperLiveKit Wrapper",
+            "license": "Project License",
+            "license_text": proj_text,
+        })
+        # 3rd party
+        try:
+            third_party = json.loads(THIRD_PARTY_LICENSES_FILE.read_text(encoding="utf-8"))
         except Exception:
             third_party = []
+        # 表示用に整形・ソート
         for item in third_party:
             name = item.get("name", "")
             version = item.get("version", "")
             lic = item.get("license", "")
-            content += f"{name} {version}\n{lic}\n"
-            lic_text = item.get("license_text", "")
-            if lic_text:
-                content += lic_text.strip() + "\n"
-            content += "\n"
+            entries.append({
+                "display": f"{name} {version} — {lic}",
+                "license": lic or "",
+                "license_text": item.get("license_text", ""),
+                "name": name,
+                "version": version,
+            })
+        entries = [entries[0]] + sorted(entries[1:], key=lambda x: x.get("display", "").lower())
 
-        text.insert("1.0", content)
-        text.config(state="disabled")
+        for e in entries:
+            listbox.insert(tk.END, e.get("display", ""))
 
-        link_frame = ttk.Frame(top)
-        link_frame.pack(fill=tk.X, pady=5)
-        ttk.Button(
-            link_frame,
-            text="QuentinFuxa/WhisperLiveKit",
-            command=lambda: webbrowser.open("https://github.com/QuentinFuxa/WhisperLiveKit"),
-        ).pack()
-        small_font = font.nametofont("TkDefaultFont").copy()
-        size = small_font.cget("size")
+        def show_entry(index: int) -> None:
+            if index < 0 or index >= len(entries):
+                return
+            e = entries[index]
+            body = e.get("license_text") or ""
+            header_lines: list[str] = []
+            if "name" in e:
+                header_lines.append(e.get("display", ""))
+            else:
+                header_lines.append("WhisperLiveKit Wrapper")
+            lic_name = e.get("license", "")
+            if lic_name:
+                header_lines.append(lic_name)
+            header = "\n".join(header_lines)
+            content = header + ("\n\n" if header else "")
+            if body.strip():
+                content += body.strip()
+            else:
+                content += "(No license text bundled. See package metadata.)"
+            text.config(state="normal")
+            text.delete("1.0", tk.END)
+            text.insert("1.0", content)
+            text.config(state="disabled")
+
+        def on_select(_evt=None):  # pragma: no cover - UI event
+            try:
+                sel = listbox.curselection()
+                if sel:
+                    show_entry(int(sel[0]))
+            except Exception:
+                pass
+
+        listbox.bind("<<ListboxSelect>>", on_select)
+
+        def copy_current():  # pragma: no cover - UI event
+            try:
+                data = text.get("1.0", tk.END)
+                self.copy_to_clipboard(data)
+                self._copy_with_feedback(copy_btn, self._t("Copied!"))
+            except Exception:
+                pass
+
+        copy_btn.config(command=copy_current)
+
+        # 初期選択（先頭=本体）
         try:
-            size = int(size)
+            listbox.selection_set(0)
+            show_entry(0)
         except Exception:
             pass
-        small_font.configure(size=max(size - 2, 8))
-        ttk.Label(
-            link_frame,
-            text="This app is a wrapper for the above repository.",
-            font=small_font,
-        ).pack()
 
     def login_hf(self) -> None:
         token = simpledialog.askstring("Hugging Face Login", "Enter token", show="*")
@@ -1520,7 +1687,7 @@ class WrapperGUI:
             except Exception:
                 pass
             return
-        ModelManagerDialog(self.master)
+        ModelManagerDialog(self.master, self)
 
     def _toggle_allow_external(self) -> None:
         # Save current local hosts when enabling
@@ -2129,13 +2296,61 @@ class BackendSettingsDialog(tk.Toplevel):
         ttk.Entry(self, textvariable=gui.min_chunk_size, width=10).grid(row=r, column=1, sticky=tk.W)
         r += 1
         ttk.Label(self, text="Language").grid(row=r, column=0, sticky=tk.W)
-        ttk.Entry(self, textvariable=gui.language, width=10).grid(row=r, column=1, sticky=tk.W)
+        # 言語は主要コード＋autoを提示し、"Other..." で任意入力を許容
+        lang_values = gui.available_languages()
+        cur_lang = (gui.language.get() or "").strip()
+        if cur_lang and cur_lang not in lang_values:
+            lang_values = lang_values + [cur_lang]
+        lang_values = lang_values + ["Other..."]
+        self._lang_combo = ttk.Combobox(
+            self,
+            textvariable=gui.language,
+            values=lang_values,
+            state="readonly",
+            width=15,
+        )
+        self._lang_combo.grid(row=r, column=1, sticky=tk.W)
+        def _on_lang_selected(_e=None):  # pragma: no cover - UI
+            try:
+                val = self._lang_combo.get().strip()
+                if val == "Other...":
+                    new_val = simpledialog.askstring("Language", "Enter language code (e.g., en, ja):")
+                    if new_val:
+                        new_val = new_val.strip()
+                        gui.language.set(new_val)
+                        # 追加した言語を選択肢に反映
+                        vals = list(self._lang_combo.cget("values"))
+                        if new_val not in vals:
+                            vals.insert(-1, new_val)
+                            self._lang_combo.config(values=vals)
+                        # Select the newly entered value
+                        self._lang_combo.set(new_val)
+                    else:
+                        # Revert to previous if cancelled
+                        prev = cur_lang if cur_lang else "auto"
+                        gui.language.set(prev)
+                        self._lang_combo.set(prev)
+            except Exception:
+                pass
+        self._lang_combo.bind("<<ComboboxSelected>>", _on_lang_selected)
         r += 1
         ttk.Label(self, text="Task").grid(row=r, column=0, sticky=tk.W)
-        ttk.Entry(self, textvariable=gui.task, width=15).grid(row=r, column=1, sticky=tk.W)
+        ttk.Combobox(
+            self,
+            textvariable=gui.task,
+            values=gui.available_tasks(),
+            state="readonly",
+            width=15,
+        ).grid(row=r, column=1, sticky=tk.W)
         r += 1
         ttk.Label(self, text="Backend").grid(row=r, column=0, sticky=tk.W)
-        ttk.Entry(self, textvariable=gui.backend, width=20).grid(row=r, column=1, sticky=tk.W)
+        ttk.Combobox(
+            self,
+            textvariable=gui.backend,
+            values=gui.available_backends(),
+            state="readonly",
+            width=20,
+        ).grid(row=r, column=1, sticky=tk.W)
         r += 1
         ttk.Label(
             self,
@@ -2146,13 +2361,25 @@ class BackendSettingsDialog(tk.Toplevel):
         ).grid(row=r, column=0, columnspan=2, sticky=tk.W, pady=(0, 8))
         r += 1
         ttk.Label(self, text="Buffer trimming").grid(row=r, column=0, sticky=tk.W)
-        ttk.Entry(self, textvariable=gui.buffer_trimming, width=10).grid(row=r, column=1, sticky=tk.W)
+        ttk.Combobox(
+            self,
+            textvariable=gui.buffer_trimming,
+            values=["segment", "sentence"],
+            state="readonly",
+            width=10,
+        ).grid(row=r, column=1, sticky=tk.W)
         r += 1
         ttk.Label(self, text="Buffer trimming sec").grid(row=r, column=0, sticky=tk.W)
         ttk.Entry(self, textvariable=gui.buffer_trimming_sec, width=10).grid(row=r, column=1, sticky=tk.W)
         r += 1
         ttk.Label(self, text="Log level").grid(row=r, column=0, sticky=tk.W)
-        ttk.Entry(self, textvariable=gui.log_level, width=10).grid(row=r, column=1, sticky=tk.W)
+        ttk.Combobox(
+            self,
+            textvariable=gui.log_level,
+            values=gui.available_log_levels(),
+            state="readonly",
+            width=10,
+        ).grid(row=r, column=1, sticky=tk.W)
         r += 1
         ttk.Label(self, text="SSL certfile").grid(row=r, column=0, sticky=tk.W)
         cf = ttk.Frame(self)
@@ -2206,37 +2433,70 @@ class DiarizationSettingsDialog(tk.Toplevel):
 
 
 class ModelManagerDialog(tk.Toplevel):
-    def __init__(self, master: tk.Misc):
+    def __init__(self, master: tk.Misc, gui: 'WrapperGUI | None' = None):
         super().__init__(master)
         self.title("Model Manager")
-        self.resizable(False, False)
+        # ウィンドウを見やすい初期サイズにし、リサイズを許可
+        try:
+            self.geometry("760x520")
+        except Exception:
+            pass
+        try:
+            self.resizable(True, True)
+        except Exception:
+            pass
+
+        # レイアウト: 上にスクロール可能な一覧、下に操作ボタン
+        self.columnconfigure(0, weight=1)
+        self.rowconfigure(0, weight=1)
+
+        scroll = ScrollableFrame(self)
+        scroll.grid(row=0, column=0, sticky="nsew")
+        inner = scroll.inner
+        # 列幅調整
+        for c, w in [(0, 0), (1, 0), (2, 0), (3, 1), (4, 0)]:
+            try:
+                inner.columnconfigure(c, weight=w)
+            except Exception:
+                pass
 
         self.rows: dict[str, tuple[tk.StringVar, ttk.Progressbar, ttk.Button]] = {}
+        _t = (gui._t if gui is not None and hasattr(gui, "_t") else (lambda s: s))
+        self._tr = _t
         for i, name in enumerate(ALL_MODELS):
-            ttk.Label(self, text=name).grid(row=i, column=0, sticky=tk.W, padx=5, pady=2)
-            ttk.Label(self, text=MODEL_USAGE.get(name, "")).grid(row=i, column=1, sticky=tk.W)
+            ttk.Label(inner, text=name).grid(row=i, column=0, sticky=tk.W, padx=5, pady=2)
+            ttk.Label(inner, text=MODEL_USAGE.get(name, "")).grid(row=i, column=1, sticky=tk.W)
             status = tk.StringVar()
             if model_manager.is_model_downloaded(name):
-                status.set(self._t("downloaded"))
+                status.set(_t("downloaded"))
             else:
-                status.set(self._t("missing"))
-            ttk.Label(self, textvariable=status).grid(row=i, column=2, sticky=tk.W)
-            pb = ttk.Progressbar(self, length=120)
-            pb.grid(row=i, column=3, padx=5)
+                status.set(_t("missing"))
+            ttk.Label(inner, textvariable=status).grid(row=i, column=2, sticky=tk.W)
+            pb = ttk.Progressbar(inner, length=140)
+            pb.grid(row=i, column=3, padx=5, sticky="ew")
             action = ttk.Button(
-                self,
+                inner,
                 text="Delete" if model_manager.is_model_downloaded(name) else "Download",
                 command=lambda n=name: self._on_action(n),
             )
             action.grid(row=i, column=4, padx=5)
             self.rows[name] = (status, pb, action)
 
+        # 下段: 閉じるボタン
+        btns = ttk.Frame(self)
+        btns.grid(row=1, column=0, sticky="ew", padx=6, pady=(4, 6))
+        try:
+            btns.columnconfigure(0, weight=1)
+        except Exception:
+            pass
+        ttk.Button(btns, text="Close", command=self.destroy).pack(anchor="e")
+
     def _on_action(self, name: str) -> None:
         status, pb, btn = self.rows[name]
         if model_manager.is_model_downloaded(name):
             model_manager.delete_model(name)
-            status.set(self._t("missing"))
-            btn.config(text=self._t("Download"))
+            status.set("missing")
+            btn.config(text=self._tr("Download"))
             pb.config(value=0)
         else:
             btn.config(state=tk.DISABLED)
@@ -2247,8 +2507,8 @@ class ModelManagerDialog(tk.Toplevel):
             def worker() -> None:
                 try:
                     model_manager.download_model(name, progress_cb=progress)
-                    status.set(self._t("downloaded"))
-                    btn.config(text=self._t("Delete"))
+                    status.set("downloaded")
+                    btn.config(text=self._tr("Delete"))
                 except Exception as e:  # pragma: no cover - GUI display
                     status.set(str(e))
                 finally:
