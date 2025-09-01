@@ -26,8 +26,8 @@
   - Web UI（upstream）をブラウザで開く導線あり
   - ヘッダー右上に CUDA/FFmpeg の利用可否を表示し、最右にライセンスボタンを配置
 - API 層（FastAPI）: `wrapper/api/server.py`
-  - `POST /v1/audio/transcriptions`: 受領音声を FFmpeg で 16kHz/mono PCM 化 → backend `/asr` へWS中継 → テキスト連結返却
-- 依存:
+  - `POST /v1/audio/transcriptions`: 入力形式を判定し、16kHz/mono の wav/raw はそのまま、その他は FFmpeg で 16kHz/mono PCM 化 → backend `/asr` へWS中継 → テキスト連結返却
+  - 依存:
   - upstream パッケージ `whisperlivekit`（モデル推論・WSサーバ・Web UI 等）
   - `ffmpeg`（GUI録音のエンコード/REST入力のデコード）
 
@@ -38,6 +38,7 @@
   - 録音停止時は「空バイト（b""）」を送信して EOF を明示。
 - REST API（Wrapper）: `POST http://<api_host>:<api_port>/v1/audio/transcriptions`
   - multipart フォーム: `file=@sample.wav`, `model=whisper-1`
+  - 音声形式: 16kHz モノラル (wav/raw) を推奨。これらは再変換せずに処理され、その他の形式は ffmpeg により変換される。
   - APIキー（任意）: `X-API-Key: <key>` または `Authorization: Bearer <key>`
   - レスポンス例: `{ "text": "...", "model": "whisper-1" }`
 
