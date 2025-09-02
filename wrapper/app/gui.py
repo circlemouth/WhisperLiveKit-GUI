@@ -494,13 +494,16 @@ class WrapperGUI:
         content = ttk.Panedwindow(scroll_container.inner, orient=tk.HORIZONTAL)
         content.grid(row=0, column=0, sticky="ew")
         scroll_container.inner.columnconfigure(0, weight=1)
+        # 後続でログ欄を追加するため参照を保持
+        self.scroll_container = scroll_container
         self.content = content
 
-        # 左カラム: Server Settings + Endpoints（スクロールなし、常時表示）
+        # 左カラム: Server Settings のみ（右カラムの高さに合わせて拡張）
         left_col = ttk.Frame(content)
         left_col.columnconfigure(0, weight=1)
+        left_col.rowconfigure(0, weight=1)  # Server Settingsセクションが拡張可能
         server_frame = ttk.Labelframe(left_col, text="Server Settings")
-        server_frame.grid(row=0, column=0, sticky="ew")
+        server_frame.grid(row=0, column=0, sticky="nsew")  # 縦方向にも拡張
         server_frame.columnconfigure(1, weight=1)
         config_frame = server_frame
         self.left_col = left_col
@@ -523,11 +526,15 @@ class WrapperGUI:
         ttk.Label(config_frame, text="Backend").grid(row=r, column=0, sticky=tk.W)
         be_row = ttk.Frame(config_frame)
         be_row.grid(row=r, column=1, sticky="ew")
-        be_row.columnconfigure(1, weight=1)
-        ttk.Label(be_row, text="Host").grid(row=0, column=0, padx=(0, 4))
+        be_row.columnconfigure(1, weight=1, minsize=120)  # Backend Host入力欄の最低幅を120pxに設定
+        # 参照保持（レスポンシブ再配置用）
+        self.be_row = be_row
+        self.be_host_label = ttk.Label(be_row, text="Host")
+        self.be_host_label.grid(row=0, column=0, padx=(0, 4))
         self.backend_host_entry = ttk.Entry(be_row, textvariable=self.backend_host, width=18)
         self.backend_host_entry.grid(row=0, column=1, sticky="ew")
-        ttk.Label(be_row, text="Port").grid(row=0, column=2, padx=(8, 4))
+        self.be_port_label = ttk.Label(be_row, text="Port")
+        self.be_port_label.grid(row=0, column=2, padx=(8, 4))
         self.backend_port_entry = ttk.Entry(be_row, textvariable=self.backend_port, width=8)
         self.backend_port_entry.grid(row=0, column=3, sticky=tk.W)
         r += 1
@@ -535,11 +542,15 @@ class WrapperGUI:
         ttk.Label(config_frame, text="API").grid(row=r, column=0, sticky=tk.W)
         api_row = ttk.Frame(config_frame)
         api_row.grid(row=r, column=1, sticky="ew")
-        api_row.columnconfigure(1, weight=1)
-        ttk.Label(api_row, text="Host").grid(row=0, column=0, padx=(0, 4))
+        api_row.columnconfigure(1, weight=1, minsize=120)  # API Host入力欄の最低幅を120pxに設定
+        # 参照保持（レスポンシブ再配置用）
+        self.api_row = api_row
+        self.api_host_label = ttk.Label(api_row, text="Host")
+        self.api_host_label.grid(row=0, column=0, padx=(0, 4))
         self.api_host_entry = ttk.Entry(api_row, textvariable=self.api_host, width=18)
         self.api_host_entry.grid(row=0, column=1, sticky="ew")
-        ttk.Label(api_row, text="Port").grid(row=0, column=2, padx=(8, 4))
+        self.api_port_label = ttk.Label(api_row, text="Port")
+        self.api_port_label.grid(row=0, column=2, padx=(8, 4))
         self.api_port_entry = ttk.Entry(api_row, textvariable=self.api_port, width=8)
         self.api_port_entry.grid(row=0, column=3, sticky=tk.W)
         r += 1
@@ -661,6 +672,8 @@ class WrapperGUI:
         hf_links = ttk.Frame(config_frame)
         hf_links.grid(row=r, column=0, columnspan=2, sticky="ew")
         hf_links.columnconfigure(0, weight=1)
+        # 左列の最低幅を十分に確保（潰れ防止）
+        config_frame.columnconfigure(1, minsize=450)
         ttk.Button(
             hf_links,
             text="Get HF token",
@@ -697,31 +710,83 @@ class WrapperGUI:
         self.adv_btn.pack(side="left")
         r += 1
         
-        # API Start/Stopボタンを独立した行に配置（目立つ＆重ならない）
+        # API Start/Stopボタン（サーバー設定の最下部、中央揃え・横並び・等分）
         api_control_row = ttk.Frame(config_frame)
-        api_control_row.grid(row=r, column=0, columnspan=2, sticky="ew", pady=(8, 0))
-        api_control_row.columnconfigure(0, weight=1)
-        
-        # 最も目立つAPIコントロールボタン（大きく、明確な配色、カスタムスタイル）
-        api_buttons = ttk.Frame(api_control_row)
-        api_buttons.grid(row=0, column=0, sticky="e")
-        
-        self.start_btn = ttk.Button(api_buttons, text="🚀 Start API", command=self.start_api, 
-                                  bootstyle="success", width=15, style="ApiStart.TButton")
-        self.start_btn.pack(side="left", padx=(0, 8), ipadx=8, ipady=4)
-        self.stop_btn = ttk.Button(api_buttons, text="🛑 Stop API", command=self.stop_api, 
-                                 bootstyle="danger", width=15, style="ApiStop.TButton")
-        self.stop_btn.pack(side="right", ipadx=8, ipady=4)
+        api_control_row.grid(row=r, column=0, columnspan=2, sticky="ew", pady=(12, 0))
+        api_control_row.columnconfigure(0, weight=1, uniform="api")
+        api_control_row.columnconfigure(1, weight=1, uniform="api")
 
-        # 右カラム: Recorder（PanedWindow右ペイン）
+        self.start_btn = ttk.Button(
+            api_control_row,
+            text="🚀 Start API",
+            command=self.start_api,
+            bootstyle="success",
+            style="ApiStart.TButton",
+        )
+        self.start_btn.grid(row=0, column=0, sticky="ew", padx=(0, 6))
+
+        self.stop_btn = ttk.Button(
+            api_control_row,
+            text="🛑 Stop API",
+            command=self.stop_api,
+            bootstyle="danger",
+            style="ApiStop.TButton",
+        )
+        self.stop_btn.grid(row=0, column=1, sticky="ew", padx=(6, 0))
+
+        # 右カラム: Endpoints + Recorder（PanedWindow右ペイン）
         right_panel = ttk.Frame(content)
         right_panel.columnconfigure(0, weight=1)
-        right_panel.rowconfigure(0, weight=1)
+        right_panel.rowconfigure(1, weight=1)  # Recorderセクションが拡張可能
         self.right_panel = right_panel
 
+        # Endpointsを右カラムの上部に移動（1行固定・サブフレームでエントリとボタンを並べる）
+        endpoints_frame = ttk.Labelframe(right_panel, text="Endpoints")
+        endpoints_frame.grid(row=0, column=0, sticky="ew", pady=(0, 5))
+        endpoints_frame.columnconfigure(1, weight=1)  # 右列（サブフレーム）を伸縮
+        self.endpoints_frame = endpoints_frame
+        er = 0
+        # Backend Web UI
+        ttk.Label(endpoints_frame, text="Backend Web UI").grid(row=er, column=0, sticky=tk.W)
+        web_row = ttk.Frame(endpoints_frame)
+        web_row.grid(row=er, column=1, sticky="ew")
+        web_row.columnconfigure(0, weight=1)
+        self.web_endpoint_entry = ttk.Entry(web_row, textvariable=self.web_endpoint, width=40, state="readonly")
+        self.web_endpoint_entry.grid(row=0, column=0, sticky="ew")
+        self.open_web_btn = ttk.Button(web_row, text="Open Web GUI", command=self.open_web_gui, state=tk.DISABLED)
+        self.open_web_btn.grid(row=0, column=1, padx=(6,0), sticky="e")
+        er += 1
+        # Streaming WebSocket
+        ttk.Label(endpoints_frame, text="Streaming WebSocket /asr").grid(row=er, column=0, sticky=tk.W)
+        ws_row = ttk.Frame(endpoints_frame)
+        ws_row.grid(row=er, column=1, sticky="ew")
+        ws_row.columnconfigure(0, weight=1)
+        self.ws_endpoint_entry = ttk.Entry(ws_row, textvariable=self.ws_endpoint, width=40, state="readonly")
+        self.ws_endpoint_entry.grid(row=0, column=0, sticky="ew")
+        self.copy_ws_btn = ttk.Button(ws_row, text="Copy", command=lambda: self._copy_with_feedback(self.copy_ws_btn, self.ws_endpoint.get()))
+        self.copy_ws_btn.grid(row=0, column=1, padx=(6,0), sticky="e")
+        er += 1
+        # File transcription API
+        ttk.Label(endpoints_frame, text="File transcription API").grid(row=er, column=0, sticky=tk.W)
+        api_row = ttk.Frame(endpoints_frame)
+        api_row.grid(row=er, column=1, sticky="ew")
+        api_row.columnconfigure(0, weight=1)
+        self.api_endpoint_entry = ttk.Entry(api_row, textvariable=self.api_endpoint, width=40, state="readonly")
+        self.api_endpoint_entry.grid(row=0, column=0, sticky="ew")
+        self.copy_api_btn = ttk.Button(api_row, text="Copy", command=lambda: self._copy_with_feedback(self.copy_api_btn, self.api_endpoint.get()))
+        self.copy_api_btn.grid(row=0, column=1, padx=(6,0), sticky="e")
+        er += 1
+        note_font = font.Font(size=8)
+        self.endpoints_note_label = ttk.Label(
+            endpoints_frame,
+            text="※16kHz モノラル (wav, raw) 形式での入力を推奨",
+            font=note_font,
+        )
+        self.endpoints_note_label.grid(row=er, column=0, columnspan=2, sticky=tk.W)
+        
         record_frame = ttk.Labelframe(right_panel, text="Recorder")
-        # ウィンドウ高いっぱいに拡張
-        record_frame.grid(row=0, column=0, sticky="nsew")
+        # Endpointsの下に配置、縦に拡張
+        record_frame.grid(row=1, column=0, sticky="nsew")
         record_frame.columnconfigure(1, weight=1)
         self.record_frame = record_frame
         # Recording controls
@@ -786,42 +851,28 @@ class WrapperGUI:
         self.save_browse_btn = ttk.Button(record_frame, text="Browse", command=self.choose_save_path)
         self.save_browse_btn.grid(row=r, column=2, padx=5)
         r += 1
-        # Endpoints（左カラムの Server Settings の下に配置）
-        endpoints_frame = ttk.Labelframe(left_col, text="Endpoints")
-        endpoints_frame.grid(row=1, column=0, sticky="ew", pady=(5, 0))
-        endpoints_frame.columnconfigure(1, weight=1)
-        endpoints_frame.columnconfigure(2, weight=0)
-        self.endpoints_frame = endpoints_frame
-        er = 0
-        ttk.Label(endpoints_frame, text="Backend Web UI").grid(row=er, column=0, sticky=tk.W)
-        ttk.Entry(endpoints_frame, textvariable=self.web_endpoint, width=40, state="readonly").grid(row=er, column=1, sticky="ew")
-        self.open_web_btn = ttk.Button(endpoints_frame, text="Open Web GUI", command=self.open_web_gui, state=tk.DISABLED)
-        self.open_web_btn.grid(row=er, column=2, padx=5, sticky="ew")
-        er += 1
-        ttk.Label(endpoints_frame, text="Streaming WebSocket /asr").grid(row=er, column=0, sticky=tk.W)
-        ttk.Entry(endpoints_frame, textvariable=self.ws_endpoint, width=40, state="readonly").grid(row=er, column=1, sticky="ew")
-        self.copy_ws_btn = ttk.Button(endpoints_frame, text="Copy", command=lambda: self._copy_with_feedback(self.copy_ws_btn, self.ws_endpoint.get()))
-        self.copy_ws_btn.grid(row=er, column=2, padx=5, sticky="ew")
-        er += 1
-        ttk.Label(endpoints_frame, text="File transcription API").grid(row=er, column=0, sticky=tk.W)
-        ttk.Entry(endpoints_frame, textvariable=self.api_endpoint, width=40, state="readonly").grid(row=er, column=1, sticky="ew")
-        self.copy_api_btn = ttk.Button(endpoints_frame, text="Copy", command=lambda: self._copy_with_feedback(self.copy_api_btn, self.api_endpoint.get()))
-        self.copy_api_btn.grid(row=er, column=2, padx=5, sticky="ew")
-        er += 1
-        note_font = font.Font(size=8)
-        ttk.Label(
-            endpoints_frame,
-            text="※16kHz モノラル (wav, raw) 形式での入力を推奨",
-            font=note_font,
-        ).grid(row=er, column=0, columnspan=3, sticky=tk.W)
-        # 列2の最小幅を Open Web GUI の要求幅に合わせる
+        # --- Logs: 右カラムの Recorder の下に配置 ---
+        log_frame = ttk.Labelframe(right_panel, text="Logs")
+        log_frame.grid(row=2, column=0, sticky="nsew", pady=(6, 0))
+        right_panel.rowconfigure(2, weight=1)
+        log_frame.columnconfigure(0, weight=1)
+        log_frame.rowconfigure(0, weight=1)
+        self.log_text = tk.Text(log_frame, state="disabled", wrap="none", height=10)
         try:
-            endpoints_frame.update_idletasks()
-            col2_min = self.open_web_btn.winfo_reqwidth()
-            endpoints_frame.columnconfigure(2, minsize=col2_min)
+            self.log_text.configure(bg=self._bg, fg=self._fg, insertbackground=self._fg)
         except Exception:
             pass
-        # ステータスバーは最下段に全幅で配置
+        self.log_text.grid(row=0, column=0, sticky="nsew")
+        log_scroll = ttk.Scrollbar(log_frame, orient="vertical", command=self.log_text.yview)
+        log_scroll.grid(row=0, column=1, sticky="ns")
+        self.log_text.configure(yscrollcommand=log_scroll.set)
+        try:
+            self.log_text.tag_configure("backend", foreground="#8ec07c")
+            self.log_text.tag_configure("api", foreground="#83a598")
+            self.log_text.tag_configure("stderr", foreground="#fb4934")
+        except Exception:
+            pass
+        # ステータスバーは最下段に全幅で配置（2カラムの下）
         row += 1
         status = ttk.Frame(master)
         status.grid(row=row, column=0, sticky="ew", padx=5, pady=(0,5))
@@ -835,6 +886,7 @@ class WrapperGUI:
 
         self.backend_proc: subprocess.Popen | None = None
         self.api_proc: subprocess.Popen | None = None
+        self._log_threads: list[threading.Thread] = []
 
         self._update_diarization_fields()
         self._update_hf_token_widgets()
@@ -879,17 +931,14 @@ class WrapperGUI:
             self.content.add(self.right_panel, weight=1)
         except Exception:
             pass
-        # 左カラム（Server+Endpoints）の横幅を全体の 2/3 に固定し、ユーザー操作でも維持
-        self._left_width_ratio = 2 / 3
+        # 左右の比率固定は廃止（ユーザーのリサイズに任せる）
+        self._localize_widgets()
+        # 左右ペインの最小幅を固定（動的変更は行わず潰れを防止）
         try:
-            for seq in ("<Configure>", "<ButtonPress-1>", "<B1-Motion>", "<ButtonRelease-1>"):
-                self.content.bind(seq, self._enforce_fixed_left_width, add=True)
-            # 初期適用
-            self.master.after(120, self._apply_fixed_left_width)
+            self.content.paneconfigure(self.left_col, minsize=800)
+            self.content.paneconfigure(self.right_panel, minsize=420)
         except Exception:
             pass
-        # 最小幅の動的制約は廃止（自由な横幅調整を許容）
-        self._localize_widgets()
 
     def _t(self, text: str) -> str:
         return self._translations.get(text, text)
@@ -918,33 +967,16 @@ class WrapperGUI:
             pass
         self._lock_minsize_by_content()
 
-    # --- 左ペイン幅の固定（全体の 2/3） ---
-    def _apply_fixed_left_width(self) -> None:
-        try:
-            self.master.update_idletasks()
-            total_w = max(self.content.winfo_width(), 1)
-            left_w = int(total_w * self._left_width_ratio)
-            try:
-                self.content.sashpos(0, left_w)
-            except Exception:
-                pass
-        except Exception:
-            pass
-
-    def _enforce_fixed_left_width(self, *_: object) -> None:
-        try:
-            self.master.after_idle(self._apply_fixed_left_width)
-        except Exception:
-            pass
+    # 左右ペイン比率の固定ロジックは撤廃
 
     def _lock_minsize_by_content(self) -> None:
         # スクロール対応：最小サイズのみ設定し、縦方向リサイズを許可
         root = self.master
         try:
             root.update_idletasks()
-            # 横幅の最小幅を設定
-            min_w = 720
-            min_h = 500  # 縦方向の最小高さを設定（スクロール可能）
+            # 横幅の最小幅を設定（左右ペインの最小幅を合算し、余白を加味）
+            min_w = 1400
+            min_h = 800  # 縦方向の最小高さを設定（スクロール可能）
             # 最小サイズのみ設定（固定サイズは設定しない）
             root.minsize(min_w, min_h)
             try:
@@ -962,6 +994,53 @@ class WrapperGUI:
     # （横幅制約の実装は撤廃）
 
     # 高さキャップは撤廃（Recorder は右ペインの全高を使用）
+
+    # --- ログ表示ユーティリティ ---
+    def _append_log(self, source: str, text: str, is_stderr: bool = False) -> None:
+        try:
+            tag = None
+            if is_stderr:
+                tag = "stderr"
+            else:
+                if source == "backend":
+                    tag = "backend"
+                elif source == "api":
+                    tag = "api"
+            self.log_text.configure(state="normal")
+            if tag:
+                self.log_text.insert("end", text, tag)
+            else:
+                self.log_text.insert("end", text)
+            # 軽いトリミング（過剰肥大の防止）
+            try:
+                if int(self.log_text.index('end-1c').split('.')[0]) > 2000:
+                    self.log_text.delete('1.0', '200.0')
+            except Exception:
+                pass
+            self.log_text.see("end")
+            self.log_text.configure(state="disabled")
+        except Exception:
+            pass
+
+    def _start_log_reader(self, proc: subprocess.Popen, source: str) -> None:
+        if proc.stdout is None or proc.stderr is None:
+            return
+        def _read_stream(stream, is_stderr: bool = False):
+            try:
+                for line in iter(stream.readline, ''):
+                    if not line:
+                        break
+                    self.master.after(0, self._append_log, source, line, is_stderr)
+            except Exception:
+                pass
+        t_out = threading.Thread(target=_read_stream, args=(proc.stdout, False), daemon=True)
+        t_err = threading.Thread(target=_read_stream, args=(proc.stderr, True), daemon=True)
+        t_out.start(); t_err.start()
+        self._log_threads.extend([t_out, t_err])
+
+    # 左カラムの二段化ロジックは廃止（最小幅で保護）
+
+    # 右側エンドポイントは1行固定（サブフレーム内でボタン/エントリを横並び）
 
     def start_api(self):
         if self.api_proc or self.backend_proc:
@@ -1157,7 +1236,18 @@ class WrapperGUI:
         backend_cmd += ["--frame-threshold", str(self.frame_threshold.get())]
 
         # Launch backend with propagated environment (includes HF token/cache paths)
-        self.backend_proc = subprocess.Popen(backend_cmd, env=env)
+        self.backend_proc = subprocess.Popen(
+            backend_cmd,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1,
+        )
+        try:
+            self._start_log_reader(self.backend_proc, "backend")
+        except Exception:
+            pass
         # 自動でブラウザは開かない（必要なら Endpoints の "Open Web GUI" ボタンから開く）
         time.sleep(2)
 
@@ -1184,10 +1274,22 @@ class WrapperGUI:
                 a_port,
             ],
             env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1,
         )
+        try:
+            self._start_log_reader(self.api_proc, "api")
+        except Exception:
+            pass
         self._set_running_state(True)
 
     def stop_api(self):
+        try:
+            self._append_log("gui", "Stopping processes...\n")
+        except Exception:
+            pass
         for proc in [self.api_proc, self.backend_proc]:
             if proc and proc.poll() is None:
                 proc.terminate()
