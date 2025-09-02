@@ -489,19 +489,16 @@ class WrapperGUI:
         # Toolbar（再生/設定アイコン）は機能重複のため削除
 
         # スクロール可能な2カラムメインコンテンツ領域（下部にログ用パネルを備えた縦分割）
-        body_pane = ttk.Panedwindow(master, orient=tk.VERTICAL)
-        body_pane.grid(row=row, column=0, sticky="nsew", padx=10, pady=5)
+        scroll_container = ScrollableFrame(master)
+        scroll_container.grid(row=row, column=0, sticky="nsew", padx=10, pady=5)
         master.rowconfigure(row, weight=1)
-        scroll_container = ScrollableFrame(body_pane)
-        body_pane.add(scroll_container, weight=3)
-        self.body_pane = body_pane
+        scroll_container.inner.columnconfigure(0, weight=1)
+        # 後続でログ欄を追加するため参照を保持
+        self.scroll_container = scroll_container
 
         # PanedWindowをスクロール可能フレーム内に配置
         content = ttk.Panedwindow(scroll_container.inner, orient=tk.HORIZONTAL)
         content.grid(row=0, column=0, sticky="ew")
-        scroll_container.inner.columnconfigure(0, weight=1)
-        # 後続でログ欄を追加するため参照を保持
-        self.scroll_container = scroll_container
         self.content = content
 
         # 左カラム: Server Settings のみ（右カラムの高さに合わせて拡張）
@@ -858,11 +855,12 @@ class WrapperGUI:
         self.save_browse_btn = ttk.Button(record_frame, text="Browse", command=self.choose_save_path)
         self.save_browse_btn.grid(row=r, column=2, padx=5)
         r += 1
-        # --- Logs & status panel (下部パネル, リサイズ可能) ---
-        log_panel = ttk.Frame(self.body_pane)
+        # --- Logs & status panel (ログ欄もスクロール対象) ---
+        log_panel = ttk.Frame(self.scroll_container.inner)
         log_panel.columnconfigure(0, weight=1)
         log_panel.rowconfigure(1, weight=1)
-        self.body_pane.add(log_panel, weight=1)
+        self.scroll_container.inner.rowconfigure(1, weight=1)
+        log_panel.grid(row=1, column=0, sticky="nsew", pady=(5,0))
         status = ttk.Frame(log_panel)
         status.grid(row=0, column=0, sticky="ew")
         status.columnconfigure(1, weight=1)
@@ -945,9 +943,6 @@ class WrapperGUI:
         # 固定2カラムレイアウトを適用し、最小サイズを設定
         self.master.after(0, self._apply_fixed_layout)
         self.master.after(50, self._lock_minsize_by_content)
-        # ログ欄の固定高さ（ウィンドウリサイズでも維持）を初期化
-        self._fixed_log_panel_height: int | None = None
-        self.master.after(100, self._init_fixed_log_height)
         # PanedWindow に左右ペインを追加（左:固定、右:拡張）
         try:
             # 左を広めに確保（縮小/拡張の配分で左優先）
@@ -994,9 +989,12 @@ class WrapperGUI:
         # 初期サッシュ位置を左寄りに（右をやや狭める）
         try:
             w = self.content.winfo_width()
-            if w > 0:
-                # 左約62%, 右約38%
-                self.content.sashpos(0, int(w * 0.62))
+            if w <= 1:
+                # レイアウトが確定していない場合は再試行し、左ペインが消えるのを防ぐ
+                self.master.after(50, self._apply_fixed_layout)
+                return
+            # 左約62%, 右約38%
+            self.content.sashpos(0, int(w * 0.62))
         except Exception:
             pass
 
@@ -1028,47 +1026,6 @@ class WrapperGUI:
     # （横幅制約の実装は撤廃）
 
     # 高さキャップは撤廃（Recorder は右ペインの全高を使用）
-
-    # --- ログ欄の固定高さ制御 ---
-    def _init_fixed_log_height(self) -> None:
-        """ログパネルの希望高さ（ピクセル）を計算し、PanedWindowのサッシュ位置を固定する。
-        『今の半分』= 従来8行→4行にしたTextの要求高さ＋備考ラベル＋余白＋ステータス行
-        """
-        try:
-            self.master.update_idletasks()
-            # ステータス行とログ枠の要求高さから合計を算出
-            status_h = self.status_bar.winfo_reqheight() if hasattr(self, "status_bar") else 0
-            # log_frameはText(4行)と備考ラベルを含む
-            log_frame: tk.Widget | None = None
-            # self.log_note_labelの親が Labelframe（ログ枠）
-            if hasattr(self, "log_note_label"):
-                log_frame = self.log_note_label.nametowidget(self.log_note_label.winfo_parent())
-            log_h = log_frame.winfo_reqheight() if log_frame else (self.log_text.winfo_reqheight())
-            fixed = int(status_h + log_h + 6)  # 少し余白
-            if fixed <= 0:
-                return
-            self._fixed_log_panel_height = fixed
-            # 以後のリサイズで常に一定高さに保つ
-            self.body_pane.bind("<Configure>", self._keep_log_pane_fixed, add=True)
-            # 初回適用
-            self._keep_log_pane_fixed()
-        except Exception:
-            pass
-
-    def _keep_log_pane_fixed(self, _e: object | None = None) -> None:
-        try:
-            if self._fixed_log_panel_height is None:
-                return
-            # サッシュ位置を、全高 - 固定高 に設定（下ペイン固定）
-            total_h = self.body_pane.winfo_height()
-            pos = max(0, total_h - self._fixed_log_panel_height)
-            # サッシュは0番目（縦分割）
-            try:
-                self.body_pane.sashpos(0, pos)
-            except Exception:
-                pass
-        except Exception:
-            pass
 
     # --- ログ表示ユーティリティ ---
     def _append_log(self, source: str, text: str, is_stderr: bool = False) -> None:
