@@ -1,5 +1,12 @@
 # WhisperLiveKit Wrapper 仕様書 (README-FOR-WRAPPER)
 
+> 付記（問題点サマリ）
+> - 最近判明した接続/入出力の問題は `WRAPPER-DEV-LOG.md`（2025-09-02）に詳細を記録。
+> - 要点:
+>   - REST→Backend の WebSocket ハンドシェイク遅延/失敗は、接続先不一致や IPv6/IPv4 の食い違いが主因。`WRAPPER_BACKEND_*` を明示設定（特に `WRAPPER_BACKEND_CONNECT_HOST=127.0.0.1`）。
+>   - FFmpeg 書き込み失敗は raw PCM を送っていたことが原因。修正済み（コンテナ付き送信、`.raw` は WAV 化）。
+>   - OpenAI Whisper API 互換: `model` は必須だが無視。`response_format=json|text|srt|vtt|verbose_json` 対応、エラーは OpenAI 風 JSON。
+
 本リポジトリは upstream（whisperlivekit）を直接改変せず、GUI と API のラッパーとして外側から統合・拡張します。変更は本書・開発ログ・`wrapper/` 配下に限定します。
 
 ## 目的 / 非目的

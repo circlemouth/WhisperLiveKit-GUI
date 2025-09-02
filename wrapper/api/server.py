@@ -6,7 +6,8 @@ import wave
 from typing import List
 
 from fastapi import FastAPI, File, UploadFile, HTTPException, Form, Request, Depends
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
+from fastapi.exceptions import RequestValidationError
 
 import websockets
 
@@ -30,6 +31,50 @@ REQUIRE_API_KEY = os.getenv("WRAPPER_REQUIRE_API_KEY", "0") == "1"
 API_KEY = os.getenv("WRAPPER_API_KEY", "")
 
 app = FastAPI(title="WhisperLiveKit Wrapper API")
+
+
+# -----------------------------
+# OpenAI-style error formatting
+# -----------------------------
+def _openai_error_response(message: str, status_code: int) -> JSONResponse:
+    if status_code == 401:
+        err_type = "authentication_error"
+    elif status_code == 400:
+        err_type = "invalid_request_error"
+    else:
+        err_type = "server_error"
+    return JSONResponse(status_code=status_code, content={
+        "error": {
+            "message": message,
+            "type": err_type,
+            "code": None,
+        }
+    })
+
+
+@app.exception_handler(HTTPException)
+async def _http_exception_handler(_request: Request, exc: HTTPException):
+    detail = exc.detail if isinstance(exc.detail, str) else str(exc.detail)
+    # Map known details to user-friendly messages
+    if detail == "unauthorized":
+        return _openai_error_response("Invalid authentication credentials.", 401)
+    if detail == "api_key_not_configured":
+        return _openai_error_response("API key required but not configured on server.", 500)
+    if detail == "ffmpeg_not_found":
+        return _openai_error_response("FFmpeg is not installed or not in PATH.", 500)
+    if detail == "ffmpeg_failed":
+        return _openai_error_response("FFmpeg failed to decode the provided audio.", 400)
+    return _openai_error_response(detail or "Unhandled error.", exc.status_code)
+
+
+@app.exception_handler(Exception)
+async def _generic_exception_handler(_request: Request, exc: Exception):
+    return _openai_error_response(f"Internal server error: {exc}", 500)
+
+
+@app.exception_handler(RequestValidationError)
+async def _validation_exception_handler(_request: Request, exc: RequestValidationError):
+    return _openai_error_response(f"Invalid request: {exc}", 400)
 
 
 def _convert_to_pcm16(file_bytes: bytes) -> bytes:
@@ -61,7 +106,10 @@ def _convert_to_pcm16(file_bytes: bytes) -> bytes:
 
 
 def _extract_pcm16(upload: UploadFile, file_bytes: bytes) -> bytes:
-    """Return 16kHz mono PCM, skipping conversion when possible."""
+    """Deprecated in route: prefer container bytes for FFmpeg stdin.
+
+    Kept for potential future use. Returns PCM16/16kHz/mono.
+    """
     name = (upload.filename or "").lower()
     if name.endswith(".raw"):
         return file_bytes
@@ -79,9 +127,26 @@ def _extract_pcm16(upload: UploadFile, file_bytes: bytes) -> bytes:
     return _convert_to_pcm16(file_bytes)
 
 
-async def _stream_to_backend(pcm_bytes: bytes) -> List[str]:
-    """Stream PCM audio to the backend WebSocket and collect transcription."""
+def _wrap_pcm16_as_wav(pcm_bytes: bytes, sample_rate: int = 16000, channels: int = 1) -> bytes:
+    """Wrap raw PCM16 (little-endian) into a WAV container in-memory."""
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as wf:
+        wf.setnchannels(channels)
+        wf.setsampwidth(2)
+        wf.setframerate(sample_rate)
+        wf.writeframes(pcm_bytes)
+    return buf.getvalue()
+
+
+async def _stream_to_backend(pcm_bytes: bytes):
+    """Stream PCM audio to the backend WebSocket and collect results.
+
+    Returns a tuple: (all_texts: List[str], lines: List[dict]) where lines
+    are dicts with keys like: speaker, text, beg, end, diff.
+    """
     texts: List[str] = []
+    collected_lines: List[dict] = []
+    seen = set()
     async with websockets.connect(BACKEND_WS_URL) as ws:
         chunk = 3200
         for i in range(0, len(pcm_bytes), chunk):
@@ -96,16 +161,78 @@ async def _stream_to_backend(pcm_bytes: bytes) -> List[str]:
             lines = data.get("lines", [])
             buffer_transcription = data.get("buffer_transcription", "")
             buffer_diarization = data.get("buffer_diarization", "")
+            # Collect lines for downstream SRT/VTT/verbose_json
             for item in lines:
-                text = item.get("text")
-                if text:
-                    texts.append(text)
+                if isinstance(item, dict):
+                    text_val = (item.get("text") or "").strip()
+                    beg_val = item.get("beg")
+                    end_val = item.get("end")
+                    key = (text_val, beg_val, end_val)
+                    if text_val and key not in seen:
+                        collected_lines.append(item)
+                        seen.add(key)
+                    # Also build plain text aggregation
+                    if text_val:
+                        texts.append(text_val)
             if buffer_transcription:
                 texts.append(buffer_transcription)
             if buffer_diarization:
                 texts.append(buffer_diarization)
         await ws.close()
-    return texts
+    return texts, collected_lines
+
+
+def _parse_hhmmss_to_seconds(value: str) -> float:
+    """Parse 'HH:MM:SS' string to seconds (float). Milliseconds are not provided upstream."""
+    try:
+        parts = value.split(":")
+        if len(parts) != 3:
+            return 0.0
+        h, m, s = map(int, parts)
+        return float(h * 3600 + m * 60 + s)
+    except Exception:
+        return 0.0
+
+
+def _format_srt(lines: List[dict]) -> str:
+    out_lines: List[str] = []
+    idx = 1
+    for item in lines:
+        text = (item.get("text") or "").strip()
+        if not text:
+            continue
+        beg = _parse_hhmmss_to_seconds(item.get("beg", "00:00:00"))
+        end = _parse_hhmmss_to_seconds(item.get("end", "00:00:00"))
+        def to_ts(t: float) -> str:
+            h = int(t // 3600)
+            m = int((t % 3600) // 60)
+            s = int(t % 60)
+            return f"{h:02d}:{m:02d}:{s:02d},000"
+        out_lines.append(str(idx))
+        out_lines.append(f"{to_ts(beg)} --> {to_ts(end)}")
+        out_lines.append(text)
+        out_lines.append("")
+        idx += 1
+    return "\n".join(out_lines).rstrip() + ("\n" if out_lines else "")
+
+
+def _format_vtt(lines: List[dict]) -> str:
+    out_lines: List[str] = ["WEBVTT", ""]
+    for item in lines:
+        text = (item.get("text") or "").strip()
+        if not text:
+            continue
+        beg = _parse_hhmmss_to_seconds(item.get("beg", "00:00:00"))
+        end = _parse_hhmmss_to_seconds(item.get("end", "00:00:00"))
+        def to_ts(t: float) -> str:
+            h = int(t // 3600)
+            m = int((t % 3600) // 60)
+            s = int(t % 60)
+            return f"{h:02d}:{m:02d}:{s:02d}.000"
+        out_lines.append(f"{to_ts(beg)} --> {to_ts(end)}")
+        out_lines.append(text)
+        out_lines.append("")
+    return "\n".join(out_lines).rstrip() + ("\n" if len(out_lines) > 2 else "")
 
 
 def _extract_api_key_from_request(request: Request) -> str | None:
@@ -133,12 +260,70 @@ def require_api_key_dep(request: Request) -> None:
 @app.post("/v1/audio/transcriptions")
 async def transcribe(
     file: UploadFile = File(...),
-    model: str = Form("whisper-1"),
+    # OpenAI Whisper API requires 'model', but we ignore its value and always use GUI-configured backend
+    model: str = Form(...),
+    response_format: str = Form("json"),
+    prompt: str | None = Form(None),
+    temperature: float = Form(0.0),
+    language: str | None = Form(None),
+    user: str | None = Form(None),
+    timestamp_granularities_brackets: List[str] | None = Form(None, alias="timestamp_granularities[]"),
+    timestamp_granularities: List[str] | None = Form(None),
     _auth: None = Depends(require_api_key_dep),
 ):
-    """Whisper API compatible transcription endpoint."""
+    """OpenAI Whisper API compatible transcription endpoint.
+
+    - Accepts multipart/form-data with 'file' and 'model' (required by spec).
+    - Uses GUI-configured model/settings via backend; ignores provided 'model' value.
+    - Supports response_format: json (default), text, srt, vtt, verbose_json.
+    """
+    # Validate response_format
+    rf = (response_format or "json").lower()
+    allowed_rf = {"json", "text", "srt", "vtt", "verbose_json"}
+    if rf not in allowed_rf:
+        return _openai_error_response("Invalid response_format.", 400)
+
+    # Ensure file content present
     raw = await file.read()
-    pcm = _extract_pcm16(file, raw)
-    texts = await _stream_to_backend(pcm)
+    if not raw:
+        return _openai_error_response("No audio file provided or file is empty.", 400)
+
+    # Decide what to send to backend FFmpeg stdin (expects a recognizable container)
+    # - For .raw: wrap into WAV 16kHz/mono
+    # - Else: send original bytes (wav/mp3/m4a/webm...)
+    to_send = raw
+    name = (file.filename or "").lower()
+    if name.endswith(".raw"):
+        # Assume already PCM16/16kHz/mono; if not, backend FFmpeg will still decode but timing may be off
+        to_send = _wrap_pcm16_as_wav(raw, 16000, 1)
+
+    # Stream to backend and collect results
+    try:
+        texts, lines = await _stream_to_backend(to_send)
+    except Exception as e:
+        return _openai_error_response(f"Backend processing failed: {e}", 500)
+
     final_text = " ".join(t.strip() for t in texts if t).strip()
-    return JSONResponse({"text": final_text, "model": model})
+
+    # Build response
+    if rf == "json":
+        return JSONResponse({"text": final_text})
+    if rf == "text":
+        return PlainTextResponse(content=final_text)
+    if rf == "srt":
+        return PlainTextResponse(content=_format_srt(lines), media_type="text/srt")
+    if rf == "vtt":
+        return PlainTextResponse(content=_format_vtt(lines), media_type="text/vtt")
+    if rf == "verbose_json":
+        segments = []
+        for item in lines:
+            text = (item.get("text") or "").strip()
+            if not text:
+                continue
+            start = _parse_hhmmss_to_seconds(item.get("beg", "00:00:00"))
+            end = _parse_hhmmss_to_seconds(item.get("end", "00:00:00"))
+            segments.append({"start": start, "end": end, "text": text})
+        return JSONResponse({"text": final_text, "segments": segments})
+
+    # Fallback (should not reach)
+    return JSONResponse({"text": final_text})

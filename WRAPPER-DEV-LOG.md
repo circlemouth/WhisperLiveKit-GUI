@@ -1,5 +1,45 @@
 # WRAPPER-DEV-LOG
 
+## 2025-09-02（Wrapper API 接続問題・FFmpeg 書き込み失敗の整理）
+- 決定事項
+  - REST の音声入力は“コンテナ付き”のバイト列をそのまま Backend `/asr` に送る（wav/mp3/m4a/webm 等）
+  - 拡張子 `.raw` の場合のみ 16kHz/mono/PCM16 とみなし、ラッパー側で WAV に包んでから送信
+  - OpenAI Whisper API 互換のレスポンス（json/text/srt/vtt/verbose_json）とエラー形式（OpenAI 風 JSON）を実装
+  - `model` は必須だが値は無視。GUI（Backend）側のモデル設定を使用する
+
+- 根拠（観測ログ）
+  - クライアント: `[LocalWhisperAPI error] 500: {"message":"timed out during opening handshake"}`
+  - サーバ: 500 の直後に `WebSocket /asr [accepted]` → 即切断（タイムアウト後に遅れて accept したレース）
+  - `Error writing to FFmpeg: Connection lost` が多発（raw PCM を送ると FFmpeg `-i pipe:0` が解釈できず早期終了）
+  - `Empty audio message received`/`ran 0 times`（実データが届かず終端のみ到達）
+
+- 未解決事項（要対応）
+  - Wrapper → Backend 接続の耐性強化：`websockets.connect(..., open_timeout=30)` とリトライ（例: 3 回、指数バックオフ）
+  - 起動直後のモデルロード待ちに備えたリトライ戦略の設計（API レイテンシの安定化）
+  - `/v1/audio/translations` の完全互換（Backend がリクエスト単位で `task=translate` を受けられない）
+  - リクエスト単位の `language`/`prompt`/`temperature` の反映（WS メタメッセージの検討を upstream 提案）
+  - 逐語タイムスタンプ（word 粒度）対応（`verbose_json` 拡充。token 単位情報の WS 出力追加を upstream 提案）
+
+- 次アクション（Wrapper 側で実施可能）
+  - Backend 接続に `open_timeout` と簡易リトライ導入（実装案済）
+  - 接続先環境変数の README 追記（`WRAPPER_BACKEND_*` の具体例と注意点、IPv4 明示）
+  - 最初の `/v1/audio/transcriptions` 実行前に Backend ヘルスチェック（`GET /` で疎通確認）を検討
+  - 入力検証の強化（空ファイル検知、`multipart/form-data` キー名チェックの明確化）
+
+- リスク
+  - open_timeout 延長によりハングに見える時間が伸びる可能性（ただしリトライ併用で緩和）
+  - `.raw` を 16kHz/mono と仮定して WAV 化するため、異なる仕様の raw を渡された場合にタイミングがずれる可能性
+  - word 粒度のタイムスタンプ非対応は、完全互換を期待するクライアントで差異となる
+
+- 運用メモ（環境変数）
+  - `WRAPPER_BACKEND_HOST`（例: `0.0.0.0`）
+  - `WRAPPER_BACKEND_PORT`（例: `63916`）
+  - `WRAPPER_BACKEND_CONNECT_HOST`（`0.0.0.0` 指定時は `127.0.0.1` を明示）
+  - `WRAPPER_BACKEND_SSL`（`1`=wss / `0`=ws）
+  - Windows 例（PowerShell）: `setx WRAPPER_BACKEND_CONNECT_HOST 127.0.0.1`
+
+— 以上を踏まえ、Wrapper 側は接続リトライと README のトラブルシュート追記を優先。Backend 側のリクエスト単位パラメータ適用は upstream 提案に記録。
+
 ## 2025-10-08 (REST API入力形式の事前判定とガイド追加)
 - 背景／スコープ：REST API利用時に既に16kHzモノラルの音声でも毎回ffmpegで変換していたため、無駄な処理と遅延が生じていた。
 - 決定事項：
