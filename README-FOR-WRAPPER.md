@@ -32,6 +32,9 @@
   - 録音パイプライン: 生PCM → FFmpeg で `audio/webm`(Opus) へ変換 → WebSocket `/asr` へストリーミング
   - Web UI（upstream）をブラウザで開く導線あり
   - ヘッダー右上に CUDA/FFmpeg の利用可否を表示し、最右にライセンスボタンを配置
+  - ログ・ステータス・進捗表示を下部パネルに統合し、ログ欄の高さをドラッグで調整可能
+  - 左右カラムの最小幅（左800px / 右420px）とウィンドウ最小サイズ（1400×800）を設定し、極端な縮小を防止
+  - 旧レイアウト（右カラムログ＋下部ステータスバー）は廃止し、環境変数での切替は不可
 - API 層（FastAPI）: `wrapper/api/server.py`
   - `POST /v1/audio/transcriptions`: 入力形式を判定し、16kHz/mono の wav/raw はそのまま、その他は FFmpeg で 16kHz/mono PCM 化 → backend `/asr` へWS中継 → テキスト連結返却
   - 依存:
