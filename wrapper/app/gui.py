@@ -407,6 +407,9 @@ class WrapperGUI:
         self.save_path = tk.StringVar()
         self.save_enabled = tk.BooleanVar(value=False)
 
+        # Layout: allow legacy (right log + bottom status) via env toggle
+        self.use_legacy_layout = os.getenv("WLK_GUI_LEGACY_LAYOUT") == "1"
+
         self._load_settings()
         # テーマは設定を尊重（既定は darkly）。
         if not self.theme.get():
@@ -486,10 +489,18 @@ class WrapperGUI:
         # Toolbar（再生/設定アイコン）は機能重複のため削除
 
         # スクロール可能な2カラムメインコンテンツ領域
-        scroll_container = ScrollableFrame(master)
-        scroll_container.grid(row=row, column=0, sticky="nsew", padx=10, pady=5)
-        master.rowconfigure(row, weight=1)
-        
+        if self.use_legacy_layout:
+            scroll_container = ScrollableFrame(master)
+            scroll_container.grid(row=row, column=0, sticky="nsew", padx=10, pady=5)
+            master.rowconfigure(row, weight=1)
+        else:
+            body_pane = ttk.Panedwindow(master, orient=tk.VERTICAL)
+            body_pane.grid(row=row, column=0, sticky="nsew", padx=10, pady=5)
+            master.rowconfigure(row, weight=1)
+            scroll_container = ScrollableFrame(body_pane)
+            body_pane.add(scroll_container, weight=3)
+            self.body_pane = body_pane
+
         # PanedWindowをスクロール可能フレーム内に配置
         content = ttk.Panedwindow(scroll_container.inner, orient=tk.HORIZONTAL)
         content.grid(row=0, column=0, sticky="ew")
@@ -851,38 +862,70 @@ class WrapperGUI:
         self.save_browse_btn = ttk.Button(record_frame, text="Browse", command=self.choose_save_path)
         self.save_browse_btn.grid(row=r, column=2, padx=5)
         r += 1
-        # --- Logs: 右カラムの Recorder の下に配置 ---
-        log_frame = ttk.Labelframe(right_panel, text="Logs")
-        log_frame.grid(row=2, column=0, sticky="nsew", pady=(6, 0))
-        right_panel.rowconfigure(2, weight=1)
-        log_frame.columnconfigure(0, weight=1)
-        log_frame.rowconfigure(0, weight=1)
-        self.log_text = tk.Text(log_frame, state="disabled", wrap="none", height=10)
-        try:
-            self.log_text.configure(bg=self._bg, fg=self._fg, insertbackground=self._fg)
-        except Exception:
-            pass
-        self.log_text.grid(row=0, column=0, sticky="nsew")
-        log_scroll = ttk.Scrollbar(log_frame, orient="vertical", command=self.log_text.yview)
-        log_scroll.grid(row=0, column=1, sticky="ns")
-        self.log_text.configure(yscrollcommand=log_scroll.set)
-        try:
-            self.log_text.tag_configure("backend", foreground="#8ec07c")
-            self.log_text.tag_configure("api", foreground="#83a598")
-            self.log_text.tag_configure("stderr", foreground="#fb4934")
-        except Exception:
-            pass
-        # ステータスバーは最下段に全幅で配置（2カラムの下）
-        row += 1
-        status = ttk.Frame(master)
-        status.grid(row=row, column=0, sticky="ew", padx=5, pady=(0,5))
-        status.columnconfigure(1, weight=1)
-        ttk.Label(status, textvariable=self.status_var).grid(row=0, column=0, sticky="w")
-        self.progress = ttk.Progressbar(status, maximum=100, mode="determinate")
-        self.progress.grid(row=0, column=1, sticky="ew", padx=(10,0))
-        # 高さ計算用に参照保持
-        self.status_bar = status
-        row += 1
+        # --- Logs ---
+        if self.use_legacy_layout:
+            log_frame = ttk.Labelframe(right_panel, text="Logs")
+            log_frame.grid(row=2, column=0, sticky="nsew", pady=(6, 0))
+            right_panel.rowconfigure(2, weight=1)
+            log_frame.columnconfigure(0, weight=1)
+            log_frame.rowconfigure(0, weight=1)
+            self.log_text = tk.Text(log_frame, state="disabled", wrap="none", height=10)
+            try:
+                self.log_text.configure(bg=self._bg, fg=self._fg, insertbackground=self._fg)
+            except Exception:
+                pass
+            self.log_text.grid(row=0, column=0, sticky="nsew")
+            log_scroll = ttk.Scrollbar(log_frame, orient="vertical", command=self.log_text.yview)
+            log_scroll.grid(row=0, column=1, sticky="ns")
+            self.log_text.configure(yscrollcommand=log_scroll.set)
+            try:
+                self.log_text.tag_configure("backend", foreground="#8ec07c")
+                self.log_text.tag_configure("api", foreground="#83a598")
+                self.log_text.tag_configure("stderr", foreground="#fb4934")
+            except Exception:
+                pass
+        # ステータス／ログの配置
+        if self.use_legacy_layout:
+            row += 1
+            status = ttk.Frame(master)
+            status.grid(row=row, column=0, sticky="ew", padx=5, pady=(0,5))
+            status.columnconfigure(1, weight=1)
+            ttk.Label(status, textvariable=self.status_var).grid(row=0, column=0, sticky="w")
+            self.progress = ttk.Progressbar(status, maximum=100, mode="determinate")
+            self.progress.grid(row=0, column=1, sticky="ew", padx=(10,0))
+            self.status_bar = status
+            row += 1
+        else:
+            log_panel = ttk.Frame(self.body_pane)
+            log_panel.columnconfigure(0, weight=1)
+            log_panel.rowconfigure(1, weight=1)
+            self.body_pane.add(log_panel, weight=1)
+            status = ttk.Frame(log_panel)
+            status.grid(row=0, column=0, sticky="ew")
+            status.columnconfigure(1, weight=1)
+            ttk.Label(status, textvariable=self.status_var).grid(row=0, column=0, sticky="w")
+            self.progress = ttk.Progressbar(status, maximum=100, mode="determinate")
+            self.progress.grid(row=0, column=1, sticky="ew", padx=(10,0))
+            self.status_bar = status
+            log_frame = ttk.Labelframe(log_panel, text="Logs")
+            log_frame.grid(row=1, column=0, sticky="nsew", pady=(5,0))
+            log_frame.columnconfigure(0, weight=1)
+            log_frame.rowconfigure(0, weight=1)
+            self.log_text = tk.Text(log_frame, state="disabled", wrap="none", height=8)
+            try:
+                self.log_text.configure(bg=self._bg, fg=self._fg, insertbackground=self._fg)
+            except Exception:
+                pass
+            self.log_text.grid(row=0, column=0, sticky="nsew")
+            log_scroll = ttk.Scrollbar(log_frame, orient="vertical", command=self.log_text.yview)
+            log_scroll.grid(row=0, column=1, sticky="ns")
+            self.log_text.configure(yscrollcommand=log_scroll.set)
+            try:
+                self.log_text.tag_configure("backend", foreground="#8ec07c")
+                self.log_text.tag_configure("api", foreground="#83a598")
+                self.log_text.tag_configure("stderr", foreground="#fb4934")
+            except Exception:
+                pass
 
         self.backend_proc: subprocess.Popen | None = None
         self.api_proc: subprocess.Popen | None = None

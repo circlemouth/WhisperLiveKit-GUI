@@ -32,6 +32,7 @@
   - 録音パイプライン: 生PCM → FFmpeg で `audio/webm`(Opus) へ変換 → WebSocket `/asr` へストリーミング
   - Web UI（upstream）をブラウザで開く導線あり
   - ヘッダー右上に CUDA/FFmpeg の利用可否を表示し、最右にライセンスボタンを配置
+  - ログ・ステータス・進捗表示を下部パネルに統合（`WLK_GUI_LEGACY_LAYOUT=1` で旧レイアウトを復元可）
 - API 層（FastAPI）: `wrapper/api/server.py`
   - `POST /v1/audio/transcriptions`: 入力形式を判定し、16kHz/mono の wav/raw はそのまま、その他は FFmpeg で 16kHz/mono PCM 化 → backend `/asr` へWS中継 → テキスト連結返却
   - 依存:
@@ -58,6 +59,8 @@
   - `WRAPPER_BACKEND_HOST` / `WRAPPER_BACKEND_PORT`
   - `WRAPPER_BACKEND_SSL=1`（wss 接続を指定）
   - `WRAPPER_REQUIRE_API_KEY=1`, `WRAPPER_API_KEY=<key>`
+- レイアウト切替（任意）
+  - `WLK_GUI_LEGACY_LAYOUT=1` : 右カラムログ＋下部ステータスバーの旧レイアウトを使用
 
 ## エラーハンドリング / ログ
 - FFmpeg が無い: `500 ffmpeg_not_found`（API）、GUI ステータスに表示
