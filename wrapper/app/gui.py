@@ -212,6 +212,7 @@ TRANSLATIONS_JA = {
     "Hugging Face token valid": "Hugging Faceトークン有効",
     "Downloading": "ダウンロード中",
     "downloaded": "ダウンロード済",
+    "This console is for log output only and cannot be used as a CLI.": "このコンソール欄はログ出力専用であり、CLIとしては使用できません。",
     "For commercial use of the SimulStreaming backend, please check the SimulStreaming license.": "SimulStreaming をバックエンドとして商用利用する場合、SimulStreaming のライセンスを確認してください。",
     "missing": "未取得",
     "Server is not running. Please press Start API before recording.": "サーバー未起動です。録音するには先に『Start API』を押してください。",
@@ -881,6 +882,18 @@ class WrapperGUI:
         log_scroll = ttk.Scrollbar(log_frame, orient="vertical", command=self.log_text.yview)
         log_scroll.grid(row=0, column=1, sticky="ns")
         self.log_text.configure(yscrollcommand=log_scroll.set)
+        log_note_font = font.nametofont("TkDefaultFont").copy()
+        try:
+            log_note_font.configure(size=8)
+        except Exception:
+            pass
+        ttk.Label(
+            log_frame,
+            text=self._t(
+                "This console is for log output only and cannot be used as a CLI."
+            ),
+            font=log_note_font,
+        ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(2, 0))
         try:
             self.log_text.tag_configure("backend", foreground="#8ec07c")
             self.log_text.tag_configure("api", foreground="#83a598")
