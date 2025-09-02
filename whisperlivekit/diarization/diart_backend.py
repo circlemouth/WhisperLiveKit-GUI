@@ -5,6 +5,8 @@ import numpy as np
 import logging
 import time
 from queue import SimpleQueue, Empty
+import shutil
+from pathlib import Path
 
 from diart import SpeakerDiarization, SpeakerDiarizationConfig
 from diart.inference import StreamingInference
@@ -17,6 +19,31 @@ from pyannote.core import Annotation
 import diart.models as m
 
 logger = logging.getLogger(__name__)
+
+
+def _ensure_speechbrain_hyperparams(model_id: str) -> None:
+    """Ensure SpeechBrain hyperparameters file exists.
+
+    On Windows, symlink creation for ``hyperparams.yaml`` may fail, leading to
+    ``FileNotFoundError`` when loading SpeechBrain-based embeddings. This
+    function copies the file from the Hugging Face cache if missing.
+    """
+
+    try:
+        if not model_id.startswith("speechbrain/"):
+            return
+
+        dest = Path.home() / ".cache" / "torch" / "pyannote" / "speechbrain" / "hyperparams.yaml"
+        if dest.exists():
+            return
+
+        from huggingface_hub import hf_hub_download
+
+        src = hf_hub_download(model_id, "hyperparams.yaml")
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy(src, dest)
+    except Exception as exc:  # pragma: no cover - best effort only
+        logger.warning(f"Failed to prepare SpeechBrain hyperparams: {exc}")
 
 def extract_number(s: str) -> int:
     m = re.search(r'\d+', s)
@@ -168,6 +195,7 @@ class WebSocketAudioSource(AudioSource):
 class DiartDiarization:
     def __init__(self, sample_rate: int = 16000, config : SpeakerDiarizationConfig = None, use_microphone: bool = False, block_duration: float = 1.5, segmentation_model_name: str = "pyannote/segmentation-3.0", embedding_model_name: str = "pyannote/embedding"):
         segmentation_model = m.SegmentationModel.from_pretrained(segmentation_model_name)
+        _ensure_speechbrain_hyperparams(embedding_model_name)
         embedding_model = m.EmbeddingModel.from_pretrained(embedding_model_name)
         
         if config is None:
