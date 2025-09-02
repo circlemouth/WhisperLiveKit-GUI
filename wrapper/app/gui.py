@@ -757,7 +757,8 @@ class WrapperGUI:
         web_row = ttk.Frame(endpoints_frame)
         web_row.grid(row=er, column=1, sticky="ew")
         web_row.columnconfigure(0, weight=1)
-        self.web_endpoint_entry = ttk.Entry(web_row, textvariable=self.web_endpoint, width=40, state="readonly")
+        # 右カラムの最小幅を抑えるため、Entryはやや短めに
+        self.web_endpoint_entry = ttk.Entry(web_row, textvariable=self.web_endpoint, width=30, state="readonly")
         self.web_endpoint_entry.grid(row=0, column=0, sticky="ew")
         self.open_web_btn = ttk.Button(web_row, text="Open Web GUI", command=self.open_web_gui, state=tk.DISABLED)
         self.open_web_btn.grid(row=0, column=1, padx=(6,0), sticky="e")
@@ -767,7 +768,7 @@ class WrapperGUI:
         ws_row = ttk.Frame(endpoints_frame)
         ws_row.grid(row=er, column=1, sticky="ew")
         ws_row.columnconfigure(0, weight=1)
-        self.ws_endpoint_entry = ttk.Entry(ws_row, textvariable=self.ws_endpoint, width=40, state="readonly")
+        self.ws_endpoint_entry = ttk.Entry(ws_row, textvariable=self.ws_endpoint, width=30, state="readonly")
         self.ws_endpoint_entry.grid(row=0, column=0, sticky="ew")
         self.copy_ws_btn = ttk.Button(ws_row, text="Copy", command=lambda: self._copy_with_feedback(self.copy_ws_btn, self.ws_endpoint.get()))
         self.copy_ws_btn.grid(row=0, column=1, padx=(6,0), sticky="e")
@@ -777,7 +778,7 @@ class WrapperGUI:
         api_row = ttk.Frame(endpoints_frame)
         api_row.grid(row=er, column=1, sticky="ew")
         api_row.columnconfigure(0, weight=1)
-        self.api_endpoint_entry = ttk.Entry(api_row, textvariable=self.api_endpoint, width=40, state="readonly")
+        self.api_endpoint_entry = ttk.Entry(api_row, textvariable=self.api_endpoint, width=30, state="readonly")
         self.api_endpoint_entry.grid(row=0, column=0, sticky="ew")
         self.copy_api_btn = ttk.Button(api_row, text="Copy", command=lambda: self._copy_with_feedback(self.copy_api_btn, self.api_endpoint.get()))
         self.copy_api_btn.grid(row=0, column=1, padx=(6,0), sticky="e")
@@ -873,7 +874,8 @@ class WrapperGUI:
         log_frame.grid(row=1, column=0, sticky="nsew", pady=(5,0))
         log_frame.columnconfigure(0, weight=1)
         log_frame.rowconfigure(0, weight=1)
-        self.log_text = tk.Text(log_frame, state="disabled", wrap="none", height=8)
+        # ログ欄は行数で固定（従来8行→4行）
+        self.log_text = tk.Text(log_frame, state="disabled", wrap="none", height=4)
         try:
             self.log_text.configure(bg=self._bg, fg=self._fg, insertbackground=self._fg)
         except Exception:
@@ -887,13 +889,15 @@ class WrapperGUI:
             log_note_font.configure(size=8)
         except Exception:
             pass
-        ttk.Label(
+        # 備考ラベルは参照を保持（高さ計算用）
+        self.log_note_label = ttk.Label(
             log_frame,
             text=self._t(
                 "This console is for log output only and cannot be used as a CLI."
             ),
             font=log_note_font,
-        ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(2, 0))
+        )
+        self.log_note_label.grid(row=1, column=0, columnspan=2, sticky="w", pady=(2, 0))
         try:
             self.log_text.tag_configure("backend", foreground="#8ec07c")
             self.log_text.tag_configure("api", foreground="#83a598")
@@ -941,10 +945,13 @@ class WrapperGUI:
         # 固定2カラムレイアウトを適用し、最小サイズを設定
         self.master.after(0, self._apply_fixed_layout)
         self.master.after(50, self._lock_minsize_by_content)
+        # ログ欄の固定高さ（ウィンドウリサイズでも維持）を初期化
+        self._fixed_log_panel_height: int | None = None
+        self.master.after(100, self._init_fixed_log_height)
         # PanedWindow に左右ペインを追加（左:固定、右:拡張）
         try:
-            # 左右とも同じ weight で縮小/拡張をバランスさせる
-            self.content.add(self.left_col, weight=1)
+            # 左を広めに確保（縮小/拡張の配分で左優先）
+            self.content.add(self.left_col, weight=2)
             self.content.add(self.right_panel, weight=1)
         except Exception:
             pass
@@ -953,7 +960,8 @@ class WrapperGUI:
         # 左右ペインの最小幅を固定（動的変更は行わず潰れを防止）
         try:
             self.content.paneconfigure(self.left_col, minsize=800)
-            self.content.paneconfigure(self.right_panel, minsize=420)
+            # 右ペインの最小幅を少し狭める
+            self.content.paneconfigure(self.right_panel, minsize=360)
         except Exception:
             pass
 
@@ -983,6 +991,14 @@ class WrapperGUI:
         except Exception:
             pass
         self._lock_minsize_by_content()
+        # 初期サッシュ位置を左寄りに（右をやや狭める）
+        try:
+            w = self.content.winfo_width()
+            if w > 0:
+                # 左約62%, 右約38%
+                self.content.sashpos(0, int(w * 0.62))
+        except Exception:
+            pass
 
     # 左右ペイン比率の固定ロジックは撤廃
 
@@ -991,8 +1007,9 @@ class WrapperGUI:
         root = self.master
         try:
             root.update_idletasks()
-            # 横幅の最小幅を設定（左右ペインの最小幅を合算し、余白を加味）
-            min_w = 1400
+            # 横幅の最小幅を設定（左右ペインの最小幅を合算し、少し余白）
+            # 左800 + 右360 ≒ 1160 → 1200を下限に設定
+            min_w = 1200
             min_h = 800  # 縦方向の最小高さを設定（スクロール可能）
             # 最小サイズのみ設定（固定サイズは設定しない）
             root.minsize(min_w, min_h)
@@ -1011,6 +1028,47 @@ class WrapperGUI:
     # （横幅制約の実装は撤廃）
 
     # 高さキャップは撤廃（Recorder は右ペインの全高を使用）
+
+    # --- ログ欄の固定高さ制御 ---
+    def _init_fixed_log_height(self) -> None:
+        """ログパネルの希望高さ（ピクセル）を計算し、PanedWindowのサッシュ位置を固定する。
+        『今の半分』= 従来8行→4行にしたTextの要求高さ＋備考ラベル＋余白＋ステータス行
+        """
+        try:
+            self.master.update_idletasks()
+            # ステータス行とログ枠の要求高さから合計を算出
+            status_h = self.status_bar.winfo_reqheight() if hasattr(self, "status_bar") else 0
+            # log_frameはText(4行)と備考ラベルを含む
+            log_frame: tk.Widget | None = None
+            # self.log_note_labelの親が Labelframe（ログ枠）
+            if hasattr(self, "log_note_label"):
+                log_frame = self.log_note_label.nametowidget(self.log_note_label.winfo_parent())
+            log_h = log_frame.winfo_reqheight() if log_frame else (self.log_text.winfo_reqheight())
+            fixed = int(status_h + log_h + 6)  # 少し余白
+            if fixed <= 0:
+                return
+            self._fixed_log_panel_height = fixed
+            # 以後のリサイズで常に一定高さに保つ
+            self.body_pane.bind("<Configure>", self._keep_log_pane_fixed, add=True)
+            # 初回適用
+            self._keep_log_pane_fixed()
+        except Exception:
+            pass
+
+    def _keep_log_pane_fixed(self, _e: object | None = None) -> None:
+        try:
+            if self._fixed_log_panel_height is None:
+                return
+            # サッシュ位置を、全高 - 固定高 に設定（下ペイン固定）
+            total_h = self.body_pane.winfo_height()
+            pos = max(0, total_h - self._fixed_log_panel_height)
+            # サッシュは0番目（縦分割）
+            try:
+                self.body_pane.sashpos(0, pos)
+            except Exception:
+                pass
+        except Exception:
+            pass
 
     # --- ログ表示ユーティリティ ---
     def _append_log(self, source: str, text: str, is_stderr: bool = False) -> None:
