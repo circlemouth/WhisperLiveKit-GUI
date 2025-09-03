@@ -106,8 +106,8 @@
 
 ## トラブルシューティング: Windowsで "speechbrain hyperparams.yaml" が見つからない
 - 症状: バックエンド起動時に `FileNotFoundError: ... speechbrain\hyperparams.yaml` が表示される。
-- 原因: Windows 環境では `pyannote.audio` が必要な `hyperparams.yaml` へのシンボリックリンク作成に失敗する場合がある。
-- 対応: 本ラッパーでは起動時にファイルの有無を確認し、欠落している場合は Hugging Face Hub から取得して自動配置するよう修正済み。
+- 原因: Windows 環境では `pyannote.audio` が必要とする `hyperparams.yaml` や `custom.py` へのシンボリックリンク作成に失敗する場合がある。
+- 対応: 起動時にこれらファイルの存在を確認し、ラッパーの Model Manager で `speechbrain/spkrec-ecapa-voxceleb` を取得して必要ファイルをコピーするよう修正済み（不足分は Hub から直接取得）。シンボリックリンクは使用しない。
 
 ## 依存関係のインストール（例）
 - CPU/AMD 環境: `pip install -r wrapper/requirements-cpu-amd.txt`

@@ -4,8 +4,8 @@ import threading
 import numpy as np
 import logging
 import time
-from queue import SimpleQueue, Empty
 import shutil
+from queue import SimpleQueue, Empty
 from pathlib import Path
 
 from diart import SpeakerDiarization, SpeakerDiarizationConfig
@@ -22,26 +22,53 @@ logger = logging.getLogger(__name__)
 
 
 def _ensure_speechbrain_hyperparams(model_id: str) -> None:
-    """Ensure SpeechBrain hyperparameters file exists.
+    """Ensure SpeechBrain configuration files exist.
 
-    On Windows, symlink creation for ``hyperparams.yaml`` may fail, leading to
-    ``FileNotFoundError`` when loading SpeechBrain-based embeddings. This
-    function copies the file from the Hugging Face cache if missing.
+    Windows では `hyperparams.yaml` などへのシンボリックリンク作成に失敗し、
+    `FileNotFoundError` が発生するケースがある。既存のモデル管理システムと
+    連携しつつ必要ファイルをコピーし、リンクを介さずに利用できるようにする。
     """
 
     try:
         if not model_id.startswith("speechbrain/"):
             return
 
-        dest = Path.home() / ".cache" / "torch" / "pyannote" / "speechbrain" / "hyperparams.yaml"
-        if dest.exists():
+        dest_dir = Path.home() / ".cache" / "torch" / "pyannote" / "speechbrain"
+        dest_dir.mkdir(parents=True, exist_ok=True)
+
+        needed = [
+            f for f in ("hyperparams.yaml", "custom.py") if not (dest_dir / f).exists()
+        ]
+        if not needed:
             return
+
+        try:  # try to use wrapper's model manager if available
+            from wrapper.app import model_manager  # type: ignore
+
+            if not model_manager.is_model_downloaded(model_id):
+                model_path = model_manager.download_model(model_id)
+            else:
+                model_path = model_manager.get_model_path(model_id)
+
+            for fname in list(needed):
+                src = model_path / fname
+                if src.exists():
+                    shutil.copy2(src, dest_dir / fname)
+                    needed.remove(fname)
+            if not needed:
+                return
+        except Exception:
+            pass
 
         from huggingface_hub import hf_hub_download
 
-        src = hf_hub_download(model_id, "hyperparams.yaml")
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy(src, dest)
+        for filename in needed:
+            hf_hub_download(
+                repo_id=model_id,
+                filename=filename,
+                local_dir=dest_dir,
+                local_dir_use_symlinks=False,
+            )
     except Exception as exc:  # pragma: no cover - best effort only
         logger.warning(f"Failed to prepare SpeechBrain hyperparams: {exc}")
 
