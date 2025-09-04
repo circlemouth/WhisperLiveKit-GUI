@@ -130,6 +130,9 @@ async def websocket_endpoint(websocket: WebSocket):
 
 **Frontend Implementation**: The package includes an HTML/JavaScript implementation [here](https://github.com/QuentinFuxa/WhisperLiveKit/blob/main/whisperlivekit/web/live_transcription.html). You can also import it using `from whisperlivekit import get_web_interface_html` & `page = get_web_interface_html()`
 
+### Recent Improvements
+
+- 短い録音でも、FFmpeg 停止時に内部バッファをフラッシュして処理することで確実にトランスクリプトが得られるようになりました。
 
 ## Parameters & Configuration
 

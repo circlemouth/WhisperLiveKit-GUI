@@ -185,9 +185,16 @@ class AudioProcessor:
                 beg = current_time
 
                 chunk = await self.ffmpeg_manager.read_data(buffer_size)
-                        
+
                 if not chunk:
                     if self.is_stopping:
+                        if self.pcm_buffer:
+                            pcm_array = self.convert_pcm_to_float(self.pcm_buffer)
+                            if self.args.transcription and self.transcription_queue:
+                                await self.transcription_queue.put(pcm_array.copy())
+                            if self.args.diarization and self.diarization_queue:
+                                await self.diarization_queue.put(pcm_array.copy())
+                            self.pcm_buffer = bytearray()
                         logger.info("FFmpeg stdout closed, stopping.")
                         break
                     else:
