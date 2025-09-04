@@ -721,7 +721,11 @@ class WrapperGUI:
         self.adv_btn = ttk.Button(left_actions_row, text="Advanced Settings", command=self._open_backend_settings)
         self.adv_btn.pack(side="left")
         r += 1
-        
+
+        # 可変スペース（ウィンドウ高さに応じて拡張）
+        config_frame.rowconfigure(r, weight=1)
+        r += 1
+
         # API Start/Stopボタン（サーバー設定の最下部、中央揃え・横並び・等分）
         api_control_row = ttk.Frame(config_frame)
         api_control_row.grid(row=r, column=0, columnspan=2, sticky="ew", pady=(12, 0))
@@ -866,24 +870,17 @@ class WrapperGUI:
         self.save_browse_btn.grid(row=r, column=2, padx=5)
         r += 1
 
-        # --- Logs & status panel (右カラムの最下段) ---
+        # --- Logs panel (右カラムの最下段) ---
         log_panel = ttk.Frame(right_panel)
         log_panel.columnconfigure(0, weight=1)
-        log_panel.rowconfigure(1, weight=1)
+        log_panel.rowconfigure(0, weight=1)
         log_panel.grid(row=2, column=0, sticky="nsew", pady=(5,0))
-        status = ttk.Frame(log_panel)
-        status.grid(row=0, column=0, sticky="ew")
-        status.columnconfigure(1, weight=1)
-        ttk.Label(status, textvariable=self.status_var).grid(row=0, column=0, sticky="w")
-        self.progress = ttk.Progressbar(status, maximum=100, mode="determinate")
-        self.progress.grid(row=0, column=1, sticky="ew", padx=(10,0))
-        self.status_bar = status
         log_frame = ttk.Labelframe(log_panel, text="Logs")
-        log_frame.grid(row=1, column=0, sticky="nsew", pady=(5,0))
+        log_frame.grid(row=0, column=0, sticky="nsew")
         log_frame.columnconfigure(0, weight=1)
         log_frame.rowconfigure(0, weight=1)
-        # ログ欄は行数で固定（従来8行→4行）
-        self.log_text = tk.Text(log_frame, state="disabled", wrap="none", height=4)
+        # ログ欄は最低4行を維持しつつ、ウィンドウ高さに応じて拡縮
+        self.log_text = tk.Text(log_frame, state="disabled", wrap="none", height=6)
         try:
             self.log_text.configure(bg=self._bg, fg=self._fg, insertbackground=self._fg)
         except Exception:
@@ -910,6 +907,15 @@ class WrapperGUI:
             self.log_text.tag_configure("backend", foreground="#8ec07c")
             self.log_text.tag_configure("api", foreground="#83a598")
             self.log_text.tag_configure("stderr", foreground="#fb4934")
+        except Exception:
+            pass
+
+        # ログ欄の最小高さを設定（4行分）
+        try:
+            line_h = font.Font(font=self.log_text.cget("font")).metrics("linespace")
+            min_log_h = line_h * 4 + 10
+            log_panel.rowconfigure(0, weight=1, minsize=min_log_h)
+            right_panel.rowconfigure(2, weight=1, minsize=min_log_h)
         except Exception:
             pass
 
@@ -1124,11 +1130,6 @@ class WrapperGUI:
         self._launch_server()
 
     def _download_and_start(self, models: list[str]) -> None:
-        self.progress.config(value=0)
-
-        def progress(frac: float) -> None:
-            self.master.after(0, lambda v=frac * 100: self.progress.config(value=v))
-
         def worker() -> None:
             try:
                 backend_choice = self.backend.get().strip()
@@ -1138,20 +1139,18 @@ class WrapperGUI:
                     # If current backend is faster-whisper and target is a Whisper size name,
                     # download the CTranslate2 weights instead of openai/whisper.
                     if backend_choice == "faster-whisper" and m in WHISPER_MODELS:
-                        model_manager.download_model(m, backend="faster-whisper", progress_cb=progress)
+                        model_manager.download_model(m, backend="faster-whisper")
                     else:
-                        model_manager.download_model(m, progress_cb=progress)
+                        model_manager.download_model(m)
                 self.master.after(0, self._on_download_success)
             except Exception as e:  # pragma: no cover - GUI display
                 self.master.after(0, lambda err=e: self.status_var.set(f"{self._t('Download failed:')} {err}"))
-                self.master.after(0, lambda: self.progress.config(value=0))
                 self.master.after(0, lambda: self.start_btn.config(state=tk.NORMAL))
 
         threading.Thread(target=worker, daemon=True).start()
 
     def _on_download_success(self) -> None:
         self.status_var.set(self._t("Download complete"))
-        self.progress.config(value=0)
         self._launch_server()
 
     def _launch_server(self) -> None:
