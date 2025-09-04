@@ -346,6 +346,8 @@ class WrapperGUI:
         # Variables
         # 固定テーマ: ダーク系（ttkbootstrap: darkly）
         self.theme = tk.StringVar(value="darkly")
+        # メイン設定欄の折りたたみ状態（永続化）
+        self.settings_collapsed = tk.BooleanVar(value=False)
         self.backend_host = tk.StringVar(value=os.getenv("WRAPPER_BACKEND_HOST", "127.0.0.1"))
         b_port_env = os.getenv("WRAPPER_BACKEND_PORT")
         if b_port_env:
@@ -477,11 +479,34 @@ class WrapperGUI:
         master.columnconfigure(0, weight=1)
 
         row = 0
-        # App header（テーマセレクタは撤去し、ライセンスのみ配置）
+        # App header（タイトル＋API操作＋折りたたみ）
         header = ttk.Frame(master)
         header.grid(row=row, column=0, sticky="ew", padx=10, pady=(8, 0))
-        header.columnconfigure(1, weight=1)
-        ttk.Label(header, text="WhisperLiveKit Wrapper", style="Header.TLabel").grid(row=0, column=0, sticky="w")
+        # 左端: 折りたたみトグル
+        self._collapse_btn = ttk.Button(header, width=2, text="▾", command=self._toggle_main_sections)
+        self._collapse_btn.grid(row=0, column=0, sticky="w", padx=(0, 6))
+        ttk.Label(header, text="WhisperLiveKit Wrapper", style="Header.TLabel").grid(row=0, column=1, sticky="w")
+        # タイトル右側: Start/Stop を配置
+        api_controls_header = ttk.Frame(header)
+        api_controls_header.grid(row=0, column=2, sticky="w", padx=(12, 0))
+        self.start_btn = ttk.Button(
+            api_controls_header,
+            text="🚀 Start API",
+            command=self.start_api,
+            bootstyle="success",
+            style="ApiStart.TButton",
+        )
+        self.start_btn.pack(side="left")
+        self.stop_btn = ttk.Button(
+            api_controls_header,
+            text="🛑 Stop API",
+            command=self.stop_api,
+            bootstyle="danger",
+            style="ApiStop.TButton",
+        )
+        self.stop_btn.pack(side="left", padx=(8, 0))
+        # 右寄せスペーサ
+        header.columnconfigure(3, weight=1)
         # Be tolerant: Emoji.get may return None on some platforms/themes
         try:
             ok_emoji = Emoji.get("check mark button")
@@ -494,9 +519,9 @@ class WrapperGUI:
         cuda_text = self._t("CUDA: Available") if CUDA_AVAILABLE else self._t("CUDA: Not available")
         ffmpeg_char = ok_char if FFMPEG_AVAILABLE else ng_char
         ffmpeg_text = self._t("FFmpeg: Available") if FFMPEG_AVAILABLE else self._t("FFmpeg: Not available")
-        ttk.Label(header, text=f"{cuda_char} {cuda_text}").grid(row=0, column=2, sticky="e", padx=(5, 0))
-        ttk.Label(header, text=f"{ffmpeg_char} {ffmpeg_text}").grid(row=0, column=3, sticky="e", padx=(5, 0))
-        ttk.Button(header, text="Licenses", command=self.show_license).grid(row=0, column=4, sticky="e")
+        ttk.Label(header, text=f"{cuda_char} {cuda_text}").grid(row=0, column=4, sticky="e", padx=(5, 0))
+        ttk.Label(header, text=f"{ffmpeg_char} {ffmpeg_text}").grid(row=0, column=5, sticky="e", padx=(5, 0))
+        ttk.Button(header, text="Licenses", command=self.show_license).grid(row=0, column=6, sticky="e")
         # 高さ計算用に参照保持
         self.header = header
         row += 1
@@ -514,15 +539,18 @@ class WrapperGUI:
 
         # PanedWindowをスクロール可能フレーム内に配置
         content = ttk.Panedwindow(scroll_container.inner, orient=tk.HORIZONTAL)
-        content.grid(row=0, column=0, sticky="ew")
+        # 縦方向にも広がるようにし、可視高さを常にキャンバス（=ウィンドウ高さ）に追従させる
+        content.grid(row=0, column=0, sticky="nsew")
         self.content = content
 
         # 左カラム: Server Settings のみ（右カラムの高さに合わせて拡張）
         left_col = ttk.Frame(content)
         left_col.columnconfigure(0, weight=1)
-        left_col.rowconfigure(0, weight=1)  # Server Settingsセクションが拡張可能
+        # 左カラムの中で Server Settings を縦に拡張しない（余白を作らない）
+        left_col.rowconfigure(0, weight=0)
         server_frame = ttk.Labelframe(left_col, text="Server Settings")
-        server_frame.grid(row=0, column=0, sticky="nsew")  # 縦方向にも拡張
+        # 縦方向には拡張しないで内容高さに収める
+        server_frame.grid(row=0, column=0, sticky="ew")
         server_frame.columnconfigure(1, weight=1)
         config_frame = server_frame
         self.left_col = left_col
@@ -545,7 +573,7 @@ class WrapperGUI:
         ttk.Label(config_frame, text="Backend").grid(row=r, column=0, sticky=tk.W)
         be_row = ttk.Frame(config_frame)
         be_row.grid(row=r, column=1, sticky="ew")
-        be_row.columnconfigure(1, weight=1, minsize=120)  # Backend Host入力欄の最低幅を120pxに設定
+        be_row.columnconfigure(1, weight=1)  # 最小幅の固定は撤廃（スクロール/折返しで対応）
         # 参照保持（レスポンシブ再配置用）
         self.be_row = be_row
         self.be_host_label = ttk.Label(be_row, text="Host")
@@ -561,7 +589,7 @@ class WrapperGUI:
         ttk.Label(config_frame, text="API").grid(row=r, column=0, sticky=tk.W)
         api_row = ttk.Frame(config_frame)
         api_row.grid(row=r, column=1, sticky="ew")
-        api_row.columnconfigure(1, weight=1, minsize=120)  # API Host入力欄の最低幅を120pxに設定
+        api_row.columnconfigure(1, weight=1)
         # 参照保持（レスポンシブ再配置用）
         self.api_row = api_row
         self.api_host_label = ttk.Label(api_row, text="Host")
@@ -691,8 +719,7 @@ class WrapperGUI:
         hf_links = ttk.Frame(config_frame)
         hf_links.grid(row=r, column=0, columnspan=2, sticky="ew")
         hf_links.columnconfigure(0, weight=1)
-        # 左列の最低幅を十分に確保（潰れ防止）
-        config_frame.columnconfigure(1, minsize=450)
+        # 左列の最低幅固定は撤廃（可読性は折返し/スクロールで担保）
         ttk.Button(
             hf_links,
             text="Get HF token",
@@ -716,10 +743,10 @@ class WrapperGUI:
         self.diar_settings_btn = ttk.Button(diar_settings_frame, text="Diarization Settings", command=self._open_diarization_settings, bootstyle="info")
         self.diar_settings_btn.grid(row=0, column=0, sticky="e")
         r += 1
-        # 8) 起動/停止操作
+        # 8) 操作行（Manage/Advanced のみ）
         ttk.Separator(config_frame, orient="horizontal").grid(row=r, column=0, columnspan=2, sticky="ew", pady=(6, 6))
         r += 1
-        # 左側ボタン群を独立した行に配置（重なり防止）
+        # 左側ボタン群（Manage/Advanced）
         left_actions_row = ttk.Frame(config_frame)
         left_actions_row.grid(row=r, column=0, columnspan=2, sticky="ew", pady=(4, 0))
         self.manage_models_btn = ttk.Button(left_actions_row, text="Manage models", command=self._open_model_manager)
@@ -729,39 +756,13 @@ class WrapperGUI:
         self.adv_btn.pack(side="left")
         r += 1
 
-        # 可変スペース（ウィンドウ高さに応じて拡張）
-        config_frame.rowconfigure(r, weight=1)
+        # 左カラムは実効UI高さを優先し、余剰の縦伸びは行わない
         r += 1
-
-        # API Start/Stopボタン（サーバー設定の最下部、中央揃え・横並び・等分）
-        api_control_row = ttk.Frame(config_frame)
-        api_control_row.grid(row=r, column=0, columnspan=2, sticky="ew", pady=(12, 0))
-        api_control_row.columnconfigure(0, weight=1, uniform="api")
-        api_control_row.columnconfigure(1, weight=1, uniform="api")
-
-        self.start_btn = ttk.Button(
-            api_control_row,
-            text="🚀 Start API",
-            command=self.start_api,
-            bootstyle="success",
-            style="ApiStart.TButton",
-        )
-        self.start_btn.grid(row=0, column=0, sticky="ew", padx=(0, 6))
-
-        self.stop_btn = ttk.Button(
-            api_control_row,
-            text="🛑 Stop API",
-            command=self.stop_api,
-            bootstyle="danger",
-            style="ApiStop.TButton",
-        )
-        self.stop_btn.grid(row=0, column=1, sticky="ew", padx=(6, 0))
 
         # 右カラム: Endpoints + Recorder + Logs（PanedWindow右ペイン）
         right_panel = ttk.Frame(content)
         right_panel.columnconfigure(0, weight=1)
-        right_panel.rowconfigure(1, weight=2)  # Recorderセクションが拡張可能
-        right_panel.rowconfigure(2, weight=1)  # Logsセクション（Recorderの約半分）
+        # 右ペインは自然高を優先（行の拡張は行わない）
         self.right_panel = right_panel
 
         # Endpointsを右カラムの上部に移動（1行固定・サブフレームでエントリとボタンを並べる）
@@ -847,10 +848,10 @@ class WrapperGUI:
         r += 1
         # Transcript area inside Recorder (moved above Save options)
         trans_frame = ttk.Labelframe(record_frame, text="Transcript")
-        trans_frame.grid(row=r, column=0, columnspan=3, sticky="nsew", pady=(5,0))
+        trans_frame.grid(row=r, column=0, columnspan=3, sticky="ew", pady=(5,0))
         trans_frame.columnconfigure(0, weight=1)
-        trans_frame.rowconfigure(0, weight=1)
-        record_frame.rowconfigure(r, weight=1)
+        # Transcript は固定高で表示し、拡張しない
+        trans_frame.rowconfigure(0, weight=0)
         self.transcript_box = tk.Text(trans_frame, state="disabled")
         try:
             self.transcript_box.configure(font=("Segoe UI", 12))
@@ -861,7 +862,12 @@ class WrapperGUI:
             self.transcript_box.configure(bg=self._bg, fg=self._fg, insertbackground=self._fg)
         except Exception:
             pass
-        self.transcript_box.grid(row=0, column=0, sticky="nsew")
+        # 表示行数を絞ることで縦方向の占有を抑制
+        try:
+            self.transcript_box.configure(height=6)
+        except Exception:
+            pass
+        self.transcript_box.grid(row=0, column=0, sticky="ew")
         scroll = ttk.Scrollbar(trans_frame, orient="vertical", command=self.transcript_box.yview)
         scroll.grid(row=0, column=1, sticky="ns")
         self.transcript_box.configure(yscrollcommand=scroll.set)
@@ -917,12 +923,12 @@ class WrapperGUI:
         except Exception:
             pass
 
-        # ログ欄の最小高さを設定（4行分）
+        # ログ欄の最小高さを設定（4行分）: パネル自体は拡張せず自然高を維持
         try:
             line_h = font.Font(font=self.log_text.cget("font")).metrics("linespace")
             min_log_h = line_h * 4 + 10
-            log_panel.rowconfigure(0, weight=1, minsize=min_log_h)
-            right_panel.rowconfigure(2, weight=1, minsize=min_log_h)
+            log_panel.rowconfigure(0, weight=0, minsize=min_log_h)
+            right_panel.rowconfigure(2, weight=0, minsize=min_log_h)
         except Exception:
             pass
 
@@ -975,11 +981,28 @@ class WrapperGUI:
             pass
         # 左右の比率固定は廃止（ユーザーのリサイズに任せる）
         self._localize_widgets()
-        # 左右ペインの最小幅を固定（動的変更は行わず潰れを防止）
+        # 折りたたみ状態の初期適用
         try:
-            self.content.paneconfigure(self.left_col, minsize=800)
-            # 右ペインの最小幅を少し狭める
-            self.content.paneconfigure(self.right_panel, minsize=360)
+            if self.settings_collapsed.get():
+                self.scroll_container.grid_remove()
+                self._collapse_btn.config(text="▸")
+        except Exception:
+            pass
+        # 左カラムの構成が変化した際に、最大高さ（root.maxsize）を左カラムに合わせて更新
+        try:
+            self.left_col.bind("<Configure>", lambda e: self._schedule_max_height_update())
+            self.server_frame.bind("<Configure>", lambda e: self._schedule_max_height_update())
+        except Exception:
+            pass
+        # 起動時のウィンドウサイズを適用（高さ: 折りたたみ状態に応じ、幅: 現在の1.2倍）
+        try:
+            self.master.after(120, self._apply_initial_geometry)
+        except Exception:
+            pass
+        # 左右ペインの最小幅を固定（動的変更は行わず潰れを防止）
+        # Pane の最小幅固定は撤廃（ユーザーのリサイズとスクロールに委ねる）
+        try:
+            pass
         except Exception:
             pass
 
@@ -1001,6 +1024,43 @@ class WrapperGUI:
                 apply(child)
 
         apply(self.master)
+
+    def _toggle_main_sections(self) -> None:
+        # 折りたたみ／展開の切替（状態は永続化）
+        try:
+            collapsed = not self.settings_collapsed.get()
+            self.settings_collapsed.set(collapsed)
+            if collapsed:
+                # メインのスクロール領域（2カラム設定画面）を隠す
+                try:
+                    self.scroll_container.grid_remove()
+                except Exception:
+                    pass
+                try:
+                    self._collapse_btn.config(text="▸")
+                except Exception:
+                    pass
+            else:
+                # 再表示
+                try:
+                    self.scroll_container.grid()
+                except Exception:
+                    pass
+                try:
+                    self._collapse_btn.config(text="▾")
+                except Exception:
+                    pass
+            # 保存
+            self._save_settings()
+            # 最大高さの再計算をスケジュール
+            self._schedule_max_height_update()
+            # 現在の状態に応じて高さを合わせる（幅は維持）
+            try:
+                self.master.after(80, self._apply_height_to_state)
+            except Exception:
+                pass
+        except Exception:
+            pass
 
     def _apply_fixed_layout(self) -> None:
         # PanedWindow を用いた固定2カラム（左右同高さ）配置
@@ -1024,25 +1084,19 @@ class WrapperGUI:
     # 左右ペイン比率の固定ロジックは撤廃
 
     def _lock_minsize_by_content(self) -> None:
-        # スクロール対応：最小サイズのみ設定し、縦方向リサイズを許可
+        # ルートの固定的な最小サイズ設定は撤廃し、自由にリサイズ可能にする
         root = self.master
         try:
             root.update_idletasks()
-            # 横幅の最小幅を設定（左右ペインの最小幅を合算し、少し余白）
-            # 左800 + 右360 ≒ 1160 → 1200を下限に設定
-            min_w = 1200
-            min_h = 800  # 縦方向の最小高さを設定（スクロール可能）
-            # 最小サイズのみ設定（固定サイズは設定しない）
-            root.minsize(min_w, min_h)
-            try:
-                # 最大サイズ制限を削除（縦方向も自由にリサイズ可能）
-                root.maxsize(100000, 100000)
-            except Exception:
-                pass
-            try:
-                root.resizable(True, True)
-            except Exception:
-                pass
+        except Exception:
+            pass
+        try:
+            root.resizable(True, True)
+        except Exception:
+            pass
+        # 初期の最大高さを左カラムに合わせて制限
+        try:
+            self._update_max_height_to_left_column()
         except Exception:
             pass
 
@@ -1102,6 +1156,137 @@ class WrapperGUI:
     # 左カラムの二段化ロジックは廃止（最小幅で保護）
 
     # 右側エンドポイントは1行固定（サブフレーム内でボタン/エントリを横並び）
+
+    def _schedule_max_height_update(self) -> None:
+        # 更新頻度を抑えるために後続の呼び出しをデバウンス
+        try:
+            job = getattr(self, "_maxheight_job", None)
+            if job is not None:
+                self.master.after_cancel(job)
+        except Exception:
+            pass
+        try:
+            self._maxheight_job = self.master.after(60, self._update_max_height_to_left_column)
+        except Exception:
+            pass
+
+    def _update_max_height_to_left_column(self) -> None:
+        # ウィンドウの最大高さを左カラム（Server Settings）の要求高さ＋ヘッダー高に合わせる
+        try:
+            root = self.master
+            root.update_idletasks()
+            header_h = 0
+            try:
+                header_h = self.header.winfo_height() or self.header.winfo_reqheight() or 0
+            except Exception:
+                pass
+            left_h = 0
+            try:
+                if self.scroll_container.winfo_ismapped():
+                    left_h = self.left_col.winfo_reqheight() or 0
+                else:
+                    left_h = 0
+            except Exception:
+                pass
+            # グリッドの上下パディング分の余裕（安全マージン）
+            margin = 24
+            if self.settings_collapsed.get():
+                # 折りたたみ時はヘッダーの最低限の高さ
+                total_h = max(1, header_h + margin)
+            else:
+                total_h = max(320, header_h + left_h + margin)
+            # 横幅は制限しない
+            try:
+                root.maxsize(100000, total_h)
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+    def _apply_initial_geometry(self) -> None:
+        # 起動時のウィンドウサイズ: 高さは折りたたみ状態に応じた最大/自然高、横幅は現状の1.2倍
+        try:
+            root = self.master
+            root.update_idletasks()
+            # 基本寸法の取得
+            header_h = 0
+            try:
+                header_h = self.header.winfo_height() or self.header.winfo_reqheight() or 0
+            except Exception:
+                pass
+            # 左カラムの自然高さ（未折りたたみ時のみ考慮）
+            left_h = 0
+            if not self.settings_collapsed.get():
+                try:
+                    left_h = self.left_col.winfo_reqheight() or 0
+                except Exception:
+                    left_h = 0
+            margin = 24
+            if self.settings_collapsed.get():
+                desired_h = max(1, header_h + margin)
+            else:
+                desired_h = max(320, header_h + left_h + margin)
+            # 画面上限および maxsize にフィット
+            try:
+                screen_h = root.winfo_screenheight()
+                desired_h = min(desired_h, max(320, screen_h - 80))
+            except Exception:
+                pass
+            # 横幅は要求幅の1.2倍
+            try:
+                req_w = max(root.winfo_width(), root.winfo_reqwidth())
+            except Exception:
+                req_w = 900
+            desired_w = int(req_w * 1.2)
+            try:
+                screen_w = root.winfo_screenwidth()
+                desired_w = min(desired_w, max(480, screen_w - 40))
+            except Exception:
+                pass
+            # 適用
+            try:
+                root.geometry(f"{desired_w}x{desired_h}")
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+    def _apply_height_to_state(self) -> None:
+        # 折りたたみ状態に応じて高さだけ再計算して適用（幅は維持）
+        try:
+            root = self.master
+            root.update_idletasks()
+            header_h = 0
+            try:
+                header_h = self.header.winfo_height() or self.header.winfo_reqheight() or 0
+            except Exception:
+                pass
+            left_h = 0
+            if not self.settings_collapsed.get():
+                try:
+                    left_h = self.left_col.winfo_reqheight() or 0
+                except Exception:
+                    left_h = 0
+            margin = 24
+            if self.settings_collapsed.get():
+                desired_h = max(1, header_h + margin)
+            else:
+                desired_h = max(320, header_h + left_h + margin)
+            try:
+                screen_h = root.winfo_screenheight()
+                desired_h = min(desired_h, max(240, screen_h - 80))
+            except Exception:
+                pass
+            try:
+                cur_w = max(root.winfo_width(), root.winfo_reqwidth())
+            except Exception:
+                cur_w = 900
+            try:
+                root.geometry(f"{cur_w}x{desired_h}")
+            except Exception:
+                pass
+        except Exception:
+            pass
 
     def start_api(self):
         if self.api_proc or self.backend_proc:
@@ -2027,6 +2212,10 @@ class WrapperGUI:
         self.ssl_certfile.set(data.get("ssl_certfile", self.ssl_certfile.get()))
         self.ssl_keyfile.set(data.get("ssl_keyfile", self.ssl_keyfile.get()))
         self.frame_threshold.set(data.get("frame_threshold", self.frame_threshold.get()))
+        # 折りたたみ状態
+        sc = data.get("settings_collapsed")
+        if isinstance(sc, bool):
+            self.settings_collapsed.set(sc)
 
     def _save_settings(self) -> None:
         data = {
@@ -2063,6 +2252,7 @@ class WrapperGUI:
             "ssl_certfile": self.ssl_certfile.get(),
             "ssl_keyfile": self.ssl_keyfile.get(),
             "frame_threshold": self.frame_threshold.get(),
+            "settings_collapsed": self.settings_collapsed.get(),
         }
         try:
             CONFIG_DIR.mkdir(parents=True, exist_ok=True)
