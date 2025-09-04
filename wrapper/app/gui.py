@@ -145,6 +145,7 @@ TRANSLATIONS_JA = {
     "CUDA: Not available": "CUDA: 利用不可",
     "FFmpeg: Available": "FFmpeg: 利用可",
     "FFmpeg: Not available": "FFmpeg: 利用不可",
+    "FFmpeg is required to start the API.": "FFmpegがないとAPIを開始できません",
     "Log level": "ログレベル",
     "Manage models": "モデル管理",
     "Min chunk size": "最小チャンクサイズ",
@@ -1553,17 +1554,17 @@ class WrapperGUI:
         """Perform a simple check that required dependencies for enabled features are present.
         If any are missing, show a message and cancel startup.
         """
+        # ffmpeg が利用できない場合は即座に警告して起動を中止
+        if shutil.which("ffmpeg") is None:
+            try:
+                messagebox.showerror("FFmpeg", self._t("FFmpeg is required to start the API."))
+            except Exception:
+                pass
+            self.status_var.set(self._t("stopped"))
+            return False
+
         problems: list[str] = []
         suggestions: list[str] = []
-
-        # ffmpeg is used by the API for audio conversion.
-        try:
-            import shutil as _shutil  # noqa: F401
-            if shutil.which("ffmpeg") is None:
-                problems.append("ffmpeg not found (not on PATH).")
-                suggestions.append("macOS: brew install ffmpeg / Windows: choco install ffmpeg, etc")
-        except Exception:
-            pass
 
         # torchaudio is required when VAD (VAC) is enabled
         if self.use_vac.get():

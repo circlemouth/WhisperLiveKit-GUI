@@ -69,7 +69,8 @@
 
 ## エラーハンドリング / ログ
 - バックエンド/API の標準出力と標準エラーはGUIのログ欄と同時にターミナルにも表示される。`PYTHONUNBUFFERED=1` と `-u` オプションによりバッファリングを無効化し、macOSでログが出力されない問題を解消。
- - FFmpeg が無い: `500 ffmpeg_not_found`（API）、GUIログに表示
+- FFmpeg が無い: `500 ffmpeg_not_found`（API）、GUIログに表示
+- GUI から Start API を実行した際に FFmpeg が見つからない場合、警告ダイアログを表示して起動を中止する
 - 音声変換失敗: `400 ffmpeg_failed`（API）
 - WS 側の終了: サーバは結果送信後に `{ "type": "ready_to_stop" }` を返す。GUI は受信スレッドで反映。
 
