@@ -416,7 +416,7 @@ class WrapperGUI:
         self.save_path = tk.StringVar()
         self.save_enabled = tk.BooleanVar(value=False)
 
-        # Layout: log・ステータス・進捗を下部パネルに統合
+        # Layout: 右カラムにログ・ステータス・進捗を配置
 
         self._load_settings()
         # テーマは設定を尊重（既定は darkly）。
@@ -496,12 +496,13 @@ class WrapperGUI:
 
         # Toolbar（再生/設定アイコン）は機能重複のため削除
 
-        # スクロール可能な2カラムメインコンテンツ領域（下部にログ用パネルを備えた縦分割）
+        # スクロール可能な2カラムメインコンテンツ領域
         scroll_container = ScrollableFrame(master)
         scroll_container.grid(row=row, column=0, sticky="nsew", padx=10, pady=5)
         master.rowconfigure(row, weight=1)
         scroll_container.inner.columnconfigure(0, weight=1)
-        # 後続でログ欄を追加するため参照を保持
+        scroll_container.inner.rowconfigure(0, weight=1)
+        # メイン領域の参照を保持
         self.scroll_container = scroll_container
 
         # PanedWindowをスクロール可能フレーム内に配置
@@ -745,10 +746,11 @@ class WrapperGUI:
         )
         self.stop_btn.grid(row=0, column=1, sticky="ew", padx=(6, 0))
 
-        # 右カラム: Endpoints + Recorder（PanedWindow右ペイン）
+        # 右カラム: Endpoints + Recorder + Logs（PanedWindow右ペイン）
         right_panel = ttk.Frame(content)
         right_panel.columnconfigure(0, weight=1)
-        right_panel.rowconfigure(1, weight=1)  # Recorderセクションが拡張可能
+        right_panel.rowconfigure(1, weight=2)  # Recorderセクションが拡張可能
+        right_panel.rowconfigure(2, weight=1)  # Logsセクション（Recorderの約半分）
         self.right_panel = right_panel
 
         # Endpointsを右カラムの上部に移動（1行固定・サブフレームでエントリとボタンを並べる）
@@ -863,12 +865,12 @@ class WrapperGUI:
         self.save_browse_btn = ttk.Button(record_frame, text="Browse", command=self.choose_save_path)
         self.save_browse_btn.grid(row=r, column=2, padx=5)
         r += 1
-        # --- Logs & status panel (ログ欄もスクロール対象) ---
-        log_panel = ttk.Frame(self.scroll_container.inner)
+
+        # --- Logs & status panel (右カラムの最下段) ---
+        log_panel = ttk.Frame(right_panel)
         log_panel.columnconfigure(0, weight=1)
         log_panel.rowconfigure(1, weight=1)
-        self.scroll_container.inner.rowconfigure(1, weight=1)
-        log_panel.grid(row=1, column=0, sticky="nsew", pady=(5,0))
+        log_panel.grid(row=2, column=0, sticky="nsew", pady=(5,0))
         status = ttk.Frame(log_panel)
         status.grid(row=0, column=0, sticky="ew")
         status.columnconfigure(1, weight=1)
@@ -899,7 +901,7 @@ class WrapperGUI:
         self.log_note_label = ttk.Label(
             log_frame,
             text=self._t(
-                "This console is for log output only and cannot be used as a CLI."
+                "This console is for log output only and cannot be used as a CLI.",
             ),
             font=log_note_font,
         )
