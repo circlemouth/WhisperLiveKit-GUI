@@ -280,17 +280,21 @@ class ScrollableFrame(ttk.Frame):
                 pass
             # 高さをキャンバスに追従させ、余白がある場合は拡張
             try:
-                bbox = self._canvas.bbox("all")
-                if bbox:
-                    content_h = bbox[3] - bbox[1]
-                    canvas_h = self._canvas.winfo_height()
-                    target_h = canvas_h if content_h <= canvas_h else content_h
-                    self._canvas.itemconfigure(self._window, height=target_h)
-                    self._canvas.configure(scrollregion=self._canvas.bbox("all"))
-                    if content_h <= canvas_h + 1:
-                        self._vsb.grid_remove()
-                    else:
-                        self._vsb.grid(row=0, column=1, sticky="ns")
+                # 子ウィジェットの実高さからコンテンツの自然な高さを取得
+                self.inner.update_idletasks()
+                content_h = 0
+                for child in self.inner.winfo_children():
+                    bottom = child.winfo_y() + child.winfo_height()
+                    if bottom > content_h:
+                        content_h = bottom
+                canvas_h = self._canvas.winfo_height()
+                target_h = canvas_h if content_h <= canvas_h else content_h
+                self._canvas.itemconfigure(self._window, height=target_h)
+                self._canvas.configure(scrollregion=self._canvas.bbox("all"))
+                if content_h <= canvas_h + 1:
+                    self._vsb.grid_remove()
+                else:
+                    self._vsb.grid(row=0, column=1, sticky="ns")
             except Exception:
                 pass
 
@@ -301,17 +305,20 @@ class ScrollableFrame(ttk.Frame):
                 pass
             # スクロール必要性を再評価し、余白があれば高さを拡張
             try:
-                bbox = self._canvas.bbox("all")
-                if bbox:
-                    content_h = bbox[3] - bbox[1]
-                    canvas_h = self._canvas.winfo_height()
-                    target_h = canvas_h if content_h <= canvas_h else content_h
-                    self._canvas.itemconfigure(self._window, height=target_h)
-                    self._canvas.configure(scrollregion=self._canvas.bbox("all"))
-                    if content_h <= canvas_h + 1:
-                        self._vsb.grid_remove()
-                    else:
-                        self._vsb.grid(row=0, column=1, sticky="ns")
+                self.inner.update_idletasks()
+                content_h = 0
+                for child in self.inner.winfo_children():
+                    bottom = child.winfo_y() + child.winfo_height()
+                    if bottom > content_h:
+                        content_h = bottom
+                canvas_h = self._canvas.winfo_height()
+                target_h = canvas_h if content_h <= canvas_h else content_h
+                self._canvas.itemconfigure(self._window, height=target_h)
+                self._canvas.configure(scrollregion=self._canvas.bbox("all"))
+                if content_h <= canvas_h + 1:
+                    self._vsb.grid_remove()
+                else:
+                    self._vsb.grid(row=0, column=1, sticky="ns")
             except Exception:
                 pass
 
