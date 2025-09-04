@@ -109,11 +109,6 @@
 - 原因: Windows 環境では `pyannote.audio` が必要とする `hyperparams.yaml` や `custom.py` へのシンボリックリンク作成に失敗する場合がある。
 - 対応: 起動時にこれらファイルの存在を確認し、ラッパーの Model Manager で `speechbrain/spkrec-ecapa-voxceleb` を取得して必要ファイルをコピーするよう修正済み（不足分は Hub から直接取得）。シンボリックリンクは使用しない。
 
-## トラブルシューティング: 短い音声で文字起こしが出力されない
-- 症状: 数秒以下の短い音声を送信してもテキストが返らない。
-- 原因: 終端マーカー受信時に内部バッファが確定されず、未処理のトークンが残っていた。
-- 対応: 終了処理前に `process_iter(is_last=True)` を呼び出して残りのバッファを確定させるよう修正済み（ユーザー側の設定変更は不要）。
-
 ## 依存関係のインストール（例）
 - CPU/AMD 環境: `pip install -r wrapper/requirements-cpu-amd.txt`
 - NVIDIA 環境: `pip install -r wrapper/requirements-nvidia.txt`

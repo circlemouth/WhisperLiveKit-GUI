@@ -275,21 +275,7 @@ class AudioProcessor:
             try:
                 item = await self.transcription_queue.get()
                 if item is SENTINEL:
-                    logger.debug("Transcription processor received sentinel. Flushing remaining buffer.")
-                    if self.online:
-                        new_tokens, current_audio_processed_upto = self.online.process_iter(is_last=True)
-                        _buffer_transcript_obj = self.online.get_buffer()
-                        buffer_text = _buffer_transcript_obj.text
-                        candidate_end_times = [self.end_buffer]
-                        if new_tokens:
-                            candidate_end_times.append(new_tokens[-1].end)
-                        if _buffer_transcript_obj.end is not None:
-                            candidate_end_times.append(_buffer_transcript_obj.end)
-                        candidate_end_times.append(current_audio_processed_upto)
-                        new_end_buffer = max(candidate_end_times)
-                        await self.update_transcription(
-                            new_tokens, buffer_text, new_end_buffer, self.sep
-                        )
+                    logger.debug("Transcription processor received sentinel. Finishing.")
                     self.transcription_queue.task_done()
                     break
                 
