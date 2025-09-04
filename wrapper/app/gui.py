@@ -278,12 +278,16 @@ class ScrollableFrame(ttk.Frame):
                 self._canvas.itemconfigure(self._window, width=self._canvas.winfo_width())
             except Exception:
                 pass
-            # スクロールが不要ならスクロールバーを隠す
+            # 高さをキャンバスに追従させ、余白がある場合は拡張
             try:
                 bbox = self._canvas.bbox("all")
                 if bbox:
                     content_h = bbox[3] - bbox[1]
-                    if content_h <= self._canvas.winfo_height() + 1:
+                    canvas_h = self._canvas.winfo_height()
+                    target_h = canvas_h if content_h <= canvas_h else content_h
+                    self._canvas.itemconfigure(self._window, height=target_h)
+                    self._canvas.configure(scrollregion=self._canvas.bbox("all"))
+                    if content_h <= canvas_h + 1:
                         self._vsb.grid_remove()
                     else:
                         self._vsb.grid(row=0, column=1, sticky="ns")
@@ -295,12 +299,16 @@ class ScrollableFrame(ttk.Frame):
                 self._canvas.itemconfigure(self._window, width=self._canvas.winfo_width())
             except Exception:
                 pass
-            # スクロール必要性を再評価
+            # スクロール必要性を再評価し、余白があれば高さを拡張
             try:
                 bbox = self._canvas.bbox("all")
                 if bbox:
                     content_h = bbox[3] - bbox[1]
-                    if content_h <= self._canvas.winfo_height() + 1:
+                    canvas_h = self._canvas.winfo_height()
+                    target_h = canvas_h if content_h <= canvas_h else content_h
+                    self._canvas.itemconfigure(self._window, height=target_h)
+                    self._canvas.configure(scrollregion=self._canvas.bbox("all"))
+                    if content_h <= canvas_h + 1:
                         self._vsb.grid_remove()
                     else:
                         self._vsb.grid(row=0, column=1, sticky="ns")
