@@ -1072,6 +1072,12 @@ class WrapperGUI:
                 for line in iter(stream.readline, ''):
                     if not line:
                         break
+                    print(
+                        line,
+                        end="",
+                        file=sys.stderr if is_stderr else sys.stdout,
+                        flush=True,
+                    )
                     self.master.after(0, self._append_log, source, line, is_stderr)
             except Exception:
                 pass
@@ -1161,6 +1167,8 @@ class WrapperGUI:
         env["WRAPPER_API_PORT"] = a_port
         env["HUGGINGFACE_HUB_CACHE"] = str(model_manager.HF_CACHE_DIR)
         env["TORCH_HOME"] = str(model_manager.TORCH_CACHE_DIR)
+        # Ensure child Python processes flush output immediately so logs appear in real time
+        env["PYTHONUNBUFFERED"] = "1"
         # Propagate Hugging Face token to backend process if available
         try:
             token: str | None = None
@@ -1213,6 +1221,7 @@ class WrapperGUI:
 
         backend_cmd = [
             sys.executable,
+            "-u",
             "-m",
             "whisperlivekit.basic_server",
             "--host",
@@ -1307,6 +1316,7 @@ class WrapperGUI:
         self.api_proc = subprocess.Popen(
             [
                 sys.executable,
+                "-u",
                 "-m",
                 "uvicorn",
                 "wrapper.api.server:app",
