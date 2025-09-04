@@ -199,11 +199,15 @@ class OnlineASRProcessor:
         return self.concatenate_tokens(self.transcript_buffer.buffer)
         
 
-    def process_iter(self) -> Tuple[List[ASRToken], float]:
+    def process_iter(self, is_last: bool = False) -> Tuple[List[ASRToken], float]:
         """
         Processes the current audio buffer.
 
-        Returns a tuple: (list of committed ASRToken objects, float representing the audio processed up to time).
+        Parameters:
+            is_last: Whether this is the final call (ignored in this backend).
+
+        Returns:
+            A tuple of committed ASRToken objects and the audio time processed up to.
         """
         current_audio_processed_upto = self.get_audio_buffer_end_time()
         prompt_text, _ = self.prompt()
