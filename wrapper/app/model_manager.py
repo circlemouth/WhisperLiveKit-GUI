@@ -96,6 +96,26 @@ def get_model_path(name: str, *, backend: Optional[str] = None) -> Path:
         dirs = [p for p in snapshots.iterdir() if p.is_dir()]
         if dirs:
             return max(dirs, key=lambda p: p.stat().st_mtime)
+    marker = base / "latest"
+    if marker.is_file():
+        try:
+            saved = Path(marker.read_text().strip())
+            if saved.exists():
+                return saved
+        except Exception:
+            pass
+    # Fallback: legacy cache or manually placed models
+    # Search typical weight filenames at root or one level deep.
+    for cand in ("model.bin", "pytorch_model.bin"):
+        p = base / cand
+        if p.exists():
+            return base
+    for sub in base.iterdir():
+        if sub.is_dir():
+            for cand in ("model.bin", "pytorch_model.bin"):
+                p = sub / cand
+                if p.exists():
+                    return sub
     return base
 
 
@@ -173,6 +193,10 @@ def download_model(
     repo = _resolve_repo_id(name, backend=backend)
     TqdmCls = _make_tqdm_with_cb(progress_cb)
     path = Path(snapshot_download(repo_id=repo, cache_dir=HF_CACHE_DIR, tqdm_class=TqdmCls))
+    try:
+        (_cache_dir(repo) / "latest").write_text(str(path), encoding="utf-8")
+    except Exception:
+        pass
     if backend == "simulstreaming":
         # SimulStreaming expects a `<name>.pt` file in cache root
         src_candidates = [path / "model.bin", path / "pytorch_model.bin", path / f"{name}.pt"]
