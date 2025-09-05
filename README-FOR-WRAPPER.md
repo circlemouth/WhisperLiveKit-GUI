@@ -26,6 +26,7 @@
 - モデル/VAD のダウンロード・管理（GUIの Model Manager）。
   - API 起動時、必要な Whisper/VAD/話者分離モデルがローカルに無ければ自動でダウンロードし、設定画面から確認・削除できる。
   - Whisperモデルは SimulStreaming 用と Faster Whisper 用に区分して一覧表示し、モデル名からバックエンド名を省いた。既存のダウンロード済みモデルはそのまま利用できるが、他バックエンドを使う場合は各バックエンド用モデルを追加取得する。
+  - Faster Whisper バックエンドのモデル取得時は、ダウンロードしたスナップショットのパスを `latest` ファイルに記録し、起動時はこれを参照してモデルを特定する。`latest` や `snapshots` が見つからない場合は `.bin` ファイル探索にフォールバックし、手動配置モデルも読み込める。
 
 ## アーキテクチャ
 - GUI 層（Tkinter）: `wrapper/cli/main.py` → `wrapper/app/gui.py`
