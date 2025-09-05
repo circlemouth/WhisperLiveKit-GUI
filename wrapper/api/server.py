@@ -3,7 +3,7 @@ import os
 import subprocess
 import io
 import wave
-from typing import List
+from typing import List, Optional
 
 from fastapi import FastAPI, File, UploadFile, HTTPException, Form, Request, Depends
 from fastapi.responses import JSONResponse, PlainTextResponse
@@ -144,9 +144,8 @@ async def _stream_to_backend(pcm_bytes: bytes):
     Returns a tuple: (all_texts: List[str], lines: List[dict]) where lines
     are dicts with keys like: speaker, text, beg, end, diff.
     """
-    texts: List[str] = []
-    collected_lines: List[dict] = []
-    seen = set()
+    # Use latest snapshot approach to avoid duplications from streaming updates
+    latest_lines: List[dict] = []
     async with websockets.connect(BACKEND_WS_URL) as ws:
         chunk = 3200
         for i in range(0, len(pcm_bytes), chunk):
@@ -158,28 +157,31 @@ async def _stream_to_backend(pcm_bytes: bytes):
             data = json.loads(message)
             if data.get("type") == "ready_to_stop":
                 break
-            lines = data.get("lines", [])
-            buffer_transcription = data.get("buffer_transcription", "")
-            buffer_diarization = data.get("buffer_diarization", "")
-            # Collect lines for downstream SRT/VTT/verbose_json
+            lines = data.get("lines", []) or []
+            # Build a clean snapshot, skipping silence/loading and empty texts
+            snapshot: List[dict] = []
             for item in lines:
-                if isinstance(item, dict):
-                    text_val = (item.get("text") or "").strip()
-                    beg_val = item.get("beg")
-                    end_val = item.get("end")
-                    key = (text_val, beg_val, end_val)
-                    if text_val and key not in seen:
-                        collected_lines.append(item)
-                        seen.add(key)
-                    # Also build plain text aggregation
-                    if text_val:
-                        texts.append(text_val)
-            if buffer_transcription:
-                texts.append(buffer_transcription)
-            if buffer_diarization:
-                texts.append(buffer_diarization)
+                if not isinstance(item, dict):
+                    continue
+                text_val = (item.get("text") or "").strip()
+                if not text_val:
+                    continue
+                spk = item.get("speaker")
+                if isinstance(spk, int) and spk in (-2, 0):
+                    continue
+                snapshot.append({
+                    "speaker": spk,
+                    "text": text_val,
+                    "beg": item.get("beg"),
+                    "end": item.get("end"),
+                    "diff": item.get("diff"),
+                })
+            if snapshot:
+                latest_lines = snapshot
         await ws.close()
-    return texts, collected_lines
+    # Aggregate final text from the latest snapshot only
+    texts: List[str] = [(it.get("text") or "").strip() for it in latest_lines if it.get("text")]
+    return texts, latest_lines
 
 
 def _parse_hhmmss_to_seconds(value: str) -> float:
@@ -194,12 +196,26 @@ def _parse_hhmmss_to_seconds(value: str) -> float:
         return 0.0
 
 
+def _speaker_label(speaker: Optional[int]) -> str:
+    try:
+        if speaker is None:
+            return ""
+        if int(speaker) <= 0:
+            return ""
+        return f"Speaker {int(speaker)}: "
+    except Exception:
+        return ""
+
+
 def _format_srt(lines: List[dict]) -> str:
     out_lines: List[str] = []
     idx = 1
     for item in lines:
         text = (item.get("text") or "").strip()
         if not text:
+            continue
+        spk = item.get("speaker")
+        if isinstance(spk, int) and spk in (-2, 0):
             continue
         beg = _parse_hhmmss_to_seconds(item.get("beg", "00:00:00"))
         end = _parse_hhmmss_to_seconds(item.get("end", "00:00:00"))
@@ -210,7 +226,8 @@ def _format_srt(lines: List[dict]) -> str:
             return f"{h:02d}:{m:02d}:{s:02d},000"
         out_lines.append(str(idx))
         out_lines.append(f"{to_ts(beg)} --> {to_ts(end)}")
-        out_lines.append(text)
+        lbl = _speaker_label(spk)
+        out_lines.append(f"{lbl}{text}" if lbl else text)
         out_lines.append("")
         idx += 1
     return "\n".join(out_lines).rstrip() + ("\n" if out_lines else "")
@@ -222,6 +239,9 @@ def _format_vtt(lines: List[dict]) -> str:
         text = (item.get("text") or "").strip()
         if not text:
             continue
+        spk = item.get("speaker")
+        if isinstance(spk, int) and spk in (-2, 0):
+            continue
         beg = _parse_hhmmss_to_seconds(item.get("beg", "00:00:00"))
         end = _parse_hhmmss_to_seconds(item.get("end", "00:00:00"))
         def to_ts(t: float) -> str:
@@ -230,7 +250,8 @@ def _format_vtt(lines: List[dict]) -> str:
             s = int(t % 60)
             return f"{h:02d}:{m:02d}:{s:02d}.000"
         out_lines.append(f"{to_ts(beg)} --> {to_ts(end)}")
-        out_lines.append(text)
+        lbl = _speaker_label(spk)
+        out_lines.append(f"{lbl}{text}" if lbl else text)
         out_lines.append("")
     return "\n".join(out_lines).rstrip() + ("\n" if len(out_lines) > 2 else "")
 
@@ -322,7 +343,14 @@ async def transcribe(
                 continue
             start = _parse_hhmmss_to_seconds(item.get("beg", "00:00:00"))
             end = _parse_hhmmss_to_seconds(item.get("end", "00:00:00"))
-            segments.append({"start": start, "end": end, "text": text})
+            spk = item.get("speaker")
+            segments.append({
+                "start": start,
+                "end": end,
+                "text": text,
+                "speaker": spk if isinstance(spk, int) else None,
+                "speaker_label": (_speaker_label(spk).rstrip() if _speaker_label(spk) else None),
+            })
         return JSONResponse({"text": final_text, "segments": segments})
 
     # Fallback (should not reach)

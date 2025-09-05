@@ -13,6 +13,7 @@ import audioop
 import json
 import queue
 import threading
+from typing import Optional
 from pathlib import Path
 import shutil
 from platformdirs import user_config_path
@@ -430,6 +431,8 @@ class WrapperGUI:
         self.level_var = tk.DoubleVar(value=0.0)
         self.save_path = tk.StringVar()
         self.save_enabled = tk.BooleanVar(value=False)
+        # Transcript rendering signature to avoid duplicate appends
+        self._transcript_last_signature: Optional[tuple[str, ...]] = None
 
         # Layout: 右カラムにログ・ステータス・進捗を配置
 
@@ -2299,6 +2302,8 @@ class WrapperGUI:
             self.transcript_box.configure(state="disabled")
             threading.Thread(target=self._recording_worker, daemon=True).start()
             self.start_time = time.time()
+            # reset last signature at new session
+            self._transcript_last_signature = None
             self._update_timer()
             # 設定をロック（サーバー稼働中と同様に）
             try:
@@ -2349,7 +2354,6 @@ class WrapperGUI:
                 # WebSocket receiver (backend -> GUI)
                 def receiver():
                     import re
-                    seen_keys: set[tuple] = set()
                     # エフェメラルなバッファは表示しない（確定結果のみ）
                     def _meaningful(s: str) -> bool:
                         s = (s or "").strip()
@@ -2364,21 +2368,25 @@ class WrapperGUI:
                             break
                         try:
                             data = json.loads(msg)
-                            to_append: list[str] = []
-                            # 1) 確定結果: lines の text を重複排除して反映（記号だけは除外）
+                            # 1) 確定結果スナップショット: 現在の全行（記号のみは除外）をそのまま描画
+                            # 発話者ラベルも保持
+                            lines_for_render: list[dict] = []
                             for item in (data.get("lines", []) or []):
                                 if isinstance(item, dict):
                                     t = (item.get("text") or "").strip()
                                     if not _meaningful(t):
                                         continue
-                                    key = (t, item.get("beg"), item.get("end"))
-                                    if key not in seen_keys:
-                                        seen_keys.add(key)
-                                        to_append.append(t)
-                            # 2) buffer_transcription / buffer_diarization はノイズが多いためTranscriptには追加しない
-                            if to_append:
-                                combined = "\n".join(to_append)
-                                self.master.after(0, lambda t=combined: self._append_transcript(t))
+                                    spk = item.get("speaker")
+                                    # speaker -2 (silence) / 0 (loading) は表示しない
+                                    if isinstance(spk, int) and spk in (-2, 0):
+                                        continue
+                                    lines_for_render.append({
+                                        "speaker": spk,
+                                        "text": t,
+                                    })
+                            # 2) buffer_transcription / buffer_diarization はノイズが多いため Transcript には反映しない
+                            # 3) テキストは追記ではなく置換描画（重複増殖を防ぐ）
+                            self.master.after(0, lambda lines=lines_for_render: self._render_transcript_lines(lines))
                         except Exception:
                             continue
 
@@ -2502,6 +2510,37 @@ class WrapperGUI:
     def _append_transcript(self, text: str) -> None:
         self.transcript_box.configure(state="normal")
         self.transcript_box.insert(tk.END, text + "\n")
+        self.transcript_box.see(tk.END)
+        self.transcript_box.configure(state="disabled")
+
+    def _render_transcript_lines(self, lines: list[dict]) -> None:
+        # 空のときは更新せず（既存表示を維持）
+        if not lines:
+            return
+        # 署名は speaker と text のペアで作成（時刻更新による再描画を避ける）
+        signature = tuple(f"{int(it.get('speaker') or 1)}|{(it.get('text') or '').strip()}" for it in lines)
+        if self._transcript_last_signature == signature:
+            return
+        self._transcript_last_signature = signature
+        # 表示テキストを作成（Speaker N: テキスト）
+        rendered_lines: list[str] = []
+        for it in lines:
+            spk = it.get("speaker")
+            try:
+                spk_n = int(spk) if spk is not None else 1
+            except Exception:
+                spk_n = 1
+            t = (it.get("text") or "").strip()
+            if not t:
+                continue
+            prefix = f"Speaker {spk_n}: " if spk_n > 0 else ""
+            rendered_lines.append(prefix + t)
+        if not rendered_lines:
+            return
+        text = "\n".join(rendered_lines) + "\n"
+        self.transcript_box.configure(state="normal")
+        self.transcript_box.delete("1.0", tk.END)
+        self.transcript_box.insert(tk.END, text)
         self.transcript_box.see(tk.END)
         self.transcript_box.configure(state="disabled")
 
