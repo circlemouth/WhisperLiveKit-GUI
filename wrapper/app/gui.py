@@ -23,6 +23,7 @@ except Exception:
     keyring = None
 
 from . import model_manager
+from . import preflight
 
 
 def _load_whisper_models() -> list[str]:
@@ -1410,6 +1411,13 @@ class WrapperGUI:
                 env["SSL_CERT_FILE"] = certifi.where()
             except Exception:
                 pass
+
+        # MSIX/Windows 対策: 起動前プリフライトでキャッシュ環境と symlink 実体化を整備
+        try:
+            preflight.run(env)
+        except Exception:
+            # 起動は継続（ベストエフォート）
+            pass
 
         backend_cmd = [
             sys.executable,
