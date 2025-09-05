@@ -62,13 +62,9 @@ SEGMENTATION_MODELS = ["pyannote/segmentation-3.0", "pyannote/segmentation"]
 EMBEDDING_MODELS = ["pyannote/embedding", "speechbrain/spkrec-ecapa-voxceleb"]
 VAD_MODELS = [model_manager.VAD_REPO]
 
-WHISPER_MODEL_VARIANTS: dict[str, tuple[str, str]] = {}
-for m in WHISPER_MODELS:
-    for be in ("faster-whisper", "simulstreaming"):
-        WHISPER_MODEL_VARIANTS[f"{m} [{be}]"] = (m, be)
+WHISPER_BACKENDS = ["simulstreaming", "faster-whisper"]
 
-ALL_MODELS = list(WHISPER_MODEL_VARIANTS) + SEGMENTATION_MODELS + EMBEDDING_MODELS + VAD_MODELS
-MODEL_USAGE = {label: "Whisper" for label in WHISPER_MODEL_VARIANTS}
+MODEL_USAGE = {m: "Whisper" for m in WHISPER_MODELS}
 MODEL_USAGE.update({m: "Segmentation" for m in SEGMENTATION_MODELS})
 MODEL_USAGE.update({m: "Embedding" for m in EMBEDDING_MODELS})
 MODEL_USAGE.update({model_manager.VAD_REPO: "VAD"})
@@ -163,8 +159,8 @@ TRANSLATIONS_JA = {
     "Require API key for Wrapper API": "Wrapper APIにAPIキーを要求",
     "SSL certfile": "SSL証明書",
     "SSL keyfile": "SSL鍵ファイル",
-    "Save path": "保存パス",
-    "Save transcript to file": "ファイルに保存",
+    "Save folder": "保存先フォルダ指定",
+    "Auto-save transcript to file": "自動的にファイルに保存",
     "Security": "セキュリティ",
     "Segmentation model": "セグメンテーションモデル",
     "Server Settings": "サーバー設定",
@@ -187,6 +183,8 @@ TRANSLATIONS_JA = {
     "Validated": "検証済",
     "Warmup file": "ウォームアップファイル",
     "Whisper model": "Whisperモデル",
+    "Whisper (simulstreaming)": "Whisper (simulstreaming)",
+    "Whisper (faster-whisper)": "Whisper (faster-whisper)",
     "WhisperLiveKit Wrapper": "WhisperLiveKit Wrapper",
     "Settings locked": "設定はロックされています",
     "Stop API before changing settings.": "設定を変更する前にAPIを停止してください。",
@@ -881,10 +879,10 @@ class WrapperGUI:
         self.transcript_box.configure(yscrollcommand=scroll.set)
         r += 1
         # Save options within Recorder
-        self.save_enabled_chk = ttk.Checkbutton(record_frame, text="Save transcript to file", variable=self.save_enabled, command=self._update_save_widgets)
+        self.save_enabled_chk = ttk.Checkbutton(record_frame, text="Auto-save transcript to file", variable=self.save_enabled, command=self._update_save_widgets)
         self.save_enabled_chk.grid(row=r, column=0, columnspan=2, sticky=tk.W)
         r += 1
-        ttk.Label(record_frame, text="Save path").grid(row=r, column=0, sticky=tk.W)
+        ttk.Label(record_frame, text="Save folder").grid(row=r, column=0, sticky=tk.W)
         self.save_entry = ttk.Entry(record_frame, textvariable=self.save_path)
         self.save_entry.grid(row=r, column=1, sticky="ew")
         self.save_browse_btn = ttk.Button(record_frame, text="Browse", command=self.choose_save_path)
@@ -1804,10 +1802,7 @@ class WrapperGUI:
         self.master.after(1200, _restore)
 
     def choose_save_path(self) -> None:
-        path = filedialog.asksaveasfilename(
-            defaultextension=".txt",
-            filetypes=[("Text files", "*.txt"), ("All files", "*.*")],
-        )
+        path = filedialog.askdirectory()
         if path:
             self.save_path.set(path)
 
@@ -2192,7 +2187,11 @@ class WrapperGUI:
         self.segmentation_model.set(data.get("segmentation_model", self.segmentation_model.get()))
         self.embedding_model.set(data.get("embedding_model", self.embedding_model.get()))
         self.ws_url.set(data.get("ws_url", self.ws_url.get()))
-        self.save_path.set(data.get("save_path", self.save_path.get()))
+        saved_path = data.get("save_path", self.save_path.get())
+        if saved_path:
+            if os.path.splitext(saved_path)[1]:
+                saved_path = os.path.dirname(saved_path)
+            self.save_path.set(saved_path)
         self.save_enabled.set(data.get("save_enabled", False))
         self.allow_external.set(data.get("allow_external", self.allow_external.get()))
         self.theme.set(data.get("theme", self.theme.get()))
@@ -2479,12 +2478,15 @@ class WrapperGUI:
     def _finalize_recording(self) -> None:
         self.record_btn.config(text=self._t("Start Recording"))
         self.status_var.set(self._t("stopped"))
-        path = self.save_path.get().strip()
-        if self.save_enabled.get() and path:
+        dir_path = self.save_path.get().strip()
+        if self.save_enabled.get() and dir_path:
             try:
-                with open(path, "w", encoding="utf-8") as f:
+                Path(dir_path).mkdir(parents=True, exist_ok=True)
+                ts = time.strftime("%Y%m%d-%H%M%S")
+                file_path = Path(dir_path) / f"transcript-{ts}.txt"
+                with open(file_path, "w", encoding="utf-8") as f:
                     f.write(self.transcript_box.get("1.0", tk.END))
-                self.status_var.set(f"{self._t('saved:')} {path}")
+                self.status_var.set(f"{self._t('saved:')} {file_path}")
             except Exception as e:  # pragma: no cover - filesystem errors
                 self.status_var.set(f"{self._t('save failed:')} {e}")
 
@@ -3027,31 +3029,53 @@ class ModelManagerDialog(tk.Toplevel):
             except Exception:
                 pass
 
-        self.rows: dict[str, tuple[tk.StringVar, ttk.Progressbar, ttk.Button, str, str | None]] = {}
+        self.rows: dict[tuple[str, str | None], tuple[tk.StringVar, ttk.Progressbar, ttk.Button]] = {}
         _t = (gui._t if gui is not None and hasattr(gui, "_t") else (lambda s: s))
         self._tr = _t
-        for i, label in enumerate(ALL_MODELS):
-            model_name = label
-            backend = None
-            if label in WHISPER_MODEL_VARIANTS:
-                model_name, backend = WHISPER_MODEL_VARIANTS[label]
-            ttk.Label(inner, text=label).grid(row=i, column=0, sticky=tk.W, padx=5, pady=2)
-            ttk.Label(inner, text=MODEL_USAGE.get(label, "")).grid(row=i, column=1, sticky=tk.W)
+        row = 0
+        for backend in WHISPER_BACKENDS:
+            for model_name in WHISPER_MODELS:
+                label = model_name
+                usage = _t(f"Whisper ({backend})")
+                ttk.Label(inner, text=label).grid(row=row, column=0, sticky=tk.W, padx=5, pady=2)
+                ttk.Label(inner, text=usage).grid(row=row, column=1, sticky=tk.W)
+                status = tk.StringVar()
+                if model_manager.is_model_downloaded(model_name, backend=backend):
+                    status.set(_t("downloaded"))
+                else:
+                    status.set(_t("missing"))
+                ttk.Label(inner, textvariable=status).grid(row=row, column=2, sticky=tk.W)
+                pb = ttk.Progressbar(inner, length=140)
+                pb.grid(row=row, column=3, padx=5, sticky="ew")
+                action = ttk.Button(
+                    inner,
+                    text="Delete" if model_manager.is_model_downloaded(model_name, backend=backend) else "Download",
+                    command=lambda n=model_name, b=backend: self._on_action(n, b),
+                )
+                action.grid(row=row, column=4, padx=5)
+                self.rows[(model_name, backend)] = (status, pb, action)
+                row += 1
+        for model_name in SEGMENTATION_MODELS + EMBEDDING_MODELS + VAD_MODELS:
+            label = model_name
+            usage = MODEL_USAGE.get(model_name, "")
+            ttk.Label(inner, text=label).grid(row=row, column=0, sticky=tk.W, padx=5, pady=2)
+            ttk.Label(inner, text=usage).grid(row=row, column=1, sticky=tk.W)
             status = tk.StringVar()
-            if model_manager.is_model_downloaded(model_name, backend=backend):
+            if model_manager.is_model_downloaded(model_name):
                 status.set(_t("downloaded"))
             else:
                 status.set(_t("missing"))
-            ttk.Label(inner, textvariable=status).grid(row=i, column=2, sticky=tk.W)
+            ttk.Label(inner, textvariable=status).grid(row=row, column=2, sticky=tk.W)
             pb = ttk.Progressbar(inner, length=140)
-            pb.grid(row=i, column=3, padx=5, sticky="ew")
+            pb.grid(row=row, column=3, padx=5, sticky="ew")
             action = ttk.Button(
                 inner,
-                text="Delete" if model_manager.is_model_downloaded(model_name, backend=backend) else "Download",
-                command=lambda n=label: self._on_action(n),
+                text="Delete" if model_manager.is_model_downloaded(model_name) else "Download",
+                command=lambda n=model_name: self._on_action(n, None),
             )
-            action.grid(row=i, column=4, padx=5)
-            self.rows[label] = (status, pb, action, model_name, backend)
+            action.grid(row=row, column=4, padx=5)
+            self.rows[(model_name, None)] = (status, pb, action)
+            row += 1
 
         # 下段: 閉じるボタン
         btns = ttk.Frame(self)
@@ -3062,8 +3086,8 @@ class ModelManagerDialog(tk.Toplevel):
             pass
         ttk.Button(btns, text="Close", command=self.destroy).pack(anchor="e")
 
-    def _on_action(self, label: str) -> None:
-        status, pb, btn, model_name, backend = self.rows[label]
+    def _on_action(self, model_name: str, backend: str | None) -> None:
+        status, pb, btn = self.rows[(model_name, backend)]
         if model_manager.is_model_downloaded(model_name, backend=backend):
             model_manager.delete_model(model_name, backend=backend)
             status.set("missing")
