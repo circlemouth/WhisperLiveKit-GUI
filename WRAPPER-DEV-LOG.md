@@ -1,5 +1,27 @@
 # WRAPPER-DEV-LOG
 
+## 2025-10-23 (torch.hub trust_repo パッチ適用)
+- 背景／スコープ：backend の VAD ダウンロードで `trust_repo` 未指定により PyTorch 2.x で失敗するケースがあった。
+- 決定事項：wrapper 独自の `backend_launcher` を追加し、`torch.hub.load` をラップして `trust_repo=True` を既定化。
+- 根拠・検討メモ：`TranscriptionEngine` 内 `torch.hub.load` の仕様が固定のため、ラッパー側でモンキーパッチすることで互換性を確保。
+- 未解決事項：upstream への正式修正は未反映。
+- 次アクション：upstream へ修正提案を継続。
+- リスク／課題：信頼済みリポジトリ指定によりリモートコード実行リスクがあるため、ダウンロード元の健全性監視が必要。
+- 参照リンク：
+  - `wrapper/app/backend_launcher.py`
+  - `wrapper/app/gui.py`
+
+## 2025-10-22 (VADモデル読み込み時のtrust_repo指定漏れ)
+- 背景／スコープ：VADモデル読み込み時にtorch.hub.loadへtrust_repo引数が未指定のため、PyTorch 2.x環境で実行時に例外が発生する恐れがある。
+- 決定事項：upstreamのTranscriptionEngine内torch.hub.load呼び出しにtrust_repo=Trueを追加するパッチ案を検討。
+- 根拠・検討メモ：wrapper側のmodel_managerではtrust_repoを付与しており挙動が安定しているが、backend側では省略されている。
+- 未解決事項：upstreamで修正が受け入れられるか未定。
+- 次アクション：upstreamへパッチ提案を送付し、採用可否を確認。
+- リスク／課題：現状のままではオフライン環境や厳格なtorch.hub設定でVADが初期化できない可能性。
+- 参照リンク：
+  - `whisperlivekit/core.py`
+  - `wrapper/app/model_manager.py`
+
 ## 2025-10-21 (自動保存とモデル表示の改良)
 - 背景／スコープ：録音結果の保存方法と Whisper モデルの表示区分が分かりにくかった。
 - 決定事項：

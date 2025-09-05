@@ -1427,7 +1427,7 @@ class WrapperGUI:
             sys.executable,
             "-u",
             "-m",
-            "whisperlivekit.basic_server",
+            "wrapper.app.backend_launcher",
             "--host",
             b_host,
             "--port",
