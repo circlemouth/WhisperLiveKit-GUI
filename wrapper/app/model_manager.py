@@ -183,14 +183,15 @@ def download_model(
     return path
 
 
-def delete_model(name: str) -> None:
+def delete_model(name: str, *, backend: Optional[str] = None) -> None:
     if name == VAD_REPO:
         _delete_vad_model()
         return
-    repo = _resolve_repo_id(name)
+    repo = _resolve_repo_id(name, backend=backend)
     shutil.rmtree(_cache_dir(repo), ignore_errors=True)
     # Remove potential .pt file for simulstreaming/openai models
-    try:
-        _pt_file(name).unlink()
-    except Exception:
-        pass
+    if backend in (None, "simulstreaming"):
+        try:
+            _pt_file(name).unlink()
+        except Exception:
+            pass
