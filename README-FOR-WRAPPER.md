@@ -127,6 +127,15 @@
   - VAD 有効時の `torchaudio` は Torch のバージョンに揃えてください（GUIが不足時に案内を表示）。
   - Sortformer バックエンドを使う場合は CUDA + NVIDIA NeMo が必要です。
 
+## Submodule 管理（upstream の取り込み方）
+- 本リポは upstream をサブモジュールとして参照します（ローカル改変なし）。
+- 初回/取得後は以下を実行:
+  - `git submodule update --init --recursive`
+- 配置パス: `submodules/WhisperLiveKit`
+  - ランチャー `wrapper/app/backend_launcher.py` が `sys.path` に上記パスを自動追加します。
+  - そのため `pip install whisperlivekit` は不要です（requirements からも除外済み）。
+  - サブモジュールを更新する場合: `git -C submodules/WhisperLiveKit pull` または `git submodule update --remote --merge`
+
 ## 主要ファイル
 - GUI: `wrapper/app/gui.py`（エントリ: `python -m wrapper.cli.main`）
 - API: `wrapper/api/server.py`

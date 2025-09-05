@@ -1,0 +1,3 @@
+[submodule "submodules/WhisperLiveKit"]
+	path = submodules/WhisperLiveKit
+	url = https://github.com/QuentinFuxa/WhisperLiveKit

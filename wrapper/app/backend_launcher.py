@@ -12,6 +12,7 @@ without requiring upstream modification.
 
 import importlib
 import sys
+from pathlib import Path
 
 
 def _patch_torch_hub() -> None:
@@ -29,7 +30,29 @@ def _patch_torch_hub() -> None:
 
 _patch_torch_hub()
 
-# Defer import until after patching
+# Ensure upstream submodule is importable as `whisperlivekit`
+def _ensure_upstream_on_path() -> None:
+    """Add the WhisperLiveKit submodule to sys.path if needed.
+
+    Looks for `submodules/WhisperLiveKit` (git submodule path) from repo root
+    and appends it to `sys.path` so that `import whisperlivekit` works
+    without installing from PyPI.
+    """
+    try:
+        import whisperlivekit  # noqa: F401
+        return
+    except Exception:
+        pass
+
+    repo_root = Path(__file__).resolve().parents[2]
+    candidate = repo_root / "submodules" / "WhisperLiveKit"
+    if candidate.exists():
+        sys.path.insert(0, str(candidate))
+
+
+_ensure_upstream_on_path()
+
+# Defer import until after patching and sys.path setup
 basic_server = importlib.import_module("whisperlivekit.basic_server")
 
 

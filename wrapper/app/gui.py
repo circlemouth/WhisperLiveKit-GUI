@@ -664,12 +664,10 @@ class WrapperGUI:
         r += 1
         # (VAD certificate moved into Advanced Settings dialog)
         r += 1
-        # VAD Settings aligned to the right (enabled only if VAD is on)
-        vad_row = ttk.Frame(config_frame)
-        vad_row.grid(row=r, column=0, columnspan=2, sticky="ew")
-        vad_row.columnconfigure(0, weight=1)
-        self.vad_settings_btn = ttk.Button(vad_row, text="VAD Settings", command=self._open_vad_settings, bootstyle="info")
-        self.vad_settings_btn.grid(row=0, column=1, sticky="e")
+        # VAD parameters (inlined)
+        ttk.Label(config_frame, text="VAC chunk size").grid(row=r, column=0, sticky=tk.W)
+        self.vac_chunk_entry = ttk.Entry(config_frame, textvariable=self.vac_chunk_size, width=10)
+        self.vac_chunk_entry.grid(row=r, column=1, sticky=tk.W)
         r += 1
         # 7) Diarization section
         ttk.Separator(config_frame, orient="horizontal").grid(row=r, column=0, columnspan=2, sticky="ew", pady=(6, 6))
@@ -745,12 +743,16 @@ class WrapperGUI:
             command=lambda: webbrowser.open("https://huggingface.co/pyannote/embedding"),
         ).pack(side="left")
         r += 1
-        # Diarization Settings button を独立した行に配置（潰れ防止、右寄せ）
-        diar_settings_frame = ttk.Frame(config_frame)
-        diar_settings_frame.grid(row=r, column=0, columnspan=2, sticky="ew", pady=(4, 0))
-        diar_settings_frame.columnconfigure(0, weight=1)
-        self.diar_settings_btn = ttk.Button(diar_settings_frame, text="Diarization Settings", command=self._open_diarization_settings, bootstyle="info")
-        self.diar_settings_btn.grid(row=0, column=0, sticky="e")
+        # Diarization backend (inlined) — place right below Embedding model
+        ttk.Label(config_frame, text="Diarization backend").grid(row=r, column=0, sticky=tk.W)
+        self.diar_backend_combo = ttk.Combobox(
+            config_frame,
+            textvariable=self.diarization_backend,
+            values=self.available_diarization_backends(),
+            state="readonly",
+            width=15,
+        )
+        self.diar_backend_combo.grid(row=r, column=1, sticky="ew")
         r += 1
         # 8) 操作行（Manage/Advanced のみ）
         ttk.Separator(config_frame, orient="horizontal").grid(row=r, column=0, columnspan=2, sticky="ew", pady=(6, 6))
@@ -2124,9 +2126,10 @@ class WrapperGUI:
         self.seg_model_combo.config(state=state)
         self.emb_model_combo.config(state=state)
         try:
-            self.diar_settings_btn.config(state=state)
+            self.diar_backend_combo.config(state=("readonly" if state == tk.NORMAL else "disabled"))
         except Exception:
             pass
+        # No separate settings button; all controls are inlined
 
     def _on_diarization_toggle(self) -> None:
         if self.diarization.get() and not self.hf_logged_in:
@@ -2637,14 +2640,7 @@ class WrapperGUI:
             self.adv_btn.config(state=state_entry)
         except Exception:
             pass
-        try:
-            # Diarization Settings button should also be locked while running/recording
-            if locked:
-                self.diar_settings_btn.config(state=tk.DISABLED)
-            else:
-                self._update_diarization_fields()
-        except Exception:
-            pass
+        # Inlined diarization controls are handled by _update_diarization_fields
         # Start/Stop/Open Web are tied to running state (not recording)
         self.start_btn.config(state=tk.DISABLED if running else tk.NORMAL)
         self.stop_btn.config(state=tk.NORMAL if running else tk.DISABLED)
@@ -2687,9 +2683,9 @@ class WrapperGUI:
             self.vad_cert_browse.config(state=cert_controls_state)
         except Exception:
             pass
-        # VAD Settings button is enabled only when VAD is ON and not locked
+        # VAC chunk size entry is enabled only when VAD is ON and not locked
         try:
-            self.vad_settings_btn.config(state=(tk.NORMAL if (self.use_vac.get() and not locked) else tk.DISABLED))
+            self.vac_chunk_entry.config(state=(tk.NORMAL if (self.use_vac.get() and not locked) else tk.DISABLED))
         except Exception:
             pass
 

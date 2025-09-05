@@ -4,7 +4,6 @@ uvicorn
 websockets
 sounddevice
 platformdirs
-whisperlivekit
 python-multipart
 huggingface_hub
 ttkbootstrap

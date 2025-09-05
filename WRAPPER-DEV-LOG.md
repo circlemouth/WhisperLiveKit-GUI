@@ -1,5 +1,23 @@
 # WRAPPER-DEV-LOG
 
+## 2025-09-06 (upstream をサブモジュール化/ベンダリング撤去)
+- 決定事項：
+  - `QuentinFuxa/WhisperLiveKit` を `submodules/WhisperLiveKit` として追加。
+  - 既存のベンダリング済み `whisperlivekit/` ディレクトリと upstream 由来のパッケージ定義（`pyproject.toml`）、ガイド用静的アセット（`architecture.png`, `demo.png`, `available_models.md`）や Dockerfile を削除。
+  - Wrapper の起動導線は `wrapper/app/backend_launcher.py` が `submodules/WhisperLiveKit` を `sys.path` に自動追加して `import whisperlivekit` を解決。
+  - `requirements.txt` と `wrapper/requirements-*.txt` から `whisperlivekit` 依存を削除（PyPI からの取得は行わない）。
+- 根拠：
+  - upstream は読み取り専用とし、本リポはラッパーに専念する方針。
+  - 二重管理（ベンダリング）は更新漏れ・差分解消コストが高い。
+- 影響/移行：
+  - 既存利用者はクローン後に `git submodule update --init --recursive` が必要。
+  - `pip install -r wrapper/requirements-*.txt` で十分（`whisperlivekit` を別途インストール不要）。
+- リスク：
+  - サブモジュールのバージョン固定/更新運用が必要。`git submodule status` で追跡。
+- 次アクション：
+  - サブモジュールの固定コミットを `WRAPPER-DEV-LOG.md` に明記（必要に応じてタグ運用）。
+  - upstream 側に wrapper からの利用要望（公開 API の安定化など）があればパッチ案を別途検討。
+
 ## 2025-10-23 (torch.hub trust_repo パッチ適用)
 - 背景／スコープ：backend の VAD ダウンロードで `trust_repo` 未指定により PyTorch 2.x で失敗するケースがあった。
 - 決定事項：wrapper 独自の `backend_launcher` を追加し、`torch.hub.load` をラップして `trust_repo=True` を既定化。
