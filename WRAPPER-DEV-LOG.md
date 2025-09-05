@@ -952,5 +952,18 @@
 - 変更内容:
   - `wrapper/app/gui.py`: ヘッダーに Start/Stop を配置、左端に折りたたみボタン追加（`_toggle_main_sections`）。`settings_collapsed` を設定ファイルに保存。
   - 右カラムの比率を Recorder:Logs=3:4 に変更し、トランスクリプト欄の高さを体感で約 2/3 に抑制。
-  - `README-FOR-WRAPPER.md` に設計変更を反映。
-− 未解決事項: 折りたたみ時に PanedWindow のサッシュ位置復元は未実装（必要性が出たら検討）。
+- `README-FOR-WRAPPER.md` に設計変更を反映。
+- 未解決事項: 折りたたみ時に PanedWindow のサッシュ位置復元は未実装（必要性が出たら検討）。
+
+
+## 2025-09-05 (モデル自動ダウンロード)
+
+- 決定事項: API 起動時に Whisper/VAD/話者分離モデルがローカルに無い場合、自動でダウンロードする機構を追加。SimulStreaming backend もラッパー側で事前取得する。
+- 根拠: ユーザー操作後にモデル欠如で失敗するのを防ぎ、設定画面からダウンロード済みモデルを一元管理できるようにするため。
+- 変更内容:
+  - `wrapper/app/model_manager.py`: SimulStreaming 用 `.pt` モデルの検出・取得・削除を実装し、`list_downloaded_models` 等を拡張。
+  - `wrapper/app/gui.py`: API 起動時のモデル存在チェックを全バックエンドで実施し、不足時は事前ダウンロード。SimulStreaming 起動引数を `--model_dir` に統一。
+  - `README-FOR-WRAPPER.md`: API 起動時の自動ダウンロード仕様を追記。
+- 未解決事項: 既存の `.pt` のみを保持するユーザー環境では、初回起動時に Hugging Face スナップショットが追加でダウンロードされる（重複ストレージ使用の可能性）。
+- 次アクション: ユーザーフィードバックを元に `.pt` 単体管理への最適化を検討。
+- リスク・課題: SimulStreaming 以外の新規バックエンド追加時にモデル検出ロジックの拡張が必要となる。

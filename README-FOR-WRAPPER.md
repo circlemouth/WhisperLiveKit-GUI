@@ -23,6 +23,7 @@
 - ローカルでリアルタイム音声→文字起こしを試す（GUI から Start/録音/表示/保存）。
 - 既存アプリから OpenAI Whisper API 互換 REST を呼ぶ（`POST /v1/audio/transcriptions`）。
 - モデル/VAD のダウンロード・管理（GUIの Model Manager）。
+  - API 起動時、必要な Whisper/VAD/話者分離モデルがローカルに無ければ自動でダウンロードし、設定画面から確認・削除できる。
 
 ## アーキテクチャ
 - GUI 層（Tkinter）: `wrapper/cli/main.py` → `wrapper/app/gui.py`
