@@ -1,5 +1,20 @@
 # WRAPPER-DEV-LOG
 
+## 2025-10-20 (バックエンド別モデル管理)
+- 背景／スコープ：SimulStreaming と faster-whisper のモデルファイルが同一扱いで表示され、誤操作の恐れがあった。
+- 決定事項：
+  - Whisper モデルをバックエンドごとに区別し、Model Manager から個別にダウンロード・削除できるようにした。
+  - `model_manager.delete_model` に `backend` 引数を追加。
+  - CLI `model_manager_cli.py` に `--backend` オプションを追加し、各操作で指定可能とした。
+- 根拠・検討メモ：バックエンドごとに使用するモデル形式が異なり、混同すると適切に管理できないため。
+- 未解決事項：設定ファイルの `model` はバックエンド共通名称のままであり、複数バックエンドを併用する際は各バックエンド用モデルを個別に取得する必要がある。
+- 次アクション：ユーザーフィードバックを収集し、UI 改善や自動取得の拡張を検討。
+- 参照リンク：
+  - `wrapper/app/gui.py`
+  - `wrapper/app/model_manager.py`
+  - `wrapper/cli/model_manager_cli.py`
+  - `README-FOR-WRAPPER.md`
+
 ## 2025-10-19 (FFmpeg 未導入時のAPI起動防止)
 - 背景／スコープ：FFmpeg がインストールされていない環境で Start API を押すと、起動途中でエラーとなりGUIの状態が不定になるケースがあった。
 - 決定事項：

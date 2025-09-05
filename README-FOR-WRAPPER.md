@@ -24,6 +24,7 @@
 - 既存アプリから OpenAI Whisper API 互換 REST を呼ぶ（`POST /v1/audio/transcriptions`）。
 - モデル/VAD のダウンロード・管理（GUIの Model Manager）。
   - API 起動時、必要な Whisper/VAD/話者分離モデルがローカルに無ければ自動でダウンロードし、設定画面から確認・削除できる。
+  - SimulStreaming と faster-whisper は専用のモデルファイルを使用するため、Model Manager でバックエンドごとに個別にダウンロード・削除できる。既存のダウンロード済みモデルはそのまま利用できるが、他バックエンドを使う場合は各バックエンド用モデルを追加取得する。
 
 ## アーキテクチャ
 - GUI 層（Tkinter）: `wrapper/cli/main.py` → `wrapper/app/gui.py`

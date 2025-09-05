@@ -61,8 +61,14 @@ WHISPER_MODELS = _load_whisper_models()
 SEGMENTATION_MODELS = ["pyannote/segmentation-3.0", "pyannote/segmentation"]
 EMBEDDING_MODELS = ["pyannote/embedding", "speechbrain/spkrec-ecapa-voxceleb"]
 VAD_MODELS = [model_manager.VAD_REPO]
-ALL_MODELS = WHISPER_MODELS + SEGMENTATION_MODELS + EMBEDDING_MODELS + VAD_MODELS
-MODEL_USAGE = {m: "Whisper" for m in WHISPER_MODELS}
+
+WHISPER_MODEL_VARIANTS: dict[str, tuple[str, str]] = {}
+for m in WHISPER_MODELS:
+    for be in ("faster-whisper", "simulstreaming"):
+        WHISPER_MODEL_VARIANTS[f"{m} [{be}]"] = (m, be)
+
+ALL_MODELS = list(WHISPER_MODEL_VARIANTS) + SEGMENTATION_MODELS + EMBEDDING_MODELS + VAD_MODELS
+MODEL_USAGE = {label: "Whisper" for label in WHISPER_MODEL_VARIANTS}
 MODEL_USAGE.update({m: "Segmentation" for m in SEGMENTATION_MODELS})
 MODEL_USAGE.update({m: "Embedding" for m in EMBEDDING_MODELS})
 MODEL_USAGE.update({model_manager.VAD_REPO: "VAD"})
@@ -3021,14 +3027,18 @@ class ModelManagerDialog(tk.Toplevel):
             except Exception:
                 pass
 
-        self.rows: dict[str, tuple[tk.StringVar, ttk.Progressbar, ttk.Button]] = {}
+        self.rows: dict[str, tuple[tk.StringVar, ttk.Progressbar, ttk.Button, str, str | None]] = {}
         _t = (gui._t if gui is not None and hasattr(gui, "_t") else (lambda s: s))
         self._tr = _t
-        for i, name in enumerate(ALL_MODELS):
-            ttk.Label(inner, text=name).grid(row=i, column=0, sticky=tk.W, padx=5, pady=2)
-            ttk.Label(inner, text=MODEL_USAGE.get(name, "")).grid(row=i, column=1, sticky=tk.W)
+        for i, label in enumerate(ALL_MODELS):
+            model_name = label
+            backend = None
+            if label in WHISPER_MODEL_VARIANTS:
+                model_name, backend = WHISPER_MODEL_VARIANTS[label]
+            ttk.Label(inner, text=label).grid(row=i, column=0, sticky=tk.W, padx=5, pady=2)
+            ttk.Label(inner, text=MODEL_USAGE.get(label, "")).grid(row=i, column=1, sticky=tk.W)
             status = tk.StringVar()
-            if model_manager.is_model_downloaded(name):
+            if model_manager.is_model_downloaded(model_name, backend=backend):
                 status.set(_t("downloaded"))
             else:
                 status.set(_t("missing"))
@@ -3037,11 +3047,11 @@ class ModelManagerDialog(tk.Toplevel):
             pb.grid(row=i, column=3, padx=5, sticky="ew")
             action = ttk.Button(
                 inner,
-                text="Delete" if model_manager.is_model_downloaded(name) else "Download",
-                command=lambda n=name: self._on_action(n),
+                text="Delete" if model_manager.is_model_downloaded(model_name, backend=backend) else "Download",
+                command=lambda n=label: self._on_action(n),
             )
             action.grid(row=i, column=4, padx=5)
-            self.rows[name] = (status, pb, action)
+            self.rows[label] = (status, pb, action, model_name, backend)
 
         # 下段: 閉じるボタン
         btns = ttk.Frame(self)
@@ -3052,10 +3062,10 @@ class ModelManagerDialog(tk.Toplevel):
             pass
         ttk.Button(btns, text="Close", command=self.destroy).pack(anchor="e")
 
-    def _on_action(self, name: str) -> None:
-        status, pb, btn = self.rows[name]
-        if model_manager.is_model_downloaded(name):
-            model_manager.delete_model(name)
+    def _on_action(self, label: str) -> None:
+        status, pb, btn, model_name, backend = self.rows[label]
+        if model_manager.is_model_downloaded(model_name, backend=backend):
+            model_manager.delete_model(model_name, backend=backend)
             status.set("missing")
             btn.config(text=self._tr("Download"))
             pb.config(value=0)
@@ -3067,7 +3077,7 @@ class ModelManagerDialog(tk.Toplevel):
 
             def worker() -> None:
                 try:
-                    model_manager.download_model(name, progress_cb=progress)
+                    model_manager.download_model(model_name, backend=backend, progress_cb=progress)
                     status.set("downloaded")
                     btn.config(text=self._tr("Delete"))
                 except Exception as e:  # pragma: no cover - GUI display
