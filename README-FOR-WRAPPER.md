@@ -10,7 +10,7 @@
 本リポジトリは upstream（whisperlivekit）を直接改変せず、GUI と API のラッパーとして外側から統合・拡張します。変更は本書・開発ログ・`wrapper/` 配下に限定します。
 
 ## 目的 / 非目的
-- 目的: 既存の `whisperlivekit.basic_server` を安全に起動・制御し、GUI（録音・可視化）と、Whisper API 互換 REST を提供する。
+- 目的: 既存の `whisperlivekit.basic_server` をラッパー独自のランチャー経由で安全に起動・制御し、GUI（録音・可視化）と、Whisper API 互換 REST を提供する。
 - 非目的: Whisper 推論アルゴリズムの改良・精度改善、upstream コードの直接編集。
 
 ## 要求 / 制約
@@ -30,7 +30,8 @@
 ## アーキテクチャ
 - GUI 層（Tkinter）: `wrapper/cli/main.py` → `wrapper/app/gui.py`
   - Start/Stop で 2 プロセス起動/停止
-    - Backend: `python -m whisperlivekit.basic_server`
+    - Backend: `python -m wrapper.app.backend_launcher`（内部で `whisperlivekit.basic_server` を起動）
+      - 起動時に `torch.hub.load` をラップして `trust_repo=True` を既定化（Silero VAD 初回ダウンロードの互換性確保）
     - API: `uvicorn wrapper.api.server:app`
   - 録音パイプライン: 生PCM → FFmpeg で `audio/webm`(Opus) へ変換 → WebSocket `/asr` へストリーミング
   - Web UI（upstream）をブラウザで開く導線あり
@@ -61,7 +62,7 @@
   - レスポンス例: `{ "text": "...", "model": "whisper-1" }`
 
 ## 実行・設定手順（概要）
-1) Backend 起動: `python -m whisperlivekit.basic_server --host 127.0.0.1 --port 8000 [...options]`
+1) Backend 起動: `python -m wrapper.app.backend_launcher --host 127.0.0.1 --port 8000 [...options]`
 2) Wrapper API 起動: `WRAPPER_BACKEND_HOST=127.0.0.1 WRAPPER_BACKEND_PORT=8000 uvicorn wrapper.api.server:app --host 127.0.0.1 --port 8001`
 3) GUI から Start / 録音 / 可視化 / 保存
 
