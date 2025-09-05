@@ -2348,6 +2348,15 @@ class WrapperGUI:
 
                 # WebSocket receiver (backend -> GUI)
                 def receiver():
+                    import re
+                    seen_keys: set[tuple] = set()
+                    # エフェメラルなバッファは表示しない（確定結果のみ）
+                    def _meaningful(s: str) -> bool:
+                        s = (s or "").strip()
+                        if not s:
+                            return False
+                        # 英数/CJK/かな/カナが1文字でも含まれているもののみ採用
+                        return re.search(r"[A-Za-z0-9\u3040-\u30FF\u4E00-\u9FFF]", s) is not None
                     while True:
                         try:
                             msg = websocket.recv()
@@ -2355,9 +2364,21 @@ class WrapperGUI:
                             break
                         try:
                             data = json.loads(msg)
-                            text = data.get("buffer_transcription") or data.get("text") or ""
-                            if text:
-                                self.master.after(0, lambda t=text: self._append_transcript(t))
+                            to_append: list[str] = []
+                            # 1) 確定結果: lines の text を重複排除して反映（記号だけは除外）
+                            for item in (data.get("lines", []) or []):
+                                if isinstance(item, dict):
+                                    t = (item.get("text") or "").strip()
+                                    if not _meaningful(t):
+                                        continue
+                                    key = (t, item.get("beg"), item.get("end"))
+                                    if key not in seen_keys:
+                                        seen_keys.add(key)
+                                        to_append.append(t)
+                            # 2) buffer_transcription / buffer_diarization はノイズが多いためTranscriptには追加しない
+                            if to_append:
+                                combined = "\n".join(to_append)
+                                self.master.after(0, lambda t=combined: self._append_transcript(t))
                         except Exception:
                             continue
 
@@ -2416,19 +2437,35 @@ class WrapperGUI:
                 feeder_thread = threading.Thread(target=feed_ffmpeg, daemon=True)
                 sender_thread = threading.Thread(target=send_webm, daemon=True)
 
-                # Start audio capture
-                with sd.RawInputStream(
-                    samplerate=16000,
-                    channels=1,
-                    dtype="int16",
-                    blocksize=1600,
-                    callback=audio_callback,
-                ):
+                # Start audio capture (explicit start/stop to free device early on stop)
+                stream: sd.RawInputStream | None = None
+                try:
+                    stream = sd.RawInputStream(
+                        samplerate=16000,
+                        channels=1,
+                        dtype="int16",
+                        blocksize=1600,
+                        callback=audio_callback,
+                    )
+                    stream.start()
                     feeder_thread.start()
                     sender_thread.start()
                     # Wait until user stops recording
                     while self.is_recording:
                         time.sleep(0.05)
+                finally:
+                    # Immediately stop/close mic device so next session can start
+                    try:
+                        if stream is not None:
+                            stream.stop()
+                            stream.close()
+                    except Exception:
+                        pass
+                    # Reset level meter
+                    try:
+                        self.master.after(0, lambda: self.level_var.set(0.0))
+                    except Exception:
+                        pass
 
                 # After stopping: ensure FFmpeg finishes, then signal EOF to backend
                 if feeder_thread:
