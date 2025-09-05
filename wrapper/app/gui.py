@@ -1298,12 +1298,13 @@ class WrapperGUI:
             return
         missing: list[str] = []
         model = self.model.get().strip()
-        # For SimulStreaming, backend downloads weights itself; skip HF snapshot prefetch
         backend_choice = self.backend.get().strip()
-        if model and backend_choice != "simulstreaming":
-            # For faster-whisper backend, ensure CT2 weights are cached
+        if model:
             if backend_choice == "faster-whisper":
                 if not model_manager.is_model_downloaded(model, backend="faster-whisper"):
+                    missing.append(model)
+            elif backend_choice == "simulstreaming":
+                if not model_manager.is_model_downloaded(model, backend="simulstreaming"):
                     missing.append(model)
             else:
                 if not model_manager.is_model_downloaded(model):
@@ -1330,10 +1331,9 @@ class WrapperGUI:
                 for m in models:
                     label = f"{self._t('Downloading')} {m}"
                     self.master.after(0, lambda l=label: self.status_var.set(l))
-                    # If current backend is faster-whisper and target is a Whisper size name,
-                    # download the CTranslate2 weights instead of openai/whisper.
-                    if backend_choice == "faster-whisper" and m in WHISPER_MODELS:
-                        model_manager.download_model(m, backend="faster-whisper")
+                    # For Whisper models, choose backend-specific weights
+                    if backend_choice in ("faster-whisper", "simulstreaming") and m in WHISPER_MODELS:
+                        model_manager.download_model(m, backend=backend_choice)
                     else:
                         model_manager.download_model(m)
                 self.master.after(0, self._on_download_success)
@@ -1433,14 +1433,10 @@ class WrapperGUI:
         backend_cmd += ["--model_cache_dir", str(model_manager.HF_CACHE_DIR)]
         model = self.model.get().strip()
         if model:
-            # SimulStreaming expects a model name (e.g. 'large-v3') or a --model-path
-            # pointing to '<dir>/<name>.pt' so that load_model(name=<name>, download_root=<dir>) works.
             if self.backend.get().strip() == "simulstreaming":
-                cache_dir = str(model_manager.HF_CACHE_DIR)
                 backend_cmd += ["--model", model]
-                backend_cmd += ["--model-path", str(Path(cache_dir) / f"{model}.pt")]
+                backend_cmd += ["--model_dir", str(model_manager.get_model_path(model, backend="simulstreaming"))]
             else:
-                # Other backends can consume a local snapshot directory
                 if self.backend.get().strip() == "faster-whisper":
                     backend_cmd += ["--model_dir", str(model_manager.get_model_path(model, backend="faster-whisper"))]
                 else:

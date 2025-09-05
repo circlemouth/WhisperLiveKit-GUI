@@ -26,6 +26,14 @@ VAD_REPO = "snakers4/silero-vad"
 VAD_MODEL = "silero_vad"
 
 
+def _pt_file(name: str) -> Path:
+    """Return path to simulstreaming-style .pt file for a Whisper model."""
+    base = name.split("/")[-1]
+    if base.startswith("whisper-"):
+        base = base[len("whisper-") :]
+    return HF_CACHE_DIR / f"{base}.pt"
+
+
 def _resolve_repo_id(name: str, *, backend: Optional[str] = None) -> str:
     """Return full Hugging Face repo id for a given model name.
 
@@ -75,6 +83,12 @@ def get_model_path(name: str, *, backend: Optional[str] = None) -> Path:
     if name == VAD_REPO:
         dirs = _vad_cache_dirs()
         return dirs[0] if dirs else TORCH_CACHE_DIR
+    if backend == "simulstreaming":
+        pt = _pt_file(name)
+        if pt.exists():
+            return pt
+        # fall back to expected location even if missing
+        return pt
     repo = _resolve_repo_id(name, backend=backend)
     base = _cache_dir(repo)
     snapshots = base / "snapshots"
@@ -88,9 +102,14 @@ def get_model_path(name: str, *, backend: Optional[str] = None) -> Path:
 def is_model_downloaded(name: str, *, backend: Optional[str] = None) -> bool:
     if name == VAD_REPO:
         return _is_vad_downloaded()
+    if backend == "simulstreaming":
+        return _pt_file(name).is_file()
     repo = _resolve_repo_id(name, backend=backend)
     snapshots = _cache_dir(repo) / "snapshots"
-    return snapshots.exists() and any(p.is_dir() for p in snapshots.iterdir())
+    if snapshots.exists() and any(p.is_dir() for p in snapshots.iterdir()):
+        return True
+    # also treat standalone .pt files as downloaded for default backend
+    return _pt_file(name).is_file()
 
 
 def list_downloaded_models() -> list[str]:
@@ -99,6 +118,10 @@ def list_downloaded_models() -> list[str]:
         if (p / "snapshots").exists():
             repo_id = p.name[len("models--") :].replace("--", "/")
             models.append(repo_id)
+    # Include simulstreaming-style .pt files (treated as openai/whisper-<name>)
+    for pt in HF_CACHE_DIR.glob("*.pt"):
+        name = pt.stem
+        models.append(f"openai/whisper-{name}")
     if _is_vad_downloaded():
         models.append(VAD_REPO)
     return models
@@ -149,7 +172,15 @@ def download_model(
         raise RuntimeError("huggingface_hub is required to download models")
     repo = _resolve_repo_id(name, backend=backend)
     TqdmCls = _make_tqdm_with_cb(progress_cb)
-    return Path(snapshot_download(repo_id=repo, cache_dir=HF_CACHE_DIR, tqdm_class=TqdmCls))
+    path = Path(snapshot_download(repo_id=repo, cache_dir=HF_CACHE_DIR, tqdm_class=TqdmCls))
+    if backend == "simulstreaming":
+        # SimulStreaming expects a `<name>.pt` file in cache root
+        src_candidates = [path / "model.bin", path / "pytorch_model.bin", path / f"{name}.pt"]
+        for src in src_candidates:
+            if src.exists():
+                shutil.copy2(src, _pt_file(name))
+                break
+    return path
 
 
 def delete_model(name: str) -> None:
@@ -158,3 +189,8 @@ def delete_model(name: str) -> None:
         return
     repo = _resolve_repo_id(name)
     shutil.rmtree(_cache_dir(repo), ignore_errors=True)
+    # Remove potential .pt file for simulstreaming/openai models
+    try:
+        _pt_file(name).unlink()
+    except Exception:
+        pass
