@@ -1442,14 +1442,22 @@ class WrapperGUI:
         backend_cmd += ["--model_cache_dir", str(model_manager.HF_CACHE_DIR)]
         model = self.model.get().strip()
         if model:
-            if self.backend.get().strip() == "simulstreaming":
+            backend = self.backend.get().strip()
+            if backend == "simulstreaming":
                 backend_cmd += ["--model", model]
-                backend_cmd += ["--model_dir", str(model_manager.get_model_path(model, backend="simulstreaming"))]
+                backend_cmd += [
+                    "--model_dir",
+                    str(model_manager.get_model_path(model, backend="simulstreaming")),
+                ]
+            elif backend == "faster-whisper":
+                backend_cmd += ["--model", model]
+                if model_manager.is_model_downloaded(model, backend="faster-whisper"):
+                    backend_cmd += [
+                        "--model_dir",
+                        str(model_manager.get_model_path(model, backend="faster-whisper")),
+                    ]
             else:
-                if self.backend.get().strip() == "faster-whisper":
-                    backend_cmd += ["--model_dir", str(model_manager.get_model_path(model, backend="faster-whisper"))]
-                else:
-                    backend_cmd += ["--model_dir", str(model_manager.get_model_path(model))]
+                backend_cmd += ["--model_dir", str(model_manager.get_model_path(model))]
         if self.diarization.get() and self.hf_logged_in:
             backend_cmd.append("--diarization")
             seg = self.segmentation_model.get().strip()

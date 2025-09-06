@@ -110,12 +110,13 @@ def get_model_path(name: str, *, backend: Optional[str] = None) -> Path:
         p = base / cand
         if p.exists():
             return base
-    for sub in base.iterdir():
-        if sub.is_dir():
-            for cand in ("model.bin", "pytorch_model.bin"):
-                p = sub / cand
-                if p.exists():
-                    return sub
+    if base.exists():
+        for sub in base.iterdir():
+            if sub.is_dir():
+                for cand in ("model.bin", "pytorch_model.bin"):
+                    p = sub / cand
+                    if p.exists():
+                        return sub
     return base
 
 
