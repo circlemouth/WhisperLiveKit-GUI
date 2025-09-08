@@ -426,6 +426,10 @@ class WrapperGUI:
         # Recording-related variables
         self.ws_url = tk.StringVar()
         self.is_recording = False
+        # API starting state (to reflect UI while uvicorn is booting)
+        self._starting_api: bool = False
+        self._starting_anim_id: str | None = None
+        self._starting_anim_step: int = 0
         self.status_var = tk.StringVar(value="stopped")
         self.timer_var = tk.StringVar(value="00:00")
         self.level_var = tk.DoubleVar(value=0.0)
@@ -1156,6 +1160,40 @@ class WrapperGUI:
                         file=sys.stderr if is_stderr else sys.stdout,
                         flush=True,
                     )
+                    # Detect API readiness from uvicorn logs
+                    try:
+                        if source == "api" and getattr(self, "_starting_api", False):
+                            low = line.lower()
+                            if (
+                                ("application startup complete" in low)
+                                or ("uvicorn running on" in low)
+                                or ("started server process" in low)
+                            ):
+                                def _ready():
+                                    try:
+                                        if not getattr(self, "_starting_api", False):
+                                            return
+                                        self._starting_api = False
+                                        # stop animation if running
+                                        try:
+                                            if getattr(self, "_starting_anim_id", None) is not None:
+                                                self.master.after_cancel(self._starting_anim_id)
+                                                self._starting_anim_id = None
+                                        except Exception:
+                                            pass
+                                        try:
+                                            self.start_btn.config(text="🚀 Start API")
+                                        except Exception:
+                                            pass
+                                        try:
+                                            self.stop_btn.config(text="🛑 Stop API")
+                                        except Exception:
+                                            pass
+                                    except Exception:
+                                        pass
+                                self.master.after(0, _ready)
+                    except Exception:
+                        pass
                     self.master.after(0, self._append_log, source, line, is_stderr)
             except Exception:
                 pass
@@ -1362,6 +1400,38 @@ class WrapperGUI:
         a_host = self.api_host.get()
         a_port = self.api_port.get()
 
+        # Reflect 'starting' state in UI with cancellable stop button
+        try:
+            self._starting_api = True
+            self.status_var.set(self._t("starting"))
+            try:
+                self.start_btn.config(state=tk.DISABLED, text=self._t("starting"))
+            except Exception:
+                pass
+            try:
+                self.stop_btn.config(text=self._t("Cancel Start"), state=tk.NORMAL)
+            except Exception:
+                pass
+            # Simple animated dots on Start button
+            self._starting_anim_step = 0
+            def _anim():
+                try:
+                    if not self._starting_api:
+                        return
+                    dots = '.' * (1 + (self._starting_anim_step % 3))
+                    base = self._t('starting')
+                    try:
+                        self.start_btn.config(text=f"{base}{dots}")
+                    except Exception:
+                        pass
+                    self._starting_anim_step += 1
+                    self._starting_anim_id = self.master.after(400, _anim)
+                except Exception:
+                    pass
+            self._starting_anim_id = self.master.after(0, _anim)
+        except Exception:
+            pass
+
         env = os.environ.copy()
         env["WRAPPER_BACKEND_HOST"] = b_host
         env["WRAPPER_BACKEND_PORT"] = b_port
@@ -1551,6 +1621,26 @@ class WrapperGUI:
         self._set_running_state(True)
 
     def stop_api(self):
+        # If starting in progress, cancel the starting state/animation immediately
+        try:
+            if getattr(self, "_starting_api", False):
+                self._starting_api = False
+                try:
+                    if getattr(self, "_starting_anim_id", None) is not None:
+                        self.master.after_cancel(self._starting_anim_id)
+                        self._starting_anim_id = None
+                except Exception:
+                    pass
+                try:
+                    self.start_btn.config(text="🚀 Start API")
+                except Exception:
+                    pass
+                try:
+                    self.stop_btn.config(text="🛑 Stop API")
+                except Exception:
+                    pass
+        except Exception:
+            pass
         try:
             self._append_log("gui", "Stopping processes...\n")
         except Exception:

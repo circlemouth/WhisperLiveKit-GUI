@@ -1,5 +1,12 @@
 # WRAPPER-DEV-LOG
 
+## 2025-09-08
+- 決定事項: Start API ボタンに「起動中…」の進行表示（ドットアニメーション）を追加し、起動フェーズ中の右側ボタンを「Cancel Start（起動中止）」として動作させる。
+- 根拠: ユーザーから「起動完了まで起動中であることが分かるUI」と「起動中止」の要望。Uvicorn の起動ログ（Application startup complete / Uvicorn running on ...）で起動完了を検出可能。
+- 実装: `wrapper/app/gui.py` の `_launch_server` で起動中フラグとアニメーションを開始し、`_start_log_reader` 内でログを監視して起動完了時にUIを復元。`stop_api` で起動中アニメーションと表示を即時リセット。
+- 未解決事項: 翻訳テーブル（TRANSLATIONS_JA）への "starting" / "Cancel Start" の追加は既存文字化けの都合で保留（英語フォールバックで表示）。上流に正しいエンコーディングの維持方法を提案予定。
+- 次アクション: 翻訳辞書の文字コード整備、起動ヘルスチェックのHTTPポーリング（任意）追加検討。
+- リスク: Uvicorn ログフォーマットの変更で検出が外れる可能性あり（冗長なキーフレーズを複数監視して緩和）。
 ## 2025-09-06 (upstream をサブモジュール化/ベンダリング撤去)
 - 決定事項：
   - `QuentinFuxa/WhisperLiveKit` を `submodules/WhisperLiveKit` として追加。
