@@ -426,6 +426,10 @@ class WrapperGUI:
         # Recording-related variables
         self.ws_url = tk.StringVar()
         self.is_recording = False
+        # Overall transcription activity (includes post-stop processing)
+        self._transcribing_active: bool = False
+        # Abort switch for in-flight transcription worker
+        self._abort_transcription: Optional[threading.Event] = None
         # API starting state (to reflect UI while uvicorn is booting)
         self._starting_api: bool = False
         self._starting_anim_id: str | None = None
@@ -834,9 +838,16 @@ class WrapperGUI:
         r = 0
         self.record_btn = ttk.Button(record_frame, text="Start Recording", command=self.toggle_recording)
         self.record_btn.grid(row=r, column=0, sticky=tk.W)
-        # 録音時間はボタンの右隣に大きく表示
+        # 文字起こし中インジケータ（録音ボタン右側に表示／非表示）
+        self.transcribing_indicator = ttk.Progressbar(record_frame, mode="indeterminate", length=24, maximum=100)
+        self.transcribing_indicator.grid(row=r, column=1, sticky=tk.W, padx=(6, 0))
+        try:
+            self.transcribing_indicator.grid_remove()
+        except Exception:
+            pass
+        # 録音時間はインジケータの右隣に表示
         self.timer_label = ttk.Label(record_frame, textvariable=self.timer_var, style="Timer.TLabel")
-        self.timer_label.grid(row=r, column=1, sticky=tk.W, padx=(8, 0))
+        self.timer_label.grid(row=r, column=2, sticky=tk.W, padx=(8, 0))
         r += 1
         # サーバー未起動時のガイダンス（録音ボタン直下）
         self.record_hint_label = ttk.Label(
@@ -2388,6 +2399,24 @@ class WrapperGUI:
                 pass
             self.status_var.set(self._t("stopping"))
         else:
+            # If a previous transcription is still processing, confirm abort before starting new
+            try:
+                if getattr(self, "_transcribing_active", False):
+                    if not messagebox.askyesno(self._t("Confirm"), self._t("A previous transcription is still processing. Abort it and start a new session?")):
+                        return
+                    try:
+                        if self._abort_transcription is not None:
+                            self._abort_transcription.set()
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+            # prepare new abort event and mark active
+            try:
+                self._abort_transcription = threading.Event()
+            except Exception:
+                self._abort_transcription = None
+            self._set_transcribing_active(True)
             self.is_recording = True
             self.record_btn.config(text=self._t("Stop Recording"))
             try:
@@ -2423,6 +2452,7 @@ class WrapperGUI:
 
         ws_url = self.ws_url.get()
         q: queue.Queue[bytes] = queue.Queue()
+        abort_event = self._abort_transcription
 
         def audio_callback(indata, frames, time_info, status):  # pragma: no cover - realtime
             q.put(bytes(indata))
@@ -2510,7 +2540,7 @@ class WrapperGUI:
                 # Feed PCM to FFmpeg.stdin
                 def feed_ffmpeg():  # pragma: no cover - realtime
                     assert ffmpeg_proc is not None and ffmpeg_proc.stdin is not None
-                    while self.is_recording or not q.empty():
+                    while (self.is_recording or not q.empty()) and not (abort_event and abort_event.is_set()):
                         try:
                             data = q.get(timeout=0.1)
                         except Exception:
@@ -2533,6 +2563,8 @@ class WrapperGUI:
                     assert ffmpeg_proc is not None and ffmpeg_proc.stdout is not None
                     try:
                         while True:
+                            if abort_event and abort_event.is_set():
+                                break
                             chunk = ffmpeg_proc.stdout.read(4096)
                             if not chunk:
                                 break
@@ -2559,8 +2591,8 @@ class WrapperGUI:
                     stream.start()
                     feeder_thread.start()
                     sender_thread.start()
-                    # Wait until user stops recording
-                    while self.is_recording:
+                    # Wait until user stops recording or abort is requested
+                    while self.is_recording and not (abort_event and abort_event.is_set()):
                         time.sleep(0.05)
                 finally:
                     # Immediately stop/close mic device so next session can start
@@ -2576,27 +2608,37 @@ class WrapperGUI:
                     except Exception:
                         pass
 
-                # After stopping: ensure FFmpeg finishes, then signal EOF to backend
+                # After stopping: ensure FFmpeg finishes (or abort quickly), then signal close/EOF to backend
+                quick = bool(abort_event and abort_event.is_set())
                 if feeder_thread:
-                    feeder_thread.join(timeout=5)
+                    feeder_thread.join(timeout=0.5 if quick else 5)
                 if ffmpeg_proc:
                     try:
-                        ffmpeg_proc.wait(timeout=5)
+                        if quick:
+                            ffmpeg_proc.kill()
+                        else:
+                            ffmpeg_proc.wait(timeout=5)
                     except Exception:
                         try:
                             ffmpeg_proc.kill()
                         except Exception:
                             pass
                 if sender_thread:
-                    sender_thread.join(timeout=5)
+                    sender_thread.join(timeout=0.5 if quick else 5)
 
-                # Explicit EOF for backend (empty binary frame)
+                # Explicit EOF for backend (empty binary frame) or close on abort
                 try:
-                    websocket.send(b"")
+                    if quick:
+                        try:
+                            websocket.close()
+                        except Exception:
+                            pass
+                    else:
+                        websocket.send(b"")
                 except Exception:
                     pass
 
-                recv_thread.join(timeout=5)
+                recv_thread.join(timeout=0.5 if quick else 5)
         except Exception as e:
             self.master.after(0, lambda err=e: self.status_var.set(f"{self._t('error:')} {err}"))
         finally:
@@ -2652,7 +2694,28 @@ class WrapperGUI:
         self.timer_var.set(f"{elapsed // 60:02d}:{elapsed % 60:02d}")
         self.master.after(1000, self._update_timer)
 
+    def _set_transcribing_active(self, active: bool) -> None:
+        self._transcribing_active = active
+        try:
+            if active:
+                # show and animate indicator
+                if hasattr(self, "transcribing_indicator"):
+                    self.transcribing_indicator.grid()
+                    self.transcribing_indicator.start(12)
+            else:
+                if hasattr(self, "transcribing_indicator"):
+                    self.transcribing_indicator.stop()
+                    self.transcribing_indicator.grid_remove()
+        except Exception:
+            pass
+
     def _finalize_recording(self) -> None:
+        # Mark transcription inactive and hide indicator
+        try:
+            self._set_transcribing_active(False)
+        except Exception:
+            pass
+        self._abort_transcription = None
         self.record_btn.config(text=self._t("Start Recording"))
         self.status_var.set(self._t("stopped"))
         dir_path = self.save_path.get().strip()
