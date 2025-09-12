@@ -647,14 +647,39 @@ class WrapperGUI:
         ttk.Label(config_frame, text="Model", style="SectionHeader.TLabel").grid(row=r, column=0, columnspan=2, sticky=tk.W)
         r += 1
         ttk.Label(config_frame, text="Whisper model").grid(row=r, column=0, sticky=tk.W)
+        mb_row = ttk.Frame(config_frame)
+        mb_row.grid(row=r, column=1, sticky="ew")
+        mb_row.columnconfigure(0, weight=1)
+        mb_row.columnconfigure(1, weight=1)
         self.model_combo = ttk.Combobox(
-            config_frame,
+            mb_row,
             textvariable=self.model,
             values=WHISPER_MODELS,
             state="readonly",
             width=20,
         )
-        self.model_combo.grid(row=r, column=1, sticky="ew")
+        self.model_combo.grid(row=0, column=0, sticky="ew")
+        self.backend_combo = ttk.Combobox(
+            mb_row,
+            textvariable=self.backend,
+            values=self.available_backends(),
+            state="readonly",
+            width=15,
+        )
+        self.backend_combo.grid(row=0, column=1, sticky="ew", padx=(6, 0))
+        r += 1
+        try:
+            note_font = font.nametofont("TkDefaultFont").copy()
+            size = int(note_font.cget("size"))
+            note_font.configure(size=max(size - 2, 8))
+        except Exception:
+            note_font = None
+        ttk.Label(
+            config_frame,
+            text=self._t("For commercial use of the SimulStreaming backend, please check the SimulStreaming license."),
+            wraplength=300,
+            font=note_font if note_font is not None else None,
+        ).grid(row=r, column=1, sticky=tk.W, pady=(0, 4))
         r += 1
         # (Advanced Settings button was moved next to Hugging Face Login in Start/Stop row)
         r += 1
@@ -2786,6 +2811,10 @@ class WrapperGUI:
             pass
         # Comboboxes
         self.model_combo.config(state="disabled" if locked else "readonly")
+        try:
+            self.backend_combo.config(state="disabled" if locked else "readonly")
+        except Exception:
+            pass
         # Respect diarization toggle for related combos
         if locked:
             self.seg_model_combo.config(state="disabled")
@@ -3145,23 +3174,8 @@ class BackendSettingsDialog(tk.Toplevel):
             width=15,
         ).grid(row=r, column=1, sticky=tk.W)
         r += 1
-        ttk.Label(self, text="Backend").grid(row=r, column=0, sticky=tk.W)
-        ttk.Combobox(
-            self,
-            textvariable=gui.backend,
-            values=gui.available_backends(),
-            state="readonly",
-            width=20,
-        ).grid(row=r, column=1, sticky=tk.W)
-        r += 1
-        ttk.Label(
-            self,
-            text=gui._t(
-                "For commercial use of the SimulStreaming backend, please check the SimulStreaming license."
-            ),
-            wraplength=300,
-        ).grid(row=r, column=0, columnspan=2, sticky=tk.W, pady=(0, 8))
-        r += 1
+        # Backend selection moved to main screen; leave note there
+        # previously: Backend combobox and SimulStreaming license note
         ttk.Label(self, text="Buffer trimming").grid(row=r, column=0, sticky=tk.W)
         ttk.Combobox(
             self,
