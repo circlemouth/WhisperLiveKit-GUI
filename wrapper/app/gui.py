@@ -203,11 +203,14 @@ TRANSLATIONS_JA = {
     "Diarization requires Hugging Face login": "話者分離にはHugging Faceログインが必要です",
     "Download failed:": "ダウンロード失敗:",
     "Download complete": "ダウンロード完了",
+    "starting": "起動中",
+    "running": "稼働中",
     "stopped": "停止",
     "stopping": "停止中",
     "connecting": "接続中",
     "recording": "録音中",
     "error:": "エラー:",
+    "Cancel Start": "起動を中止",
     "saved:": "保存済:",
     "save failed:": "保存失敗:",
     "missing dependency:": "依存関係がありません:",
@@ -434,6 +437,10 @@ class WrapperGUI:
         self._starting_api: bool = False
         self._starting_anim_id: str | None = None
         self._starting_anim_step: int = 0
+        # API stopping state (to reflect UI while processes terminate)
+        self._stopping_api: bool = False
+        self._stopping_anim_id: str | None = None
+        self._stopping_anim_step: int = 0
         self.status_var = tk.StringVar(value="stopped")
         self.timer_var = tk.StringVar(value="00:00")
         self.level_var = tk.DoubleVar(value=0.0)
@@ -1225,6 +1232,10 @@ class WrapperGUI:
                                             self.stop_btn.config(text="🛑 Stop API")
                                         except Exception:
                                             pass
+                                        try:
+                                            self.status_var.set(self._t("running"))
+                                        except Exception:
+                                            pass
                                     except Exception:
                                         pass
                                 self.master.after(0, _ready)
@@ -1373,12 +1384,66 @@ class WrapperGUI:
         except Exception:
             pass
 
+    def _begin_starting_ui(self) -> None:
+        try:
+            if getattr(self, "_starting_api", False):
+                return
+            self._starting_api = True
+            self.status_var.set(self._t("starting"))
+            try:
+                self.start_btn.config(state=tk.DISABLED, text=self._t("starting"))
+            except Exception:
+                pass
+            try:
+                self.stop_btn.config(text=self._t("Cancel Start"), state=tk.NORMAL)
+            except Exception:
+                pass
+            self._starting_anim_step = 0
+            def _anim():
+                try:
+                    if not self._starting_api:
+                        return
+                    dots = '.' * (1 + (self._starting_anim_step % 3))
+                    base = self._t('starting')
+                    try:
+                        self.start_btn.config(text=f"{base}{dots}")
+                    except Exception:
+                        pass
+                    self._starting_anim_step += 1
+                    self._starting_anim_id = self.master.after(400, _anim)
+                except Exception:
+                    pass
+            self._starting_anim_id = self.master.after(0, _anim)
+        except Exception:
+            pass
+
+    def _cancel_starting_ui(self) -> None:
+        try:
+            self._starting_api = False
+            try:
+                if getattr(self, "_starting_anim_id", None) is not None:
+                    self.master.after_cancel(self._starting_anim_id)
+                    self._starting_anim_id = None
+            except Exception:
+                pass
+            try:
+                self.start_btn.config(text="🚀 Start API")
+            except Exception:
+                pass
+            try:
+                self.stop_btn.config(text="🛑 Stop API")
+            except Exception:
+                pass
+        except Exception:
+            pass
+
     def start_api(self):
         if self.api_proc or self.backend_proc:
             return
         # 起動前の依存関係チェック（VAD/話者分離など可否を事前確認）
         if not self._check_runtime_dependencies():
             return
+        self._begin_starting_ui()
         missing: list[str] = []
         model = self.model.get().strip()
         backend_choice = self.backend.get().strip()
@@ -1402,7 +1467,6 @@ class WrapperGUI:
         if self.use_vac.get() and not model_manager.is_model_downloaded(model_manager.VAD_REPO):
             missing.append(model_manager.VAD_REPO)
         if missing:
-            self.start_btn.config(state=tk.DISABLED)
             self._download_and_start(missing)
             return
         self._launch_server()
@@ -1412,6 +1476,8 @@ class WrapperGUI:
             try:
                 backend_choice = self.backend.get().strip()
                 for m in models:
+                    if not getattr(self, "_starting_api", False):
+                        return
                     label = f"{self._t('Downloading')} {m}"
                     self.master.after(0, lambda l=label: self.status_var.set(l))
                     # For Whisper models, choose backend-specific weights
@@ -1419,15 +1485,27 @@ class WrapperGUI:
                         model_manager.download_model(m, backend=backend_choice)
                     else:
                         model_manager.download_model(m)
-                self.master.after(0, self._on_download_success)
+                    if not getattr(self, "_starting_api", False):
+                        return
+                if getattr(self, "_starting_api", False):
+                    self.master.after(0, self._on_download_success)
             except Exception as e:  # pragma: no cover - GUI display
-                self.master.after(0, lambda err=e: self.status_var.set(f"{self._t('Download failed:')} {err}"))
-                self.master.after(0, lambda: self.start_btn.config(state=tk.NORMAL))
+                def _fail(err=e) -> None:
+                    try:
+                        self.status_var.set(f"{self._t('Download failed:')} {err}")
+                    except Exception:
+                        pass
+                    try:
+                        self._cancel_starting_ui()
+                        self.start_btn.config(state=tk.NORMAL)
+                    except Exception:
+                        pass
+                self.master.after(0, _fail)
 
         threading.Thread(target=worker, daemon=True).start()
 
     def _on_download_success(self) -> None:
-        self.status_var.set(self._t("Download complete"))
+        self.status_var.set(self._t("starting"))
         self._launch_server()
 
     def _launch_server(self) -> None:
@@ -1436,37 +1514,8 @@ class WrapperGUI:
         a_host = self.api_host.get()
         a_port = self.api_port.get()
 
-        # Reflect 'starting' state in UI with cancellable stop button
-        try:
-            self._starting_api = True
-            self.status_var.set(self._t("starting"))
-            try:
-                self.start_btn.config(state=tk.DISABLED, text=self._t("starting"))
-            except Exception:
-                pass
-            try:
-                self.stop_btn.config(text=self._t("Cancel Start"), state=tk.NORMAL)
-            except Exception:
-                pass
-            # Simple animated dots on Start button
-            self._starting_anim_step = 0
-            def _anim():
-                try:
-                    if not self._starting_api:
-                        return
-                    dots = '.' * (1 + (self._starting_anim_step % 3))
-                    base = self._t('starting')
-                    try:
-                        self.start_btn.config(text=f"{base}{dots}")
-                    except Exception:
-                        pass
-                    self._starting_anim_step += 1
-                    self._starting_anim_id = self.master.after(400, _anim)
-                except Exception:
-                    pass
-            self._starting_anim_id = self.master.after(0, _anim)
-        except Exception:
-            pass
+        # Reflect 'starting' state in UI
+        self._begin_starting_ui()
 
         env = os.environ.copy()
         env["WRAPPER_BACKEND_HOST"] = b_host
@@ -1660,21 +1709,47 @@ class WrapperGUI:
         # If starting in progress, cancel the starting state/animation immediately
         try:
             if getattr(self, "_starting_api", False):
-                self._starting_api = False
+                self._cancel_starting_ui()
                 try:
-                    if getattr(self, "_starting_anim_id", None) is not None:
-                        self.master.after_cancel(self._starting_anim_id)
-                        self._starting_anim_id = None
+                    self.status_var.set(self._t("stopped"))
                 except Exception:
                     pass
+        except Exception:
+            pass
+        if not (self.api_proc or self.backend_proc):
+            return
+        if getattr(self, "_stopping_api", False):
+            return
+        self._stopping_api = True
+        try:
+            self.status_var.set(self._t("stopping"))
+        except Exception:
+            pass
+        try:
+            self.stop_btn.config(text=self._t("stopping"), state=tk.DISABLED)
+        except Exception:
+            pass
+        try:
+            self.start_btn.config(state=tk.DISABLED)
+        except Exception:
+            pass
+        self._stopping_anim_step = 0
+        def _anim() -> None:
+            try:
+                if not self._stopping_api:
+                    return
+                dots = '.' * (1 + (self._stopping_anim_step % 3))
+                base = self._t('stopping')
                 try:
-                    self.start_btn.config(text="🚀 Start API")
+                    self.stop_btn.config(text=f"{base}{dots}")
                 except Exception:
                     pass
-                try:
-                    self.stop_btn.config(text="🛑 Stop API")
-                except Exception:
-                    pass
+                self._stopping_anim_step += 1
+                self._stopping_anim_id = self.master.after(400, _anim)
+            except Exception:
+                pass
+        try:
+            self._stopping_anim_id = self.master.after(0, _anim)
         except Exception:
             pass
         try:
@@ -1690,7 +1765,26 @@ class WrapperGUI:
                     proc.kill()
         self.api_proc = None
         self.backend_proc = None
+        if getattr(self, "_stopping_anim_id", None) is not None:
+            try:
+                self.master.after_cancel(self._stopping_anim_id)
+            except Exception:
+                pass
+            self._stopping_anim_id = None
+        self._stopping_api = False
         self._set_running_state(False)
+        try:
+            self.stop_btn.config(text="🛑 Stop API")
+        except Exception:
+            pass
+        try:
+            self.start_btn.config(text="🚀 Start API")
+        except Exception:
+            pass
+        try:
+            self.status_var.set(self._t("stopped"))
+        except Exception:
+            pass
 
     def on_close(self):
         self.stop_api()
