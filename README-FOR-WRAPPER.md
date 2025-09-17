@@ -146,6 +146,9 @@
 - 設定テンプレート: `wrapper/config/`
 - ライセンス一覧: `wrapper/licenses.json`
 
+## テスト
+- `python wrapper/scripts/full_stack_integration_test.py`: GUI の「Start API」と同等の経路をスタブ環境で再現し、GUI から管理できるすべてのモデル種別（Whisper 各バックエンド、VAD、セグメンテーション、埋め込み）のダウンロード状態を検証してから REST 経路を確認する統合テスト。
+
 本仕様書と `WRAPPER-DEV-LOG.md` は、仕様変更・意思決定に合わせて更新します。
 ## GUI の振る舞い（録音・文字起こし）
 - 処理中インジケータ: 録音開始後からバックエンド側での最終処理が完了するまで、録音開始ボタンの右側にスピナーを表示します。
