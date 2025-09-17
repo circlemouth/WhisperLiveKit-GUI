@@ -76,6 +76,24 @@
   - `WRAPPER_BACKEND_SSL=1`（wss 接続を指定）
   - `WRAPPER_REQUIRE_API_KEY=1`, `WRAPPER_API_KEY=<key>`
 
+## モデルキャッシュ / MSIX 配布時の取り扱い
+- GUI・CLI・バックエンドはいずれも `platformdirs.user_cache_path("WhisperLiveKit", "wrapper")` を基点とする `hf-cache`（Hugging Face）と
+  `torch-hub` ディレクトリを既定の保存先として利用する。アプリ本体が読み取り専用でもユーザー領域に展開されるため、MSIX として配布し
+  てもモデルのダウンロード先と読み込み元が一致する。
+- 環境変数で保存先を上書きできる。
+  - `WRAPPER_CACHE_DIR=<base>` を指定すると `<base>/hf-cache`, `<base>/torch-hub` をまとめて利用する。
+  - より細かく制御したい場合は `WRAPPER_HF_CACHE_DIR` / `WRAPPER_TORCH_CACHE_DIR` を直接指定できる。既に
+    `HUGGINGFACE_HUB_CACHE` / `HF_HOME` / `TORCH_HOME` が設定されている場合はその値を尊重し、ラッパー内部の参照も同じディレクトリに揃え
+    る。
+- 起動時に `HUGGINGFACE_HUB_CACHE`, `HF_HOME`, `TORCH_HOME`, `HF_HUB_DISABLE_SYMLINKS` が未設定なら自動的に補完し、GUI でのモデル
+  ダウンロード・バックエンド起動・CLI からの操作が同じキャッシュを使う。`HF_HUB_DISABLE_SYMLINKS=1` と
+  `snapshot_download(..., local_dir_use_symlinks=False)` の併用により、MSIX/Windows のシンボリックリンク制限下でも確実に物理ファイルが
+  配置される。
+- `preflight.materialize_speechbrain_files` は pyannote/speechbrain キャッシュに残る欠損や壊れたシンボリックリンクを検出し、ラッパー管理
+  の Hugging Face キャッシュから必要ファイルをコピーして実体化する。バックエンドは常に存在するパスのみを参照するため、パッケージ
+  配布時の読み込みエラーを防げる。
+- CLI (`python -m wrapper.cli.model_manager_cli`) も上記環境変数を読み取り、GUI と同じ場所にモデルを配置・削除する。
+
 ## エラーハンドリング / ログ
 - バックエンド/API の標準出力と標準エラーはGUIのログ欄と同時にターミナルにも表示される。`PYTHONUNBUFFERED=1` と `-u` オプションによりバッファリングを無効化し、macOSでログが出力されない問題を解消。
 - FFmpeg が無い: `500 ffmpeg_not_found`（API）、GUIログに表示
