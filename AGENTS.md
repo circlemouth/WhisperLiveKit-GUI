@@ -43,6 +43,11 @@
 4. 意思決定・仕様変更は都度 `WRAPPER-DEV-LOG.md` に追記。
 5. upstream に変更が必要と判明した場合は、本リポでは触らず、パッチ案をログ化。
 
+## テスト運用
+- GUI からの API 起動とモデル管理を通しで検証する統合テストスクリプトを `wrapper/scripts/full_stack_integration_test.py` に用意した。
+- `wrapper/app`・`wrapper/api`・モデル管理・GUI 起動フロー・ダウンロード処理・音声入出力に影響する変更を加えた場合は、**必ず** `python wrapper/scripts/full_stack_integration_test.py` を実行し、成功することを確認する。
+- テストスクリプトはスタブ化したバックエンドとダミーモデルを用いて GUI 実際の挙動を模擬する。必要に応じてスクリプトの維持・更新も合わせて行うこと。
+
 ## 完了定義（Definition of Done）
 - CLI/GUI エントリから既存機能を起動・制御できること。
 - 設定テンプレートと実行手順がドキュメント化されていること。
