@@ -1,5 +1,25 @@
 # WRAPPER-DEV-LOG
 
+## 2025-10-28 (MSIX 向けキャッシュ整合性と symlink 回避)
+- 背景／スコープ：MSIX として Windows Store 配布する際、モデルキャッシュの保存先がプロセス毎に食い違うと読み込みに失敗する。加え
+  て symlink 不可な環境で Hugging Face のスナップショット展開が壊れていた。
+- 決定事項：
+  - `wrapper/app/model_manager.py` でキャッシュディレクトリを環境変数（`WRAPPER_*`, `HUGGINGFACE_HUB_CACHE`, `TORCH_HOME`）から判
+    定し、GUI・CLI・バックエンドすべてが同じパスを共有するよう統一。未設定時は `platformdirs.user_cache_path` を基準に作成。
+  - `HF_HUB_DISABLE_SYMLINKS=1` と `snapshot_download(..., local_dir_use_symlinks=False)`（サポートされている場合）を既定化して、シン
+    ボリックリンクが禁止されている Windows/MSIX 環境でも確実にファイルが複製されるようにする。
+  - CLI 側の環境変数解決 (`wrapper/cli/model_manager_cli.py`) を更新し、新しい `WRAPPER_HF_CACHE_DIR` / `WRAPPER_TORCH_CACHE_DIR` を優
+    先利用。欠落していた `argparse`/`json` インポートも補った。
+  - `preflight.materialize_speechbrain_files` の SpeechBrain ファイル実体化処理が `align_pyannote_cache_env` 側に流出していたバグを修
+    正し、起動前に欠損ファイルをコピーできるよう復元。
+- 根拠・検討メモ：MSIX パッケージはアプリ本体が読み取り専用となる。ユーザー領域でキャッシュを共有しないと起動毎にダウンロードが繰
+  り返されたり、バックエンドが異なるパスを参照して FileNotFoundError になる。シンボリックリンク禁止環境でも動作させるために物理コ
+  ピーへ統一した。
+- 未解決事項：既存ユーザーのキャッシュ移行は行わず、旧パスにファイルが残る可能性がある。必要なら移行ツールを検討。
+- 次アクション：Windows/MSIX 実機での検証と、必要なら `WRAPPER_CACHE_DIR` 変更時の移行ロジック検討。
+- リスク／課題：`snapshot_download` の古いバージョンで `local_dir_use_symlinks` が未サポートの場合は環境変数による symlink 無
+  効化のみ。必要に応じてバージョンピンを検討。
+
 ## 2025-10-24 (API起動/停止の進行表示)
 - 背景／スコープ：Start/Stop操作時に内部処理が完了するまで状況が分かりづらかった。
 - 決定事項：

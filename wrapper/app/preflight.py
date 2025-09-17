@@ -120,37 +120,6 @@ def materialize_speechbrain_files(env: dict[str, str] | None = None) -> None:
         except Exception:
             pass
 
-
-def _has_pyannote_snapshot() -> bool:
-    """Return True if segmentation-3.0 snapshot with weights exists in wrapper cache."""
-    base = model_manager.HF_CACHE_DIR / "models--pyannote--segmentation-3.0" / "snapshots"
-    try:
-        if not base.exists():
-            return False
-        for snap in base.iterdir():
-            if (snap / "pytorch_model.bin").exists():
-                return True
-    except Exception:
-        pass
-    return False
-
-
-def align_pyannote_cache_env(env: dict[str, str]) -> None:
-    """Set or clear PYANNOTE_CACHE based on availability in wrapper cache.
-
-    - If wrapper-managed cache has the expected pyannote snapshots, set
-      PYANNOTE_CACHE to that location so pyannote reads from it.
-    - Otherwise, avoid setting PYANNOTE_CACHE so that pyannote falls back
-      to its own default (usually HF_HOME or user cache), letting it download
-      as needed without pointing to a missing path.
-    """
-    if _has_pyannote_snapshot():
-        env["PYANNOTE_CACHE"] = str(model_manager.HF_CACHE_DIR)
-    else:
-        # Make sure we don't point to a non-existent wrapper cache
-        if "PYANNOTE_CACHE" in env:
-            env.pop("PYANNOTE_CACHE", None)
-
     for name in _SPEECHBRAIN_FILES:
         dst = sb_dir / name
         try:
@@ -183,6 +152,36 @@ def align_pyannote_cache_env(env: dict[str, str]) -> None:
             # Best-effort: never block startup on cache healing
             pass
 
+
+def _has_pyannote_snapshot() -> bool:
+    """Return True if segmentation-3.0 snapshot with weights exists in wrapper cache."""
+    base = model_manager.HF_CACHE_DIR / "models--pyannote--segmentation-3.0" / "snapshots"
+    try:
+        if not base.exists():
+            return False
+        for snap in base.iterdir():
+            if (snap / "pytorch_model.bin").exists():
+                return True
+    except Exception:
+        pass
+    return False
+
+
+def align_pyannote_cache_env(env: dict[str, str]) -> None:
+    """Set or clear PYANNOTE_CACHE based on availability in wrapper cache.
+
+    - If wrapper-managed cache has the expected pyannote snapshots, set
+      PYANNOTE_CACHE to that location so pyannote reads from it.
+    - Otherwise, avoid setting PYANNOTE_CACHE so that pyannote falls back
+      to its own default (usually HF_HOME or user cache), letting it download
+      as needed without pointing to a missing path.
+    """
+    if _has_pyannote_snapshot():
+        env["PYANNOTE_CACHE"] = str(model_manager.HF_CACHE_DIR)
+    else:
+        # Make sure we don't point to a non-existent wrapper cache
+        if "PYANNOTE_CACHE" in env:
+            env.pop("PYANNOTE_CACHE", None)
 
 def ensure_pyannote_models() -> None:
     """Pre-download pyannote models used by Diart to avoid race/missing files.

@@ -8,20 +8,45 @@ from wrapper.app import model_manager
 
 def _apply_cache_env() -> None:
     # Align env to wrapper-specific caches so CLI actions affect same location
+    hf_dir = os.environ.get("WRAPPER_HF_CACHE_DIR")
+    torch_dir = os.environ.get("WRAPPER_TORCH_CACHE_DIR")
     base = os.environ.get("WRAPPER_CACHE_DIR")
-    if not base:
+    base_path: Path | None = None
+    if base:
+        try:
+            base_path = Path(base)
+        except Exception:
+            base_path = None
+    if base_path is not None:
+        if not hf_dir:
+            hf_dir = str(base_path / "hf-cache")
+        if not torch_dir:
+            torch_dir = str(base_path / "torch-hub")
+    if not hf_dir or not torch_dir:
         try:
             from platformdirs import user_cache_path  # type: ignore
 
-            base = str(user_cache_path("WhisperLiveKit", "wrapper"))
+            default_base = Path(user_cache_path("WhisperLiveKit", "wrapper"))
         except Exception:
-            base = None
-    if base:
-        hf = str(Path(base) / "hf-cache")
-        th = str(Path(base) / "torch-hub")
-        os.environ.setdefault("HUGGINGFACE_HUB_CACHE", hf)
-        os.environ.setdefault("HF_HOME", hf)
-        os.environ.setdefault("TORCH_HOME", th)
+            default_base = None
+        else:
+            if not hf_dir:
+                hf_dir = str(default_base / "hf-cache")
+            if not torch_dir:
+                torch_dir = str(default_base / "torch-hub")
+    if hf_dir:
+        try:
+            Path(hf_dir).mkdir(parents=True, exist_ok=True)
+        except Exception:
+            pass
+        os.environ.setdefault("HUGGINGFACE_HUB_CACHE", hf_dir)
+        os.environ.setdefault("HF_HOME", hf_dir)
+    if torch_dir:
+        try:
+            Path(torch_dir).mkdir(parents=True, exist_ok=True)
+        except Exception:
+            pass
+        os.environ.setdefault("TORCH_HOME", torch_dir)
 
 
 def main() -> None:

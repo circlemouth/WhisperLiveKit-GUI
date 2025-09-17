@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import inspect
+import os
 import shutil
 from pathlib import Path
 from typing import Callable, Optional
@@ -13,14 +15,69 @@ except Exception:  # pragma: no cover - optional dependency
     snapshot_download = None
     hf_tqdm = None
 
-# Root directory for Hugging Face cache used by the wrapper
-# Root directory for Hugging Face cache used by the wrapper
-HF_CACHE_DIR = user_cache_path("WhisperLiveKit", "wrapper") / "hf-cache"
-HF_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+# Determine cache roots taking existing environment into account. This keeps
+# MSIX パッケージなど書き込み制限のある環境でも、ダウンロードとロード元が同じ
+# ディレクトリを参照するよう統一する。
 
-# Cache directory for torch.hub models (used for VAD)
-TORCH_CACHE_DIR = user_cache_path("WhisperLiveKit", "wrapper") / "torch-hub"
-TORCH_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+def _path_from_env(*names: str) -> Path | None:
+    for name in names:
+        raw = os.environ.get(name, "").strip()
+        if not raw:
+            continue
+        try:
+            return Path(raw).expanduser()
+        except Exception:
+            continue
+    return None
+
+
+def _ensure_dir(path: Path) -> Path:
+    path = Path(path)
+    try:
+        path = path.expanduser()
+    except Exception:
+        pass
+    path.mkdir(parents=True, exist_ok=True)
+    try:
+        return path.resolve()
+    except Exception:
+        return path
+
+
+_CACHE_ROOT = _path_from_env("WRAPPER_CACHE_DIR")
+if _CACHE_ROOT is None:
+    _CACHE_ROOT = user_cache_path("WhisperLiveKit", "wrapper")
+_CACHE_ROOT = _ensure_dir(_CACHE_ROOT)
+
+
+_HF_CACHE = _path_from_env("WRAPPER_HF_CACHE_DIR", "HUGGINGFACE_HUB_CACHE", "HF_HOME")
+if _HF_CACHE is None:
+    _HF_CACHE = _CACHE_ROOT / "hf-cache"
+HF_CACHE_DIR = _ensure_dir(_HF_CACHE)
+
+
+_TORCH_CACHE = _path_from_env("WRAPPER_TORCH_CACHE_DIR", "TORCH_HOME")
+if _TORCH_CACHE is None:
+    _TORCH_CACHE = _CACHE_ROOT / "torch-hub"
+TORCH_CACHE_DIR = _ensure_dir(_TORCH_CACHE)
+
+os.environ.setdefault("WRAPPER_CACHE_DIR", str(_CACHE_ROOT))
+os.environ.setdefault("WRAPPER_HF_CACHE_DIR", str(HF_CACHE_DIR))
+os.environ.setdefault("WRAPPER_TORCH_CACHE_DIR", str(TORCH_CACHE_DIR))
+os.environ.setdefault("HUGGINGFACE_HUB_CACHE", str(HF_CACHE_DIR))
+os.environ.setdefault("HF_HOME", str(HF_CACHE_DIR))
+os.environ.setdefault("TORCH_HOME", str(TORCH_CACHE_DIR))
+os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS", "1")
+
+_SNAPSHOT_KWARGS: dict[str, object] = {}
+if snapshot_download is not None:
+    try:
+        sig = inspect.signature(snapshot_download)
+        if "local_dir_use_symlinks" in sig.parameters:
+            _SNAPSHOT_KWARGS["local_dir_use_symlinks"] = False
+    except Exception:
+        _SNAPSHOT_KWARGS = {}
 
 VAD_REPO = "snakers4/silero-vad"
 VAD_MODEL = "silero_vad"
@@ -193,7 +250,10 @@ def download_model(
         raise RuntimeError("huggingface_hub is required to download models")
     repo = _resolve_repo_id(name, backend=backend)
     TqdmCls = _make_tqdm_with_cb(progress_cb)
-    path = Path(snapshot_download(repo_id=repo, cache_dir=HF_CACHE_DIR, tqdm_class=TqdmCls))
+    kwargs = {"repo_id": repo, "cache_dir": HF_CACHE_DIR, "tqdm_class": TqdmCls}
+    if _SNAPSHOT_KWARGS:
+        kwargs.update(_SNAPSHOT_KWARGS)
+    path = Path(snapshot_download(**kwargs))
     try:
         (_cache_dir(repo) / "latest").write_text(str(path), encoding="utf-8")
     except Exception:
