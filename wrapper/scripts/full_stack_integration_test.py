@@ -28,7 +28,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path
-from typing import Callable, Iterable, Optional
+from typing import Callable, Iterable, NamedTuple, Optional
 
 DEFAULT_TIMEOUT = 40.0
 ROOT_DIR = Path(__file__).resolve().parents[2]
@@ -41,6 +41,7 @@ from unittest import mock
 import requests
 
 from wrapper.app import model_manager
+from wrapper.app import gui as gui_module
 
 
 class ProcessError(RuntimeError):
@@ -49,6 +50,12 @@ class ProcessError(RuntimeError):
 
 def _debug(msg: str) -> None:
     print(f"[integration-test] {msg}")
+
+
+class DownloadSummary(NamedTuple):
+    paths: dict[str, Path]
+    whisper_models: list[str]
+    whisper_backends: list[str]
 
 
 def _find_free_port(exclude: Iterable[int] | None = None) -> int:
@@ -214,51 +221,80 @@ def _patch_model_manager(tmp_root: Path):
         yield hf_cache, torch_cache
 
 
-def _download_required_models() -> dict[str, Path]:
-    """Download Whisper, VAD, segmentation, embedding, and backend variants."""
-    whisper_model = "tiny"
-    faster_backend = "faster-whisper"
-    simul_backend = "simulstreaming"
-    seg_model = "pyannote/segmentation-3.0"
-    emb_model = "pyannote/embedding"
+def _download_required_models() -> DownloadSummary:
+    """Download all model types exposed via the GUI and verify their cache entries."""
+
+    whisper_models = list(gui_module.WHISPER_MODELS) or ["tiny"]
+    whisper_backends = list(gui_module.WHISPER_BACKENDS)
+    segmentation_models = list(gui_module.SEGMENTATION_MODELS)
+    embedding_models = list(gui_module.EMBEDDING_MODELS)
+    vad_models = list(gui_module.VAD_MODELS) or [model_manager.VAD_REPO]
 
     paths: dict[str, Path] = {}
-    paths[f"whisper:{whisper_model}"] = model_manager.download_model(whisper_model)
-    paths[f"whisper:{whisper_model}:{faster_backend}"] = model_manager.download_model(whisper_model, backend=faster_backend)
-    paths[f"whisper:{whisper_model}:{simul_backend}"] = model_manager.download_model(whisper_model, backend=simul_backend)
-    paths[f"vad:{model_manager.VAD_REPO}"] = model_manager.download_model(model_manager.VAD_REPO)
-    paths[f"seg:{seg_model}"] = model_manager.download_model(seg_model)
-    paths[f"emb:{emb_model}"] = model_manager.download_model(emb_model)
 
-    for key, path in paths.items():
+    def _record_path(key: str, path: Path) -> None:
+        paths[key] = path
         if not path.exists():
             raise FileNotFoundError(f"Model path missing for {key}: {path}")
 
-    checks = [
-        model_manager.is_model_downloaded(whisper_model),
-        model_manager.is_model_downloaded(whisper_model, backend=faster_backend),
-        model_manager.is_model_downloaded(whisper_model, backend=simul_backend),
-        model_manager.is_model_downloaded(model_manager.VAD_REPO),
-        model_manager.is_model_downloaded(seg_model),
-        model_manager.is_model_downloaded(emb_model),
-    ]
-    if not all(checks):
-        raise RuntimeError("Model download verification failed")
+    def _expected_repo(name: str, backend: Optional[str] = None) -> str:
+        if "/" in name:
+            return name
+        if backend == "faster-whisper":
+            return f"Systran/faster-whisper-{name}"
+        return f"openai/whisper-{name}"
 
-    # Ensure list_downloaded_models reports entries
-    listed = model_manager.list_downloaded_models()
-    expected_substrings = [
-        "openai/whisper-tiny",
-        "Systran/faster-whisper-tiny",
-        model_manager.VAD_REPO,
-        seg_model,
-        emb_model,
-    ]
-    for item in expected_substrings:
-        if not any(item in entry for entry in listed):
-            raise RuntimeError(f"Expected {item} in downloaded models list")
+    for model_name in whisper_models:
+        default_path = model_manager.download_model(model_name)
+        _record_path(f"whisper:{model_name}", default_path)
+        if not model_manager.is_model_downloaded(model_name):
+            raise RuntimeError(f"Model download verification failed for whisper:{model_name}")
 
-    return paths
+        for backend in whisper_backends:
+            backend_path = model_manager.download_model(model_name, backend=backend)
+            key = f"whisper:{model_name}:{backend}"
+            _record_path(key, backend_path)
+            if not model_manager.is_model_downloaded(model_name, backend=backend):
+                raise RuntimeError(f"Model download verification failed for {key}")
+
+    for repo_id in segmentation_models:
+        seg_path = model_manager.download_model(repo_id)
+        _record_path(f"seg:{repo_id}", seg_path)
+        if not model_manager.is_model_downloaded(repo_id):
+            raise RuntimeError(f"Model download verification failed for seg:{repo_id}")
+
+    for repo_id in embedding_models:
+        emb_path = model_manager.download_model(repo_id)
+        _record_path(f"emb:{repo_id}", emb_path)
+        if not model_manager.is_model_downloaded(repo_id):
+            raise RuntimeError(f"Model download verification failed for emb:{repo_id}")
+
+    for repo_id in vad_models:
+        vad_path = model_manager.download_model(repo_id)
+        _record_path(f"vad:{repo_id}", vad_path)
+        if not model_manager.is_model_downloaded(repo_id):
+            raise RuntimeError(f"Model download verification failed for vad:{repo_id}")
+
+    listed = set(model_manager.list_downloaded_models())
+    expected_entries: set[str] = set()
+
+    for model_name in whisper_models:
+        expected_entries.add(_expected_repo(model_name))
+        for backend in whisper_backends:
+            expected_entries.add(_expected_repo(model_name, backend=backend))
+
+    expected_entries.update(segmentation_models)
+    expected_entries.update(embedding_models)
+    expected_entries.update(vad_models)
+
+    missing_in_list = sorted(entry for entry in expected_entries if entry not in listed)
+    if missing_in_list:
+        raise RuntimeError(
+            "Model download verification failed: missing entries in list_downloaded_models: "
+            + ", ".join(missing_in_list)
+        )
+
+    return DownloadSummary(paths=paths, whisper_models=whisper_models, whisper_backends=whisper_backends)
 
 
 def _launch_process(cmd: list[str], *, env: dict[str, str], name: str) -> subprocess.Popen:
@@ -314,7 +350,22 @@ def run_integration_test() -> None:
             env["HUGGINGFACE_HUB_CACHE"] = str(hf_cache)
             env["TORCH_HOME"] = str(torch_cache)
 
-            model_paths = _download_required_models()
+            download_summary = _download_required_models()
+            model_paths = download_summary.paths
+            whisper_models = download_summary.whisper_models
+            whisper_backends = download_summary.whisper_backends
+
+            if not whisper_models:
+                raise RuntimeError("No Whisper models available from GUI catalog")
+
+            primary_model = whisper_models[0]
+            if not whisper_backends:
+                raise RuntimeError("No Whisper backends available from GUI catalog")
+            primary_backend = whisper_backends[0]
+
+            selected_key = f"whisper:{primary_model}:{primary_backend}" if primary_backend else f"whisper:{primary_model}"
+            if selected_key not in model_paths:
+                raise RuntimeError(f"Missing downloaded model entry for {selected_key}")
 
             backend_cmd = [
                 sys.executable,
@@ -325,14 +376,30 @@ def run_integration_test() -> None:
                 env["WRAPPER_BACKEND_HOST"],
                 "--port",
                 env["WRAPPER_BACKEND_PORT"],
-                "--model",
-                "tiny",
-                "--model_dir",
-                str(model_paths[f"whisper:tiny"]),
                 "--model_cache_dir",
                 str(hf_cache),
-                "--backend",
-                "simulstreaming",
+            ]
+
+            model_dir_path: Path | None = None
+            if primary_backend == "simulstreaming":
+                backend_cmd += ["--model", primary_model]
+                model_dir_path = model_manager.get_model_path(primary_model, backend="simulstreaming")
+                backend_cmd += ["--model_dir", str(model_dir_path)]
+            elif primary_backend == "faster-whisper":
+                backend_cmd += ["--model", primary_model]
+                if model_manager.is_model_downloaded(primary_model, backend="faster-whisper"):
+                    model_dir_path = model_manager.get_model_path(primary_model, backend="faster-whisper")
+                    backend_cmd += ["--model_dir", str(model_dir_path)]
+            else:
+                model_dir_path = model_manager.get_model_path(primary_model)
+                backend_cmd += ["--model_dir", str(model_dir_path)]
+
+            if model_dir_path and not model_dir_path.exists():
+                raise FileNotFoundError(f"Backend model path missing: {model_dir_path}")
+
+            backend_cmd += ["--backend", primary_backend]
+
+            backend_cmd += [
                 "--min-chunk-size",
                 "0.5",
                 "--language",
