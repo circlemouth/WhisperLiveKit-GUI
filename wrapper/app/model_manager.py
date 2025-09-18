@@ -111,6 +111,24 @@ def _cache_dir(repo_id: str) -> Path:
     return HF_CACHE_DIR / f"models--{safe}"
 
 
+def _latest_snapshot_path(repo_id: str) -> Path | None:
+    """Return the newest snapshot directory for a given Hugging Face repo.
+
+    Returns ``None`` when no snapshot has been materialised yet.
+    """
+    base = _cache_dir(repo_id)
+    snapshots = base / "snapshots"
+    if not snapshots.exists():
+        return None
+    try:
+        dirs = [p for p in snapshots.iterdir() if p.is_dir()]
+    except Exception:
+        return None
+    if not dirs:
+        return None
+    return max(dirs, key=lambda p: p.stat().st_mtime)
+
+
 def _vad_cache_dirs() -> list[Path]:
     return list(TORCH_CACHE_DIR.glob("snakers4_silero-vad*"))
 
@@ -147,12 +165,10 @@ def get_model_path(name: str, *, backend: Optional[str] = None) -> Path:
         # fall back to expected location even if missing
         return pt
     repo = _resolve_repo_id(name, backend=backend)
+    snapshot = _latest_snapshot_path(repo)
+    if snapshot is not None:
+        return snapshot
     base = _cache_dir(repo)
-    snapshots = base / "snapshots"
-    if snapshots.exists():
-        dirs = [p for p in snapshots.iterdir() if p.is_dir()]
-        if dirs:
-            return max(dirs, key=lambda p: p.stat().st_mtime)
     marker = base / "latest"
     if marker.is_file():
         try:
@@ -183,11 +199,13 @@ def is_model_downloaded(name: str, *, backend: Optional[str] = None) -> bool:
     if backend == "simulstreaming":
         return _pt_file(name).is_file()
     repo = _resolve_repo_id(name, backend=backend)
-    snapshots = _cache_dir(repo) / "snapshots"
-    if snapshots.exists() and any(p.is_dir() for p in snapshots.iterdir()):
+    snapshot = _latest_snapshot_path(repo)
+    if snapshot is not None:
         return True
-    # also treat standalone .pt files as downloaded for default backend
-    return _pt_file(name).is_file()
+    # Only Whisper default backend falls back to .pt compatibility files.
+    if backend in (None, "whisper_timestamped"):
+        return _pt_file(name).is_file()
+    return False
 
 
 def list_downloaded_models() -> list[str]:

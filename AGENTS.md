@@ -47,6 +47,7 @@
 - GUI からの API 起動とモデル管理を通しで検証する統合テストスクリプトを `wrapper/scripts/full_stack_integration_test.py` に用意した。
 - `wrapper/app`・`wrapper/api`・モデル管理・GUI 起動フロー・ダウンロード処理・音声入出力に影響する変更を加えた場合は、**必ず** `python wrapper/scripts/full_stack_integration_test.py` を実行し、成功することを確認する。
 - テストスクリプトはスタブ化したバックエンドとダミーモデルを用いて GUI 実際の挙動を模擬する。必要に応じてスクリプトの維持・更新も合わせて行うこと。
+- Hugging Face キャッシュ検出まわり（`wrapper/app/model_manager.py` や GUI のモデル起動ロジック）に変更を入れた場合は、`python wrapper/scripts/test_fastwhisper_cache.py` を実行し、faster-whisper 用スナップショット判定のリグレッションが起きていないことを確認する。
 
 ## 完了定義（Definition of Done）
 - CLI/GUI エントリから既存機能を起動・制御できること。

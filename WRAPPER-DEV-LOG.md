@@ -1,5 +1,16 @@
 # WRAPPER-DEV-LOG
 
+## 2025-09-18 (faster-whisper モデル検出の修正)
+- 背景／スコープ：GUI から「Start API」を押すと faster-whisper が未ダウンロード状態でも `.pt` ファイルを既存モデルと誤認し、存在しない `--model_dir` をバックエンドに渡した結果、`huggingface_hub.HFValidationError` が発生して起動に失敗していた。
+- 決定事項：
+  - `wrapper/app/model_manager.py` の `is_model_downloaded` を修正し、faster-whisper では CTranslate2 スナップショットが存在する場合のみダウンロード済みと判定する。従来の `.pt` フォールバックは標準 Whisper バックエンド専用に限定。
+  - GUI 起動ロジック（`wrapper/app/gui.py`）で取得した `model_dir` が実在する場合だけ引数へ渡すようガードを追加し、誤検出時の再発を防止。
+  - リグレッションテスト用に `wrapper/scripts/test_fastwhisper_cache.py` を追加し、キャッシュ環境を仮想的に構築して `.pt` のみ／スナップショット有りの両ケースを自動検証できるようにした。
+- 根拠／検討メモ：`HFValidationError` はユーザー側で回避できず、GUI 上でも起動が止まるため緊急対応。スナップショットの有無を直接確認することで faster-whisper 専用のキャッシュ構造と整合が取れる。
+- 未解決事項：初回起動時に Hugging Face からのモデル取得は引き続き必要であり、ネットワークや証明書エラーの場合は別途対処が必要。
+- 次アクション：Warmup 用サンプル取得時の SSL 証明書エラー（`certificate verify failed`）が報告されているため、証明書パスの設定確認と必要なら `certifi` バンドルの利用導線を検討する。
+- リスク／課題：テストスクリプトは faster-whisper 固有のキャッシュ構造のみ検証するため、将来的に upstream 側でレイアウトが変わった場合は更新が必要。
+
 ## 2025-10-28 (MSIX 向けキャッシュ整合性と symlink 回避)
 - 背景／スコープ：MSIX として Windows Store 配布する際、モデルキャッシュの保存先がプロセス毎に食い違うと読み込みに失敗する。加え
   て symlink 不可な環境で Hugging Face のスナップショット展開が壊れていた。

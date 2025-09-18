@@ -570,11 +570,10 @@ class WrapperGUI:
         # 左カラム: Server Settings のみ（右カラムの高さに合わせて拡張）
         left_col = ttk.Frame(content)
         left_col.columnconfigure(0, weight=1)
-        # 左カラムの中で Server Settings を縦に拡張しない（余白を作らない）
-        left_col.rowconfigure(0, weight=0)
+        # Server Settings セクションを縦方向にも追従させ、右カラムと同じ高さを維持
+        left_col.rowconfigure(0, weight=1)
         server_frame = ttk.Labelframe(left_col, text="Server Settings")
-        # 縦方向には拡張しないで内容高さに収める
-        server_frame.grid(row=0, column=0, sticky="ew")
+        server_frame.grid(row=0, column=0, sticky="nsew")
         server_frame.columnconfigure(1, weight=1)
         config_frame = server_frame
         self.left_col = left_col
@@ -866,6 +865,7 @@ class WrapperGUI:
         record_frame.grid(row=1, column=0, sticky="nsew")
         record_frame.columnconfigure(1, weight=1)
         self.record_frame = record_frame
+        right_panel.rowconfigure(1, weight=1)
         # Recording controls
         r = 0
         self.record_btn = ttk.Button(record_frame, text="Start Recording", command=self.toggle_recording)
@@ -946,6 +946,7 @@ class WrapperGUI:
         log_panel.columnconfigure(0, weight=1)
         log_panel.rowconfigure(0, weight=1)
         log_panel.grid(row=2, column=0, sticky="nsew", pady=(5,0))
+        right_panel.rowconfigure(2, weight=1)
         log_frame = ttk.Labelframe(log_panel, text="Logs")
         log_frame.grid(row=0, column=0, sticky="nsew")
         log_frame.columnconfigure(0, weight=1)
@@ -985,8 +986,8 @@ class WrapperGUI:
         try:
             line_h = font.Font(font=self.log_text.cget("font")).metrics("linespace")
             min_log_h = line_h * 4 + 10
-            log_panel.rowconfigure(0, weight=0, minsize=min_log_h)
-            right_panel.rowconfigure(2, weight=0, minsize=min_log_h)
+            log_panel.rowconfigure(0, weight=1, minsize=min_log_h)
+            right_panel.rowconfigure(2, weight=1, minsize=min_log_h)
         except Exception:
             pass
 
@@ -1607,10 +1608,9 @@ class WrapperGUI:
             elif backend == "faster-whisper":
                 backend_cmd += ["--model", model]
                 if model_manager.is_model_downloaded(model, backend="faster-whisper"):
-                    backend_cmd += [
-                        "--model_dir",
-                        str(model_manager.get_model_path(model, backend="faster-whisper")),
-                    ]
+                    model_path = model_manager.get_model_path(model, backend="faster-whisper")
+                    if Path(model_path).exists():
+                        backend_cmd += ["--model_dir", str(model_path)]
             else:
                 backend_cmd += ["--model_dir", str(model_manager.get_model_path(model))]
         if self.diarization.get() and self.hf_logged_in:
@@ -3374,6 +3374,8 @@ class ModelManagerDialog(tk.Toplevel):
         _t = (gui._t if gui is not None and hasattr(gui, "_t") else (lambda s: s))
         self._tr = _t
         row = 0
+        # Download/Delete ボタンの幅を固定してラベル長による差を解消
+        button_width = max(len(_t("Download")), len(_t("Delete"))) + 4
         for backend in WHISPER_BACKENDS:
             for model_name in WHISPER_MODELS:
                 label = model_name
@@ -3381,7 +3383,8 @@ class ModelManagerDialog(tk.Toplevel):
                 ttk.Label(inner, text=label).grid(row=row, column=0, sticky=tk.W, padx=5, pady=2)
                 ttk.Label(inner, text=usage).grid(row=row, column=1, sticky=tk.W)
                 status = tk.StringVar()
-                if model_manager.is_model_downloaded(model_name, backend=backend):
+                is_downloaded = model_manager.is_model_downloaded(model_name, backend=backend)
+                if is_downloaded:
                     status.set(_t("downloaded"))
                 else:
                     status.set(_t("missing"))
@@ -3390,8 +3393,10 @@ class ModelManagerDialog(tk.Toplevel):
                 pb.grid(row=row, column=3, padx=5, sticky="ew")
                 action = ttk.Button(
                     inner,
-                    text="Delete" if model_manager.is_model_downloaded(model_name, backend=backend) else "Download",
+                    text="Delete" if is_downloaded else "Download",
                     command=lambda n=model_name, b=backend: self._on_action(n, b),
+                    width=button_width,
+                    bootstyle="danger" if is_downloaded else "primary",
                 )
                 action.grid(row=row, column=4, padx=5)
                 self.rows[(model_name, backend)] = (status, pb, action)
@@ -3402,7 +3407,8 @@ class ModelManagerDialog(tk.Toplevel):
             ttk.Label(inner, text=label).grid(row=row, column=0, sticky=tk.W, padx=5, pady=2)
             ttk.Label(inner, text=usage).grid(row=row, column=1, sticky=tk.W)
             status = tk.StringVar()
-            if model_manager.is_model_downloaded(model_name):
+            is_downloaded = model_manager.is_model_downloaded(model_name)
+            if is_downloaded:
                 status.set(_t("downloaded"))
             else:
                 status.set(_t("missing"))
@@ -3411,8 +3417,10 @@ class ModelManagerDialog(tk.Toplevel):
             pb.grid(row=row, column=3, padx=5, sticky="ew")
             action = ttk.Button(
                 inner,
-                text="Delete" if model_manager.is_model_downloaded(model_name) else "Download",
+                text="Delete" if is_downloaded else "Download",
                 command=lambda n=model_name: self._on_action(n, None),
+                width=button_width,
+                bootstyle="danger" if is_downloaded else "primary",
             )
             action.grid(row=row, column=4, padx=5)
             self.rows[(model_name, None)] = (status, pb, action)
@@ -3432,7 +3440,7 @@ class ModelManagerDialog(tk.Toplevel):
         if model_manager.is_model_downloaded(model_name, backend=backend):
             model_manager.delete_model(model_name, backend=backend)
             status.set("missing")
-            btn.config(text=self._tr("Download"))
+            btn.config(text=self._tr("Download"), bootstyle="primary")
             pb.config(value=0)
         else:
             btn.config(state=tk.DISABLED)
@@ -3444,7 +3452,7 @@ class ModelManagerDialog(tk.Toplevel):
                 try:
                     model_manager.download_model(model_name, backend=backend, progress_cb=progress)
                     status.set("downloaded")
-                    btn.config(text=self._tr("Delete"))
+                    btn.config(text=self._tr("Delete"), bootstyle="danger")
                 except Exception as e:  # pragma: no cover - GUI display
                     status.set(str(e))
                 finally:
