@@ -28,6 +28,7 @@
 - Whisperモデルは SimulStreaming 用と Faster Whisper 用に区分して一覧表示し、モデル名からバックエンド名を省いた。既存のダウンロード済みモデルはそのまま利用できるが、他バックエンドを使う場合は各バックエンド用モデルを追加取得する。
 - モデル選択欄の右側で使用するバックエンドを直接選択できるようになった。SimulStreaming を選択した場合は商用利用に別途許諾が必要である旨の注意書きを表示する。
 - Faster Whisper バックエンドのモデル取得時は、ダウンロードしたスナップショットのパスを `latest` ファイルに記録し、起動時はこれを参照してモデルを特定する。`latest` や `snapshots` が見つからない場合は `.bin` ファイル探索にフォールバックし、手動配置モデルも読み込める。
+- Faster Whisper のダウンロード判定は CTranslate2 ウェイト（`model.bin` / `model.bin.*`）とトークナイザー設定（`tokenizer.json` / `tokenizer_config.json`）が揃った場合にのみ「取得済み」と見なす。欠損状態では GUI が再ダウンロードを促し、空ディレクトリを `--model_dir` として渡してしまうことによる起動失敗を防ぐ。
 
 - 未ダウンロードのモデルを指定した場合でも、キャッシュディレクトリが存在しないことによるエラーは発生せず、必要に応じて自動ダウンロード処理に委ねられる。特に Faster Whisper バックエンドでは、モデルが未取得の場合でもモデル名を `--model` として渡すことで `Invalid model size` エラーを避けてダウンロードにフォールバックする。
 
@@ -85,6 +86,9 @@
   - より細かく制御したい場合は `WRAPPER_HF_CACHE_DIR` / `WRAPPER_TORCH_CACHE_DIR` を直接指定できる。既に
     `HUGGINGFACE_HUB_CACHE` / `HF_HOME` / `TORCH_HOME` が設定されている場合はその値を尊重し、ラッパー内部の参照も同じディレクトリに揃え
     る。
+- `--warmup-file` に HTTP(S) の URL を指定した場合は、初回アクセス時に音声ファイルを `WRAPPER_WARMUP_CACHE_DIR`（既定: `<cache>/warmups`）
+  に保存し、以後は同じキャッシュを再利用する。従来の一時ディレクトリ再ダウンロードは発生しない。既存ユーザーも自動的に新しい場所へ再
+  ダウンロードされるだけで移行作業は不要。
 - 起動時に `HUGGINGFACE_HUB_CACHE`, `HF_HOME`, `TORCH_HOME`, `HF_HUB_DISABLE_SYMLINKS` が未設定なら自動的に補完し、GUI でのモデル
   ダウンロード・バックエンド起動・CLI からの操作が同じキャッシュを使う。`HF_HUB_DISABLE_SYMLINKS=1` と
   `snapshot_download(..., local_dir_use_symlinks=False)` の併用により、MSIX/Windows のシンボリックリンク制限下でも確実に物理ファイルが

@@ -71,6 +71,9 @@ MODEL_USAGE.update({m: "Embedding" for m in EMBEDDING_MODELS})
 MODEL_USAGE.update({model_manager.VAD_REPO: "VAD"})
 
 
+WARMUP_DOWNLOAD_SENTINEL = "__warmup__"
+
+
 CONFIG_DIR = user_config_path("WhisperLiveKit", "wrapper")
 CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 CONFIG_FILE = CONFIG_DIR / "settings.json"
@@ -415,6 +418,7 @@ class WrapperGUI:
         self.ssl_certfile = tk.StringVar(value="")
         self.ssl_keyfile = tk.StringVar(value="")
         self.frame_threshold = tk.IntVar(value=25)
+        self._warmup_download_source: str | None = None
 
         self.web_endpoint = tk.StringVar()
         self.ws_endpoint = tk.StringVar()
@@ -1445,6 +1449,7 @@ class WrapperGUI:
         if not self._check_runtime_dependencies():
             return
         self._begin_starting_ui()
+        self._warmup_download_source = None
         missing: list[str] = []
         model = self.model.get().strip()
         backend_choice = self.backend.get().strip()
@@ -1467,6 +1472,10 @@ class WrapperGUI:
                 missing.append(emb)
         if self.use_vac.get() and not model_manager.is_model_downloaded(model_manager.VAD_REPO):
             missing.append(model_manager.VAD_REPO)
+        warm = self.warmup_file.get().strip()
+        if warm and model_manager.needs_warmup_download(warm):
+            missing.append(WARMUP_DOWNLOAD_SENTINEL)
+            self._warmup_download_source = warm
         if missing:
             self._download_and_start(missing)
             return
@@ -1479,6 +1488,16 @@ class WrapperGUI:
                 for m in models:
                     if not getattr(self, "_starting_api", False):
                         return
+                    if m == WARMUP_DOWNLOAD_SENTINEL:
+                        warm_src = getattr(self, "_warmup_download_source", None)
+                        if not warm_src:
+                            continue
+                        label = f"{self._t('Downloading')} {self._t('Warmup file')}"
+                        self.master.after(0, lambda l=label: self.status_var.set(l))
+                        model_manager.ensure_warmup_file(warm_src)
+                        if not getattr(self, "_starting_api", False):
+                            return
+                        continue
                     label = f"{self._t('Downloading')} {m}"
                     self.master.after(0, lambda l=label: self.status_var.set(l))
                     # For Whisper models, choose backend-specific weights
@@ -1625,9 +1644,31 @@ class WrapperGUI:
             if db:
                 backend_cmd += ["--diarization-backend", db]
 
-        warm = self.warmup_file.get().strip()
-        if warm:
-            backend_cmd += ["--warmup-file", warm]
+        warm_source = self.warmup_file.get().strip()
+        if warm_source:
+            try:
+                if model_manager.needs_warmup_download(warm_source):
+                    self.status_var.set(f"{self._t('Downloading')} {self._t('Warmup file')}")
+                warm_path = model_manager.ensure_warmup_file(warm_source)
+                backend_cmd += ["--warmup-file", str(warm_path)]
+            except Exception as e:  # pragma: no cover - GUI display
+                def _fail(err=e) -> None:
+                    try:
+                        self.status_var.set(f"{self._t('Download failed:')} {err}")
+                    except Exception:
+                        pass
+                    try:
+                        self._cancel_starting_ui()
+                        self.start_btn.config(state=tk.NORMAL)
+                    except Exception:
+                        pass
+                self.master.after(0, _fail)
+                return
+            finally:
+                try:
+                    self.status_var.set(self._t("starting"))
+                except Exception:
+                    pass
         if self.confidence_validation.get():
             backend_cmd.append("--confidence-validation")
         if self.punctuation_split.get():

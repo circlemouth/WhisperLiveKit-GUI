@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+import contextlib
+import hashlib
 import inspect
 import os
 import shutil
 from pathlib import Path
 from typing import Callable, Optional
+from urllib import error as urlerror
+from urllib import parse as urlparse
+from urllib import request as urlrequest
 
 from platformdirs import user_cache_path
 
@@ -66,8 +71,14 @@ os.environ.setdefault("WRAPPER_CACHE_DIR", str(_CACHE_ROOT))
 os.environ.setdefault("WRAPPER_HF_CACHE_DIR", str(HF_CACHE_DIR))
 os.environ.setdefault("WRAPPER_TORCH_CACHE_DIR", str(TORCH_CACHE_DIR))
 os.environ.setdefault("HUGGINGFACE_HUB_CACHE", str(HF_CACHE_DIR))
+_WARMUP_CACHE = _path_from_env("WRAPPER_WARMUP_CACHE_DIR")
+if _WARMUP_CACHE is None:
+    _WARMUP_CACHE = _CACHE_ROOT / "warmups"
+WARMUP_CACHE_DIR = _ensure_dir(_WARMUP_CACHE)
+
 os.environ.setdefault("HF_HOME", str(HF_CACHE_DIR))
 os.environ.setdefault("TORCH_HOME", str(TORCH_CACHE_DIR))
+os.environ.setdefault("WRAPPER_WARMUP_CACHE_DIR", str(WARMUP_CACHE_DIR))
 os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS", "1")
 
 _SNAPSHOT_KWARGS: dict[str, object] = {}
@@ -127,6 +138,171 @@ def _latest_snapshot_path(repo_id: str) -> Path | None:
     if not dirs:
         return None
     return max(dirs, key=lambda p: p.stat().st_mtime)
+
+
+def _has_faster_whisper_weights(path: Path) -> bool:
+    """Return True when the path contains faster-whisper CTranslate2 weights."""
+
+    def _check_dir(candidate: Path) -> bool:
+        try:
+            candidate = candidate.expanduser()
+        except Exception:
+            pass
+        if not candidate.is_dir():
+            return False
+        has_tokenizer = any(
+            (candidate / name).is_file() for name in ("tokenizer.json", "tokenizer_config.json")
+        )
+        if not has_tokenizer:
+            return False
+        weights: list[Path] = []
+        direct = candidate / "model.bin"
+        if direct.is_file():
+            weights.append(direct)
+        for shard in candidate.glob("model.bin.*"):
+            if shard.is_file() and not shard.name.endswith(".index.json"):
+                weights.append(shard)
+        if weights:
+            return True
+        index = candidate / "model.bin.index.json"
+        if index.is_file():
+            shards = [p for p in candidate.glob("model.bin.*") if p.is_file() and p != index]
+            if shards:
+                return True
+        return False
+
+    path = Path(path)
+    try:
+        path = path.expanduser()
+    except Exception:
+        pass
+    if path.is_file():
+        path = path.parent
+    if _check_dir(path):
+        return True
+    for sub in ("ct2_model", "ctranslate2", "model"):
+        if _check_dir(path / sub):
+            return True
+    return False
+
+
+def _is_http_url(value: str) -> bool:
+    try:
+        parsed = urlparse.urlparse(value)
+    except Exception:
+        return False
+    return parsed.scheme in {"http", "https"}
+
+
+def _sanitize_filename(name: str) -> str:
+    safe = []
+    for ch in name:
+        if ch.isalnum() or ch in {"-", "_", "."}:
+            safe.append(ch)
+        else:
+            safe.append("-")
+    candidate = "".join(safe).strip("-.")
+    return candidate or "warmup.wav"
+
+
+def _warmup_cache_path(url: str) -> Path:
+    parsed = urlparse.urlparse(url)
+    name = Path(urlparse.unquote(parsed.path or "")).name
+    if not name:
+        name = "warmup.wav"
+    name = _sanitize_filename(name)
+    if not Path(name).suffix:
+        name = f"{name}.wav"
+    digest = hashlib.sha256(url.encode("utf-8")).hexdigest()[:12]
+    return WARMUP_CACHE_DIR / f"{digest}-{name}"
+
+
+def needs_warmup_download(source: str) -> bool:
+    if not source:
+        return False
+    if not _is_http_url(source):
+        return False
+    target = _warmup_cache_path(source)
+    try:
+        return not (target.is_file() and target.stat().st_size > 0)
+    except Exception:
+        return True
+
+
+def _download_warmup(url: str, *, progress_cb: Callable[[float], None] | None = None) -> Path:
+    target = _warmup_cache_path(url)
+    if target.is_file() and target.stat().st_size > 0:
+        if progress_cb:
+            try:
+                progress_cb(1.0)
+            except Exception:
+                pass
+        return target
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    tmp = target.with_suffix(target.suffix + ".tmp")
+
+    req = urlrequest.Request(url, headers={"User-Agent": "WhisperLiveKit-Wrapper"})
+    success = False
+    try:
+        with urlrequest.urlopen(req) as resp:  # nosec B310 - trusted URL configured by user
+            total = resp.getheader("Content-Length")
+            try:
+                total_len = int(total) if total else None
+            except Exception:
+                total_len = None
+            received = 0
+            with open(tmp, "wb") as fh:
+                while True:
+                    chunk = resp.read(64 * 1024)
+                    if not chunk:
+                        break
+                    fh.write(chunk)
+                    received += len(chunk)
+                    if progress_cb and total_len:
+                        try:
+                            progress_cb(min(1.0, received / total_len))
+                        except Exception:
+                            pass
+            if progress_cb:
+                try:
+                    progress_cb(1.0)
+                except Exception:
+                    pass
+        success = True
+    except urlerror.HTTPError as exc:  # pragma: no cover - handled generically below
+        raise RuntimeError(f"HTTP error {exc.code} when downloading warmup: {exc.reason}") from exc
+    except urlerror.URLError as exc:  # pragma: no cover - handled generically below
+        raise RuntimeError(f"Failed to download warmup file: {exc.reason}") from exc
+    finally:
+        if not success:
+            with contextlib.suppress(Exception):
+                tmp.unlink()
+
+    if not tmp.exists() or tmp.stat().st_size == 0:
+        with contextlib.suppress(Exception):
+            tmp.unlink()
+        raise RuntimeError("Warmup download produced an empty file")
+
+    tmp.replace(target)
+    return target
+
+
+def ensure_warmup_file(source: str, *, progress_cb: Callable[[float], None] | None = None) -> Path:
+    if not source:
+        raise ValueError("Warmup source must be a non-empty string")
+    if _is_http_url(source):
+        return _download_warmup(source, progress_cb=progress_cb)
+    path = Path(source)
+    try:
+        path = path.expanduser()
+    except Exception:
+        pass
+    if path.is_file():
+        return path
+    if path.exists():
+        raise FileNotFoundError(f"Warmup path is not a file: {path}")
+    raise FileNotFoundError(f"Warmup file not found: {source}")
 
 
 def _vad_cache_dirs() -> list[Path]:
@@ -200,6 +376,11 @@ def is_model_downloaded(name: str, *, backend: Optional[str] = None) -> bool:
         return _pt_file(name).is_file()
     repo = _resolve_repo_id(name, backend=backend)
     snapshot = _latest_snapshot_path(repo)
+    if backend == "faster-whisper":
+        if snapshot is not None and _has_faster_whisper_weights(snapshot):
+            return True
+        path = get_model_path(name, backend="faster-whisper")
+        return _has_faster_whisper_weights(path)
     if snapshot is not None:
         return True
     # Only Whisper default backend falls back to .pt compatibility files.

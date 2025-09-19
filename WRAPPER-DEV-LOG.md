@@ -1,5 +1,30 @@
 # WRAPPER-DEV-LOG
 
+## 2025-10-30 (ウォームアップ音声のキャッシュ対応)
+- 背景／スコープ：`--warmup-file` に指定したサンプル音声（例: JFK wav）が毎回一時フォルダへダウンロードされ、Start API のたびに通信待
+  ちが発生していた。MSIX 配布やオフライン再起動時の安定性を高めるため、モデルと同様に永続キャッシュへ保存したい。
+- 決定事項：
+  - `wrapper/app/model_manager.py` に `needs_warmup_download` / `ensure_warmup_file` を追加し、HTTP(S) URL を `<cache>/warmups`（環境変数
+    `WRAPPER_WARMUP_CACHE_DIR` で上書き可）へ保存して再利用できるようにした。サイズ 0 の破損ファイルは検出して再取得する。
+  - GUI の Start API フローでウォームアップ音声をモデルダウンロードと同じプリフライトに組み込み、初回のみ「Warmup file ダウンロード
+    中」のステータスを表示して完了後に起動を続行する。失敗時は Start UI を解除して再試行しやすくした。
+  - `wrapper/scripts/test_fastwhisper_cache.py` を拡張し、ローカルパス返却と簡易 HTTP サーバー経由のキャッシュ再利用を自動テスト化。
+- 根拠／検討メモ：Warmup wav は数百 KB 程度でありキャッシュ保存のコストが小さい一方、手動ダウンロードを要求せず GUI から URL を直
+  接指定できる利点を残せる。音声はユーザー入力なので `urllib` でのダウンロード処理に信頼済み URL コメント（nosec）を添付した。
+- 未解決事項：Warmup URL の同時ダウンロードが多重に走った場合の排他は未実装。必要になったらファイルロックを導入する。
+- 次アクション：将来的に GUI の設定バックアップへキャッシュ済み warmup ファイル一覧を表示する機能を検討。
+- リスク／課題：HTTP サーバーがリダイレクトや Content-Disposition を返す場合のファイル名処理は簡易 sanitise のみ。予期せぬ名前衝突
+  が判明したらハッシュ長や拡張子決定ロジックの強化を行う。
+
+## 2025-10-29 (faster-whisper 起動時の空スナップショット誤検出を修正)
+- 背景／スコープ：GUI から Faster Whisper バックエンドで Start API を押すと、Hugging Face キャッシュが途中までしか展開されていないケースでも `is_model_downloaded` が True を返し、空ディレクトリを `--model_dir` に渡してしまい即座に起動失敗する事象があった。ログも出力されず初期状態へ戻るため利用者が原因を特定できなかった。
+- 決定事項：
+  - `wrapper/app/model_manager.py` に CTranslate2 ウェイト検出ヘルパー `_has_faster_whisper_weights` を追加し、`model.bin`／`model.bin.*` とトークナイザー設定が揃った場合のみダウンロード済みと判定する。欠損時は Start API 実行時に再ダウンロードへフォールバックし、空の `--model_dir` を渡さない。
+  - 上記ロジックのリグレッションテストとして `python wrapper/scripts/test_fastwhisper_cache.py` を追加。ネットワーク不要の疑似キャッシュ構造を生成し、想定どおりの真偽値が返るか検証できるようにした。
+- 根拠／検討メモ：`snapshot_download` は部分的に完了した段階でもスナップショットディレクトリを生成する。ディレクトリ有無のみで判定するとダウンロード中断後に恒久的な起動失敗を招くため、必要ファイルの存在チェックに変更した。
+- 未解決事項：将来的に faster-whisper の配布構成が変わった場合は検出条件の更新が必要。
+- 次アクション：大容量モデルを途中で中断した際に残る断片ファイルを検出・クリーンアップする仕組みを検討する。
+
 ## 2025-09-18 (faster-whisper モデル検出の修正)
 - 背景／スコープ：GUI から「Start API」を押すと faster-whisper が未ダウンロード状態でも `.pt` ファイルを既存モデルと誤認し、存在しない `--model_dir` をバックエンドに渡した結果、`huggingface_hub.HFValidationError` が発生して起動に失敗していた。
 - 決定事項：

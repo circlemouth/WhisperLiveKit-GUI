@@ -196,7 +196,12 @@ def _patch_model_manager(tmp_root: Path):
         safe = repo_id.replace("/", "--")
         target = cache_path / f"models--{safe}" / "snapshots" / "stub"
         target.mkdir(parents=True, exist_ok=True)
-        (target / "pytorch_model.bin").write_bytes(b"stub")
+        if "faster-whisper" in repo_id:
+            (target / "model.bin").write_bytes(b"stub")
+            (target / "tokenizer.json").write_text("{}", encoding="utf-8")
+            (target / "tokenizer_config.json").write_text("{}", encoding="utf-8")
+        else:
+            (target / "pytorch_model.bin").write_bytes(b"stub")
         return str(target)
 
     def fake_vad_download(progress_cb: Optional[Callable[[float], None]] = None) -> Path:
