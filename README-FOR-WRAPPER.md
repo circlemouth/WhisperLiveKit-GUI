@@ -64,6 +64,7 @@
   - multipart フォーム: `file=@sample.wav`, `model=whisper-1`
   - 音声形式: 16kHz モノラル (wav/raw) を推奨。これらは再変換せずに処理され、その他の形式は ffmpeg により変換される。
   - APIキー（任意）: `X-API-Key: <key>` または `Authorization: Bearer <key>`
+  - `WRAPPER_REQUIRE_API_KEY=1` を設定した場合、`/v1/audio/transcriptions` だけでなく `/openapi.json` `/docs` `/redoc` などのドキュメント系エンドポイントも同じヘッダーが必須となる（未設定または誤ったキーは 401 応答）。
   - レスポンス例: `{ "text": "...", "model": "whisper-1" }`
 
 ## 実行・設定手順（概要）
@@ -103,7 +104,7 @@
 
 ## セキュリティ / プライバシー
 - デフォルトはローカルバインド。外部公開する場合は TLS/認証/ファイアウォール等を考慮。
-- Wrapper API は任意で API キーを要求可能（GUI で設定）。
+- Wrapper API は任意で API キーを要求可能（GUI で設定）。API キーを有効化すると OpenAPI/Swagger/Redoc も同じヘッダーが必要になり、認証無しでは参照できない。
 
 ## パフォーマンス目標
 - 低遅延の逐次文字起こし（数百ms〜程度のバッファリング）
