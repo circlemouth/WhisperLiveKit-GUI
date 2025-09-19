@@ -1,5 +1,12 @@
 # WRAPPER-DEV-LOG
 
+## 2025-10-30 (OpenAPI も API キーで保護)
+- 背景／スコープ：ラッパー API に API キーを設定しても `/openapi.json` などのドキュメント用エンドポイントが無認証で参照でき、GUI から誤設定されたキーでもアクセス可能だった。
+- 決定事項：全 HTTP リクエストに共通のミドルウェアを挟み、API キー検証を一元化。FastAPI 標準の OpenAPI/Swagger/Redoc も同じ判定を通るようにした。
+- 根拠／検討メモ：`FastAPI(..., dependencies=...)` ではドキュメント系エンドポイントに認証が適用されないため、ミドルウェアでの判定が必要だった。既存の OpenAI 風エラーハンドラを流用して 401/500 応答を統一。
+- 影響／移行：`WRAPPER_REQUIRE_API_KEY=1` を利用中のユーザーは `/openapi.json` / `/docs` / `/redoc` を参照する際にもヘッダー指定が必須になる。GUI 側でキーを配布済みなら追加設定は不要。
+- 未解決事項：WebSocket (`/asr`) を API キーで保護する仕組みは未実装。必要なら backend 側での拡張を検討。
+
 ## 2025-09-18 (faster-whisper モデル検出の修正)
 - 背景／スコープ：GUI から「Start API」を押すと faster-whisper が未ダウンロード状態でも `.pt` ファイルを既存モデルと誤認し、存在しない `--model_dir` をバックエンドに渡した結果、`huggingface_hub.HFValidationError` が発生して起動に失敗していた。
 - 決定事項：

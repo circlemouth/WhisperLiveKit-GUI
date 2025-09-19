@@ -5,7 +5,7 @@ import io
 import wave
 from typing import List, Optional
 
-from fastapi import FastAPI, File, UploadFile, HTTPException, Form, Request, Depends
+from fastapi import FastAPI, File, UploadFile, HTTPException, Form, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.exceptions import RequestValidationError
 
@@ -30,7 +30,39 @@ BACKEND_WS_URL = f"{BACKEND_WS_SCHEME}://{BACKEND_CONNECT_HOST}:{BACKEND_PORT}/a
 REQUIRE_API_KEY = os.getenv("WRAPPER_REQUIRE_API_KEY", "0") == "1"
 API_KEY = os.getenv("WRAPPER_API_KEY", "")
 
+
+def _extract_api_key_from_request(request: Request) -> str | None:
+    # Prefer X-API-Key header; fallback to Authorization: Bearer <key>
+    key = request.headers.get("x-api-key")
+    if key:
+        return key
+    auth = request.headers.get("authorization")
+    if auth and auth.lower().startswith("bearer "):
+        return auth.split(None, 1)[1].strip()
+    return None
+
+
+def require_api_key_dep(request: Request) -> None:
+    if not REQUIRE_API_KEY:
+        return
+    if not API_KEY:
+        # Misconfiguration: key required but not set
+        raise HTTPException(status_code=500, detail="api_key_not_configured")
+    provided = _extract_api_key_from_request(request)
+    if provided != API_KEY:
+        raise HTTPException(status_code=401, detail="unauthorized")
+
+
 app = FastAPI(title="WhisperLiveKit Wrapper API")
+
+
+@app.middleware("http")
+async def _api_key_middleware(request: Request, call_next):
+    try:
+        require_api_key_dep(request)
+    except HTTPException as exc:
+        return await _http_exception_handler(request, exc)
+    return await call_next(request)
 
 
 # -----------------------------
@@ -256,28 +288,6 @@ def _format_vtt(lines: List[dict]) -> str:
     return "\n".join(out_lines).rstrip() + ("\n" if len(out_lines) > 2 else "")
 
 
-def _extract_api_key_from_request(request: Request) -> str | None:
-    # Prefer X-API-Key header; fallback to Authorization: Bearer <key>
-    key = request.headers.get("x-api-key")
-    if key:
-        return key
-    auth = request.headers.get("authorization")
-    if auth and auth.lower().startswith("bearer "):
-        return auth.split(None, 1)[1].strip()
-    return None
-
-
-def require_api_key_dep(request: Request) -> None:
-    if not REQUIRE_API_KEY:
-        return
-    if not API_KEY:
-        # Misconfiguration: key required but not set
-        raise HTTPException(status_code=500, detail="api_key_not_configured")
-    provided = _extract_api_key_from_request(request)
-    if provided != API_KEY:
-        raise HTTPException(status_code=401, detail="unauthorized")
-
-
 @app.post("/v1/audio/transcriptions")
 async def transcribe(
     file: UploadFile = File(...),
@@ -290,7 +300,6 @@ async def transcribe(
     user: str | None = Form(None),
     timestamp_granularities_brackets: List[str] | None = Form(None, alias="timestamp_granularities[]"),
     timestamp_granularities: List[str] | None = Form(None),
-    _auth: None = Depends(require_api_key_dep),
 ):
     """OpenAI Whisper API compatible transcription endpoint.
 
