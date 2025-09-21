@@ -3,7 +3,7 @@
 > 付記（問題点サマリ）
 > - 最近判明した接続/入出力の問題は `WRAPPER-DEV-LOG.md`（2025-09-02）に詳細を記録。
 > - 要点:
->   - REST→Backend の WebSocket ハンドシェイク遅延/失敗は、接続先不一致や IPv6/IPv4 の食い違いが主因。`WRAPPER_BACKEND_*` を明示設定（特に `WRAPPER_BACKEND_CONNECT_HOST=127.0.0.1`）。
+>   - REST→Backend の WebSocket ハンドシェイク遅延/失敗は、接続先不一致や IPv6/IPv4 の食い違いが主因。GUI でレコーダー接続先を自動的に `127.0.0.1` へフォールバックするよう修正済みだが、CLI などから利用する場合は `WRAPPER_BACKEND_*`（特に `WRAPPER_BACKEND_CONNECT_HOST=127.0.0.1`）を明示設定すること。
 >   - FFmpeg 書き込み失敗は raw PCM を送っていたことが原因。修正済み（コンテナ付き送信、`.raw` は WAV 化）。
 >   - OpenAI Whisper API 互換: `model` は必須だが無視。`response_format=json|text|srt|vtt|verbose_json` 対応、エラーは OpenAI 風 JSON。
 
@@ -43,6 +43,7 @@
 - Start/Stop API ボタンはヘッダー（タイトル右側）に配置。メインの2カラム設定画面はヘッダー左端の折りたたみボタンで表示/非表示を切替でき、状態は保存・復元される
   - Start ボタン押下後はモデルのダウンロードおよびロード完了までアニメーション付きで「起動中」を表示し、Stop ボタン押下時も完全に停止するまで「停止中」を表示する
   - 起動時のウィンドウサイズ: 高さは折りたたみ状態に応じて自動調整（未折りたたみ時は左カラムの自然高さに合わせた最大高、折りたたみ時はその状態の自然高）。横幅は初期算出幅の 1.2 倍で表示
+  - バックエンド起動直後は Tk の `after` で API 起動を遅延させるため、GUI スレッドをブロックしない。backend/api プロセスの終了コードを 1 秒間隔で監視し、異常終了時はログに exit code を追記してステータス・ボタンを即座に「停止」状態へ戻す。
 - 右カラムを Endpoints / Recorder / Logs の三段構成とし、ログ欄は Recorder の下部に配置。ステータス表示と進捗バーを廃止し、ログ欄は最低4行を維持しつつトランスクリプト欄と柔軟に高さを分配。トランスクリプト表示欄の縦幅は従来比でおよそ 2/3 に調整
   - ウィンドウ拡大後に左右カラムが伸びても、縮小時に高さがウィンドウに追随して UI 全体が常に表示されるよう ScrollableFrame を改修。ウィンドウ最大高さは左カラムの自然高さに合わせて制限
   - 以前の「ウィンドウ／ペインの最小サイズ固定」は撤廃し、自由なリサイズとスクロールで運用（小画面でのはみ出しを解消）
@@ -59,6 +60,7 @@
 - GUI: `python -m wrapper.cli.main`
 - WebSocket（upstream 提供）: `ws://<backend_host>:<backend_port>/asr`
   - GUI の Recorder は `audio/webm`(Opus) を送信（raw PCM では送らない）。サーバ側で s16le/16kHz/mono に復号され処理される。
+  - バインドホストが `0.0.0.0` でもレコーダーは自動的に `127.0.0.1` へ接続し、外部公開時でもローカル収録が失敗しない。
   - 録音停止時は「空バイト（b""）」を送信して EOF を明示。
 - REST API（Wrapper）: `POST http://<api_host>:<api_port>/v1/audio/transcriptions`
   - multipart フォーム: `file=@sample.wav`, `model=whisper-1`
@@ -97,6 +99,7 @@
 
 ## エラーハンドリング / ログ
 - バックエンド/API の標準出力と標準エラーはGUIのログ欄と同時にターミナルにも表示される。`PYTHONUNBUFFERED=1` と `-u` オプションによりバッファリングを無効化し、macOSでログが出力されない問題を解消。
+- backend/api プロセスの `poll()` を GUI が定期監視し、異常終了を検知した場合は exit code をログに追記して即座に停止処理を走らせる。
 - FFmpeg が無い: `500 ffmpeg_not_found`（API）、GUIログに表示
 - GUI から Start API を実行した際に FFmpeg が見つからない場合、警告ダイアログを表示して起動を中止する
 - 音声変換失敗: `400 ffmpeg_failed`（API）
