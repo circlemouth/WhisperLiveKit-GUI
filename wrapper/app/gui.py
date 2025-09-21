@@ -198,6 +198,8 @@ TRANSLATIONS_JA = {
     "Invalid token:": "トークンが無効です:",
     "Token check failed:": "トークンチェックに失敗しました:",
     "Token is valid. You can enable Diarization now.": "トークンは有効です。話者分離を有効にできます。",
+    "Backend process exited unexpectedly": "バックエンドプロセスが予期せず終了しました",
+    "API process exited unexpectedly": "APIプロセスが予期せず終了しました",
     "Note: Token was not saved in keyring; it won't persist across restarts.": "注意: トークンはキーチェーンに保存されなかったため、再起動後は保持されません。",
     "Token is valid, but saving credentials failed. You may need to login via CLI.": "トークンは有効ですが、資格情報の保存に失敗しました。CLIでログインする必要があるかもしれません。",
     "Diarization requires Hugging Face login": "話者分離にはHugging Faceログインが必要です",
@@ -448,6 +450,9 @@ class WrapperGUI:
         self.save_enabled = tk.BooleanVar(value=False)
         # Transcript rendering signature to avoid duplicate appends
         self._transcript_last_signature: Optional[tuple[str, ...]] = None
+        # Deferred start/monitor handles
+        self._pending_api_start_id: str | None = None
+        self._process_monitor_id: str | None = None
 
         # Layout: 右カラムにログ・ステータス・進捗を配置
 
@@ -1518,15 +1523,15 @@ class WrapperGUI:
         # Reflect 'starting' state in UI
         self._begin_starting_ui()
 
-        env = os.environ.copy()
-        env["WRAPPER_BACKEND_HOST"] = b_host
-        env["WRAPPER_BACKEND_PORT"] = b_port
-        env["WRAPPER_API_HOST"] = a_host
-        env["WRAPPER_API_PORT"] = a_port
-        env["HUGGINGFACE_HUB_CACHE"] = str(model_manager.HF_CACHE_DIR)
-        env["TORCH_HOME"] = str(model_manager.TORCH_CACHE_DIR)
+        base_env = os.environ.copy()
+        base_env["WRAPPER_BACKEND_HOST"] = b_host
+        base_env["WRAPPER_BACKEND_PORT"] = b_port
+        base_env["WRAPPER_API_HOST"] = a_host
+        base_env["WRAPPER_API_PORT"] = a_port
+        base_env["HUGGINGFACE_HUB_CACHE"] = str(model_manager.HF_CACHE_DIR)
+        base_env["TORCH_HOME"] = str(model_manager.TORCH_CACHE_DIR)
         # Ensure child Python processes flush output immediately so logs appear in real time
-        env["PYTHONUNBUFFERED"] = "1"
+        base_env["PYTHONUNBUFFERED"] = "1"
         # Propagate Hugging Face token to backend process if available
         try:
             token: str | None = None
@@ -1553,9 +1558,9 @@ class WrapperGUI:
                         break
             if token:
                 # Set common aliases used by huggingface_hub/pyannote
-                env["HUGGING_FACE_HUB_TOKEN"] = token
-                env["HUGGINGFACEHUB_API_TOKEN"] = token
-                env["HF_TOKEN"] = token
+                base_env["HUGGING_FACE_HUB_TOKEN"] = token
+                base_env["HUGGINGFACEHUB_API_TOKEN"] = token
+                base_env["HF_TOKEN"] = token
                 # Also persist token to huggingface_hub store if not already present,
                 # because some libs pass use_auth_token=True which reads from HfFolder.
                 try:
@@ -1568,18 +1573,18 @@ class WrapperGUI:
             pass
         cert = self.vad_certfile.get().strip()
         if cert and Path(cert).is_file():
-            env["SSL_CERT_FILE"] = cert
+            base_env["SSL_CERT_FILE"] = cert
         # Fallback: if no SSL_CERT_FILE is provided, try to use certifi CA bundle
-        if "SSL_CERT_FILE" not in env:
+        if "SSL_CERT_FILE" not in base_env:
             try:
                 import certifi  # type: ignore
-                env["SSL_CERT_FILE"] = certifi.where()
+                base_env["SSL_CERT_FILE"] = certifi.where()
             except Exception:
                 pass
 
         # MSIX/Windows 対策: 起動前プリフライトでキャッシュ環境と symlink 実体化を整備
         try:
-            preflight.run(env)
+            preflight.run(base_env)
         except Exception:
             # 起動は継続（ベストエフォート）
             pass
@@ -1655,9 +1660,10 @@ class WrapperGUI:
         backend_cmd += ["--frame-threshold", str(self.frame_threshold.get())]
 
         # Launch backend with propagated environment (includes HF token/cache paths)
+        backend_env = base_env.copy()
         self.backend_proc = subprocess.Popen(
             backend_cmd,
-            env=env,
+            env=backend_env,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
@@ -1667,43 +1673,166 @@ class WrapperGUI:
             self._start_log_reader(self.backend_proc, "backend")
         except Exception:
             pass
-        # 自動でブラウザは開かない（必要なら Endpoints の "Open Web GUI" ボタンから開く）
-        time.sleep(2)
-
-        # API key settings for wrapper API
+        # Defer API launch slightly to avoid blocking the GUI thread
+        api_env = base_env.copy()
         use_key = bool(self.use_api_key.get()) and bool(self.api_key.get().strip())
-        env["WRAPPER_REQUIRE_API_KEY"] = "1" if use_key else "0"
+        api_env["WRAPPER_REQUIRE_API_KEY"] = "1" if use_key else "0"
         if use_key:
-            env["WRAPPER_API_KEY"] = self.api_key.get().strip()
-
-        # Inform API server whether backend uses SSL (for ws/wss selection)
-        env["WRAPPER_BACKEND_SSL"] = (
+            api_env["WRAPPER_API_KEY"] = self.api_key.get().strip()
+        api_env["WRAPPER_BACKEND_SSL"] = (
             "1" if (bool(self.ssl_certfile.get().strip()) and bool(self.ssl_keyfile.get().strip())) else "0"
         )
 
-        self.api_proc = subprocess.Popen(
-            [
+        self._schedule_api_launch(api_env, a_host, a_port)
+        self._schedule_process_monitor()
+
+    def _schedule_api_launch(self, env: dict[str, str], host: str, port: str) -> None:
+        self._cancel_pending_api_launch()
+
+        def _start_api() -> None:
+            self._pending_api_start_id = None
+            if getattr(self, "_stopping_api", False):
+                return
+            backend = self.backend_proc
+            if backend is None:
+                self._cleanup_processes(self._t("Backend process exited unexpectedly"))
+                return
+            backend_code = backend.poll()
+            if backend_code is not None:
+                self._handle_process_exit("backend", backend_code)
+                return
+            api_cmd = [
                 sys.executable,
                 "-u",
                 "-m",
                 "uvicorn",
                 "wrapper.api.server:app",
                 "--host",
-                a_host,
+                host,
                 "--port",
-                a_port,
-            ],
-            env=env,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            bufsize=1,
-        )
+                port,
+            ]
+            try:
+                self.api_proc = subprocess.Popen(
+                    api_cmd,
+                    env=env,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    bufsize=1,
+                )
+            except Exception as e:
+                try:
+                    self._append_log("gui", f"Failed to launch API: {e}\n")
+                except Exception:
+                    pass
+                self._cleanup_processes(f"{self._t('API process exited unexpectedly')}: {e}")
+                return
+            try:
+                self._start_log_reader(self.api_proc, "api")
+            except Exception:
+                pass
+            self._set_running_state(True)
+            self._schedule_process_monitor()
+
         try:
-            self._start_log_reader(self.api_proc, "api")
+            self._pending_api_start_id = self.master.after(2000, _start_api)
+        except Exception:
+            _start_api()
+
+    def _cancel_pending_api_launch(self) -> None:
+        job = getattr(self, "_pending_api_start_id", None)
+        if job is not None:
+            try:
+                self.master.after_cancel(job)
+            except Exception:
+                pass
+        self._pending_api_start_id = None
+
+    def _schedule_process_monitor(self) -> None:
+        if getattr(self, "_process_monitor_id", None) is not None:
+            return
+        try:
+            self._process_monitor_id = self.master.after(1000, self._check_processes)
+        except Exception:
+            self._process_monitor_id = None
+
+    def _cancel_process_monitor(self) -> None:
+        job = getattr(self, "_process_monitor_id", None)
+        if job is not None:
+            try:
+                self.master.after_cancel(job)
+            except Exception:
+                pass
+        self._process_monitor_id = None
+
+    def _check_processes(self) -> None:
+        self._process_monitor_id = None
+        if not (self.backend_proc or self.api_proc):
+            return
+        for source, proc in (("backend", self.backend_proc), ("api", self.api_proc)):
+            if proc is None:
+                continue
+            code = proc.poll()
+            if code is not None:
+                self._handle_process_exit(source, code)
+                return
+        self._schedule_process_monitor()
+
+    def _handle_process_exit(self, source: str, code: int | None) -> None:
+        if getattr(self, "_stopping_api", False):
+            return
+        message_key = "Backend process exited unexpectedly" if source == "backend" else "API process exited unexpectedly"
+        message = self._t(message_key)
+        if code is not None:
+            message = f"{message} (code {code})"
+        try:
+            self._append_log("gui", f"{source} exited with code {code}\n")
         except Exception:
             pass
-        self._set_running_state(True)
+        other = self.api_proc if source == "backend" else self.backend_proc
+        if other and other.poll() is None:
+            try:
+                other.terminate()
+                try:
+                    other.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    other.kill()
+            except Exception:
+                pass
+        self._cleanup_processes(message)
+
+    def _cleanup_processes(self, status_message: str) -> None:
+        self._cancel_pending_api_launch()
+        self._cancel_process_monitor()
+        if getattr(self, "_starting_api", False):
+            self._cancel_starting_ui()
+        if getattr(self, "_stopping_anim_id", None) is not None:
+            try:
+                self.master.after_cancel(self._stopping_anim_id)
+            except Exception:
+                pass
+            self._stopping_anim_id = None
+        self._stopping_anim_step = 0
+        self._stopping_api = False
+        self.api_proc = None
+        self.backend_proc = None
+        try:
+            self._set_running_state(False)
+        except Exception:
+            pass
+        try:
+            self.start_btn.config(text="🚀 Start API")
+        except Exception:
+            pass
+        try:
+            self.stop_btn.config(text="🛑 Stop API")
+        except Exception:
+            pass
+        try:
+            self.status_var.set(status_message)
+        except Exception:
+            pass
 
     def stop_api(self):
         # If starting in progress, cancel the starting state/animation immediately
@@ -1716,7 +1845,9 @@ class WrapperGUI:
                     pass
         except Exception:
             pass
+        self._cancel_pending_api_launch()
         if not (self.api_proc or self.backend_proc):
+            self._cancel_process_monitor()
             return
         if getattr(self, "_stopping_api", False):
             return
@@ -1734,6 +1865,7 @@ class WrapperGUI:
         except Exception:
             pass
         self._stopping_anim_step = 0
+
         def _anim() -> None:
             try:
                 if not self._stopping_api:
@@ -1748,6 +1880,7 @@ class WrapperGUI:
                 self._stopping_anim_id = self.master.after(400, _anim)
             except Exception:
                 pass
+
         try:
             self._stopping_anim_id = self.master.after(0, _anim)
         except Exception:
@@ -1756,35 +1889,17 @@ class WrapperGUI:
             self._append_log("gui", "Stopping processes...\n")
         except Exception:
             pass
-        for proc in [self.api_proc, self.backend_proc]:
-            if proc and proc.poll() is None:
-                proc.terminate()
-                try:
-                    proc.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    proc.kill()
-        self.api_proc = None
-        self.backend_proc = None
-        if getattr(self, "_stopping_anim_id", None) is not None:
-            try:
-                self.master.after_cancel(self._stopping_anim_id)
-            except Exception:
-                pass
-            self._stopping_anim_id = None
-        self._stopping_api = False
-        self._set_running_state(False)
+        self._cancel_process_monitor()
         try:
-            self.stop_btn.config(text="🛑 Stop API")
-        except Exception:
-            pass
-        try:
-            self.start_btn.config(text="🚀 Start API")
-        except Exception:
-            pass
-        try:
-            self.status_var.set(self._t("stopped"))
-        except Exception:
-            pass
+            for proc in [self.api_proc, self.backend_proc]:
+                if proc and proc.poll() is None:
+                    proc.terminate()
+                    try:
+                        proc.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        proc.kill()
+        finally:
+            self._cleanup_processes(self._t("stopped"))
 
     def on_close(self):
         self.stop_api()
@@ -2078,27 +2193,45 @@ class WrapperGUI:
             self.vad_certfile.set(path)
 
     def update_endpoints(self, *_: object) -> None:
-        b_host = self.backend_host.get()
+        b_host = (self.backend_host.get() or "").strip()
         b_port = self.backend_port.get()
-        a_host = self.api_host.get()
+        a_host = (self.api_host.get() or "").strip()
         a_port = self.api_port.get()
-        # In external mode, show LAN IP for convenience
+        # In external mode, show LAN IP for convenience, but keep a safe fallback for internal connections
         display_b_host = b_host
         display_a_host = a_host
+        connect_b_host = b_host
+        connect_a_host = a_host
         if self.allow_external.get():
             ips = self._get_local_ips()
             if ips:
                 display_b_host = ips[0]
                 display_a_host = ips[0]
+                connect_b_host = ips[0]
+                connect_a_host = ips[0]
+
+        def _resolve_connect_host(host: str) -> str:
+            host = (host or "").strip()
+            if host in {"", "0.0.0.0", "::"}:
+                return "127.0.0.1"
+            return host
+
+        connect_b_host = _resolve_connect_host(connect_b_host)
+        connect_a_host = _resolve_connect_host(connect_a_host)
+        if not display_b_host:
+            display_b_host = connect_b_host
+        if not display_a_host:
+            display_a_host = connect_a_host
         # HTTPS/WSS if SSL cert+key specified for backend
         use_ssl = bool(self.ssl_certfile.get().strip()) and bool(self.ssl_keyfile.get().strip())
         http_scheme = "https" if use_ssl else "http"
         ws_scheme = "wss" if use_ssl else "ws"
         self.web_endpoint.set(f"{http_scheme}://{display_b_host}:{b_port}/")
-        ws = f"{ws_scheme}://{display_b_host}:{b_port}/asr"
-        self.ws_endpoint.set(ws)
-        # Recorder follows the backend WebSocket endpoint
-        self.ws_url.set(ws)
+        ws_display = f"{ws_scheme}://{display_b_host}:{b_port}/asr"
+        self.ws_endpoint.set(ws_display)
+        # Recorder should connect to a resolvable host even when binding to 0.0.0.0
+        ws_connect = f"{ws_scheme}://{connect_b_host}:{b_port}/asr"
+        self.ws_url.set(ws_connect)
         # Wrapper API (this process) runs without SSL; keep http
         self.api_endpoint.set(f"http://{display_a_host}:{a_port}/v1/audio/transcriptions")
         # Note: in external mode, endpoints already display LAN IPs directly
