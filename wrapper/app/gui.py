@@ -25,6 +25,7 @@ except Exception:
 
 from . import model_manager
 from . import preflight
+from wrapper.assets import get_packaged_warmup_file
 
 
 def _load_whisper_models() -> list[str]:
@@ -401,7 +402,8 @@ class WrapperGUI:
         )
 
         # Advanced backend options
-        self.warmup_file = tk.StringVar(value="")
+        warmup_default = os.getenv("WRAPPER_WARMUP_FILE") or get_packaged_warmup_file()
+        self.warmup_file = tk.StringVar(value=warmup_default or "")
         self.confidence_validation = tk.BooleanVar(value=False)
         self.punctuation_split = tk.BooleanVar(value=False)
         default_backend = "sortformer" if SORTFORMER_AVAILABLE else "diart"

@@ -1182,3 +1182,12 @@
 - 未解決事項: 停止シーケンスの段階表示は最小限のまま。停止フェーズの詳細ステップを今後追加するか検討余地あり。
 - 次アクション: 実際の ttkbootstrap テーマごとの色味確認と、ユーザーフィードバックに応じた配色・余白微調整を検討。
 - リスク: カスタムスタイルが一部テーマで期待通りに反映されない可能性。事前に主要テーマでの目視確認が必要。
+
+## 2025-09-28 (Faster Whisper ウォームアップ音声の同梱)
+- 背景／スコープ: Faster Whisper バックエンド起動時に `whisperlivekit.warmup.load_file()` が GitHub から JFK 音声をダウンロードしようとするため、ネットワーク遮断環境や MSIX 配布後に初回アクセスで失敗するリスクがあった。
+- 決定事項: ウォームアップ用音声 `whisper_warmup_jfk.wav` を `wrapper/assets/warmup/` に同梱し、GUI 初期化時に同梱ファイルを既定の `--warmup-file` として backend に渡す。環境変数 `WRAPPER_WARMUP_FILE` を指定した場合のみ外部ファイルを利用する。
+- 根拠: 起動時のネットワーク依存を排除し、MSIX 化したバイナリでも GitHub へのダウンロードログが出ないようにするため。
+- 変更範囲: `wrapper/assets/__init__.py`, `wrapper/assets/warmup/whisper_warmup_jfk.wav`, `wrapper/app/gui.py`, `README-FOR-WRAPPER.md`。
+- リスク/懸念: 現行の MSIX パッケージングフローで `wrapper/assets/**` が確実に含まれているか要確認。含まれない場合はマニフェストへ追記が必要。
+- 未解決事項: 既存ユーザー設定に残る空文字列の `warmup_file` がある場合は自動移行されないため、必要に応じて設定ファイル移行の案内を検討。
+- 次アクション: MSIX ビルドスクリプトで `wrapper/assets/warmup` のコピーを明示確認し、必要なら追加のインストーラ検証を行う。

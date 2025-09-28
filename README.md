@@ -1,266 +1,182 @@
-<h1 align="center">WhisperLiveKit</h1>
-
-<p align="center">
-<img src="https://raw.githubusercontent.com/QuentinFuxa/WhisperLiveKit/refs/heads/main/demo.png" alt="WhisperLiveKit Demo" width="730">
-</p>
-
-<p align="center"><b>Real-time, Fully Local Speech-to-Text with Speaker Identification</b></p>
-
-<p align="center">
-<a href="https://pypi.org/project/whisperlivekit/"><img alt="PyPI Version" src="https://img.shields.io/pypi/v/whisperlivekit?color=g"></a>
-<a href="https://pepy.tech/project/whisperlivekit"><img alt="PyPI Downloads" src="https://static.pepy.tech/personalized-badge/whisperlivekit?period=total&units=international_system&left_color=grey&right_color=brightgreen&left_text=installations"></a>
-<a href="https://pypi.org/project/whisperlivekit/"><img alt="Python Versions" src="https://img.shields.io/badge/python-3.9--3.13-dark_green"></a>
-<a href="https://github.com/QuentinFuxa/WhisperLiveKit/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/badge/License-MIT/Dual Licensed-dark_green"></a>
-</p>
-
-
-Real-time speech transcription directly to your browser, with a ready-to-use backend+server and a simple frontend. ✨
-
-#### Powered by Leading Research:
-
-- [SimulStreaming](https://github.com/ufal/SimulStreaming) (SOTA 2025) - Ultra-low latency transcription with AlignAtt policy
-- [WhisperStreaming](https://github.com/ufal/whisper_streaming) (SOTA 2023) - Low latency transcription with LocalAgreement policy
-- [Streaming Sortformer](https://arxiv.org/abs/2507.18446) (SOTA 2025) - Advanced real-time speaker diarization
-- [Diart](https://github.com/juanmc2005/diart) (SOTA 2021) - Real-time speaker diarization
-- [Silero VAD](https://github.com/snakers4/silero-vad) (2024) - Enterprise-grade Voice Activity Detection
-
-
-> **Why not just run a simple Whisper model on every audio batch?** Whisper is designed for complete utterances, not real-time chunks. Processing small segments loses context, cuts off words mid-syllable, and produces poor transcription. WhisperLiveKit uses state-of-the-art simultaneous speech research for intelligent buffering and incremental processing.
-
-
-### Architecture
-
-<img alt="Architecture" src="https://raw.githubusercontent.com/QuentinFuxa/WhisperLiveKit/refs/heads/main/architecture.png" />
-
-*The backend supports multiple concurrent users. Voice Activity Detection reduces overhead when no voice is detected.*
-
-### Installation & Quick Start
-
-```bash
-pip install whisperlivekit
-```
-
->  **FFmpeg is required** and must be installed before using WhisperLiveKit
-> 
-> | OS | How to install |
-> |-----------|-------------|
->  | Ubuntu/Debian | `sudo apt install ffmpeg` |
-> | MacOS | `brew install ffmpeg` |
-> | Windows | Download .exe from https://ffmpeg.org/download.html and add to PATH |
-
-#### Quick Start
-1. **Start the transcription server:**
-   ```bash
-   whisperlivekit-server --model base --language en
-   ```
-
-2. **Open your browser** and navigate to `http://localhost:8000`. Start speaking and watch your words appear in real-time!
-
-
-> - See [tokenizer.py](https://github.com/QuentinFuxa/WhisperLiveKit/blob/main/whisperlivekit/simul_whisper/whisper/tokenizer.py) for the list of all available languages.
-> - For HTTPS requirements, see the **Parameters** section for SSL configuration options.
-
- 
-
-#### Optional Dependencies
-
-| Optional | `pip install` |
-|-----------|-------------|
-| **Speaker diarization with Sortformer** | `git+https://github.com/NVIDIA/NeMo.git@main#egg=nemo_toolkit[asr]` |
-| Speaker diarization with Diart | `diart` |
-| Original Whisper backend | `whisper` |
-| Improved timestamps backend | `whisper-timestamped` |
-| Apple Silicon optimization backend | `mlx-whisper` |
-| OpenAI API backend | `openai` |
-
-See  **Parameters & Configuration** below on how to use them.
-
-
-
-### Usage Examples
-
-**Command-line Interface**: Start the transcription server with various options:
-
-```bash
-# Use better model than default (small)
-whisperlivekit-server --model large-v3
-
-# Advanced configuration with diarization and language
-whisperlivekit-server --host 0.0.0.0 --port 8000 --model medium --diarization --language fr
-```
-
-
-**Python API Integration**: Check [basic_server](https://github.com/QuentinFuxa/WhisperLiveKit/blob/main/whisperlivekit/basic_server.py) for a more complete example of how to use the functions and classes.
-
-```python
-from whisperlivekit import TranscriptionEngine, AudioProcessor, parse_args
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse
-from contextlib import asynccontextmanager
-import asyncio
-
-transcription_engine = None
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    global transcription_engine
-    transcription_engine = TranscriptionEngine(model="medium", diarization=True, lan="en")
-    yield
-
-app = FastAPI(lifespan=lifespan)
-
-async def handle_websocket_results(websocket: WebSocket, results_generator):
-    async for response in results_generator:
-        await websocket.send_json(response)
-    await websocket.send_json({"type": "ready_to_stop"})
-
-@app.websocket("/asr")
-async def websocket_endpoint(websocket: WebSocket):
-    global transcription_engine
-
-    # Create a new AudioProcessor for each connection, passing the shared engine
-    audio_processor = AudioProcessor(transcription_engine=transcription_engine)    
-    results_generator = await audio_processor.create_tasks()
-    results_task = asyncio.create_task(handle_websocket_results(websocket, results_generator))
-    await websocket.accept()
-    while True:
-        message = await websocket.receive_bytes()
-        await audio_processor.process_audio(message)        
-```
-
-**Frontend Implementation**: The package includes an HTML/JavaScript implementation [here](https://github.com/QuentinFuxa/WhisperLiveKit/blob/main/whisperlivekit/web/live_transcription.html). You can also import it using `from whisperlivekit import get_web_interface_html` & `page = get_web_interface_html()`
-
-
-## Parameters & Configuration
-
-An important list of parameters can be changed. But what *should* you change?
-- the `--model` size. List and recommandations [here](https://github.com/QuentinFuxa/WhisperLiveKit/blob/main/available_models.md)
-- the `--language`.  List [here](https://github.com/QuentinFuxa/WhisperLiveKit/blob/main/whisperlivekit/simul_whisper/whisper/tokenizer.py). If you use `auto`, the model attempts to detect the language automatically, but it tends to bias towards English.
-- the `--backend` ? you can switch to `--backend faster-whisper` if  `simulstreaming` does not work correctly or if you prefer to avoid the dual-license requirements.
-- `--warmup-file`, if you have one
-- `--host`, `--port`, `--ssl-certfile`, `--ssl-keyfile`, if you set up a server
-- `--diarization`, if you want to use it.
-
-The rest I don't recommend. But below are your options.
-
-| Parameter | Description | Default |
-|-----------|-------------|---------|
-| `--model` | Whisper model size. | `small` |
-| `--language` | Source language code or `auto` | `auto` |
-| `--task` | `transcribe` or `translate` | `transcribe` |
-| `--backend` | Processing backend | `simulstreaming` |
-| `--min-chunk-size` | Minimum audio chunk size (seconds) | `1.0` |
-| `--no-vac` | Disable Voice Activity Controller | `False` |
-| `--no-vad` | Disable Voice Activity Detection | `False` |
-| `--warmup-file` | Audio file path for model warmup | `jfk.wav` |
-| `--host` | Server host address | `localhost` |
-| `--port` | Server port | `8000` |
-| `--ssl-certfile` | Path to the SSL certificate file (for HTTPS support) | `None` |
-| `--ssl-keyfile` | Path to the SSL private key file (for HTTPS support) | `None` |
-
-
-| WhisperStreaming backend options | Description | Default |
-|-----------|-------------|---------|
-| `--confidence-validation` | Use confidence scores for faster validation | `False` |
-| `--buffer_trimming` | Buffer trimming strategy (`sentence` or `segment`) | `segment` |
-
-
-| SimulStreaming backend options | Description | Default |
-|-----------|-------------|---------|
-| `--frame-threshold` | AlignAtt frame threshold (lower = faster, higher = more accurate) | `25` |
-| `--beams` | Number of beams for beam search (1 = greedy decoding) | `1` |
-| `--decoder` | Force decoder type (`beam` or `greedy`) | `auto` |
-| `--audio-max-len` | Maximum audio buffer length (seconds) | `30.0` |
-| `--audio-min-len` | Minimum audio length to process (seconds) | `0.0` |
-| `--cif-ckpt-path` | Path to CIF model for word boundary detection | `None` |
-| `--never-fire` | Never truncate incomplete words | `False` |
-| `--init-prompt` | Initial prompt for the model | `None` |
-| `--static-init-prompt` | Static prompt that doesn't scroll | `None` |
-| `--max-context-tokens` | Maximum context tokens | `None` |
-| `--model-path` | Direct path to .pt model file. Download it if not found | `./base.pt` |
-| `--preloaded-model-count` | Optional. Number of models to preload in memory to speed up loading (set up to the expected number of concurrent users) | `1` |
-
-| Diarization options | Description | Default |
-|-----------|-------------|---------|
-| `--diarization` | Enable speaker identification | `False` |
-| `--diarization-backend` |  `diart` or `sortformer` | `sortformer` |
-| `--segmentation-model` | Hugging Face model ID for Diart segmentation model. [Available models](https://github.com/juanmc2005/diart/tree/main?tab=readme-ov-file#pre-trained-models) | `pyannote/segmentation-3.0` |
-| `--embedding-model` | Hugging Face model ID for Diart embedding model. [Available models](https://github.com/juanmc2005/diart/tree/main?tab=readme-ov-file#pre-trained-models) | `speechbrain/spkrec-ecapa-voxceleb` |
-
-
-> For diarization using Diart, you need access to pyannote.audio models:
-> 1. [Accept user conditions](https://huggingface.co/pyannote/segmentation) for the `pyannote/segmentation` model
-> 2. [Accept user conditions](https://huggingface.co/pyannote/segmentation-3.0) for the `pyannote/segmentation-3.0` model
-> 3. [Accept user conditions](https://huggingface.co/pyannote/embedding) for the `pyannote/embedding` model
->4. Login with HuggingFace: `huggingface-cli login`
-
-### 🚀 Deployment Guide
-
-To deploy WhisperLiveKit in production:
- 
-1. **Server Setup**: Install production ASGI server & launch with multiple workers
-   ```bash
-   pip install uvicorn gunicorn
-   gunicorn -k uvicorn.workers.UvicornWorker -w 4 your_app:app
-   ```
-
-2. **Frontend**: Host your customized version of the `html` example & ensure WebSocket connection points correctly
-
-3. **Nginx Configuration** (recommended for production):
-    ```nginx    
-   server {
-       listen 80;
-       server_name your-domain.com;
-        location / {
-            proxy_pass http://localhost:8000;
-            proxy_set_header Upgrade $http_upgrade;
-            proxy_set_header Connection "upgrade";
-            proxy_set_header Host $host;
-    }}
-    ```
-
-4. **HTTPS Support**: For secure deployments, use "wss://" instead of "ws://" in WebSocket URL
-
-## 🐋 Docker
-
-Deploy the application easily using Docker with GPU or CPU support.
-
-### Prerequisites
-- Docker installed on your system
-- For GPU support: NVIDIA Docker runtime installed
-
-### Quick Start
-
-**With GPU acceleration (recommended):**
-```bash
-docker build -t wlk .
-docker run --gpus all -p 8000:8000 --name wlk wlk
-```
-
-**CPU only:**
-```bash
-docker build -f Dockerfile.cpu -t wlk .
-docker run -p 8000:8000 --name wlk wlk
-```
-
-### Advanced Usage
-
-**Custom configuration:**
-```bash
-# Example with custom model and language
-docker run --gpus all -p 8000:8000 --name wlk wlk --model large-v3 --language fr
-```
-
-### Memory Requirements
-- **Large models**: Ensure your Docker runtime has sufficient memory allocated
-
-
-#### Customization
-
-- `--build-arg` Options:
-  - `EXTRAS="whisper-timestamped"` - Add extras to the image's installation (no spaces). Remember to set necessary container options!
-  - `HF_PRECACHE_DIR="./.cache/"` - Pre-load a model cache for faster first-time start
-  - `HF_TKN_FILE="./token"` - Add your Hugging Face Hub access token to download gated models
-
-## 🔮 Use Cases
-Capture discussions in real-time for meeting transcription, help hearing-impaired users follow conversations through accessibility tools, transcribe podcasts or videos automatically for content creation, transcribe support calls with speaker identification for customer service...
+# WhisperLiveKit Wrapper 仕様書 (README-FOR-WRAPPER)
+
+> 付記（問題点サマリ）
+> - 最近判明した接続/入出力の問題は `WRAPPER-DEV-LOG.md`（2025-09-02）に詳細を記録。
+> - 要点:
+>   - REST→Backend の WebSocket ハンドシェイク遅延/失敗は、接続先不一致や IPv6/IPv4 の食い違いが主因。GUI でレコーダー接続先を自動的に `127.0.0.1` へフォールバックするよう修正済みだが、CLI などから利用する場合は `WRAPPER_BACKEND_*`（特に `WRAPPER_BACKEND_CONNECT_HOST=127.0.0.1`）を明示設定すること。
+>   - FFmpeg 書き込み失敗は raw PCM を送っていたことが原因。修正済み（コンテナ付き送信、`.raw` は WAV 化）。
+>   - OpenAI Whisper API 互換: `model` は必須だが無視。`response_format=json|text|srt|vtt|verbose_json` 対応、エラーは OpenAI 風 JSON。
+
+本リポジトリは upstream（whisperlivekit）を直接改変せず、GUI と API のラッパーとして外側から統合・拡張します。変更は本書・開発ログ・`wrapper/` 配下に限定します。
+
+## 目的 / 非目的
+- 目的: 既存の `whisperlivekit.basic_server` をラッパー独自のランチャー経由で安全に起動・制御し、GUI（録音・可視化）と、Whisper API 互換 REST を提供する。
+- 非目的: Whisper 推論アルゴリズムの改良・精度改善、upstream コードの直接編集。
+
+## 要求 / 制約
+- 必須: Python 3.11+, `ffmpeg`, ネットワークアクセス
+- 対応OS: Windows / macOS / Linux
+- セキュリティ: 既定は `127.0.0.1` バインド。外部公開はユーザー操作で明示的に有効化（`0.0.0.0`）。
+- 改変方針: upstream は読み取り専用。呼び出しは import またはサブプロセス。
+
+## ユースケース / フロー
+- ローカルでリアルタイム音声→文字起こしを試す（GUI から Start/録音/表示/自動保存）。
+  - 録音停止のたびにトランスクリプトをタイムスタンプ付きテキストファイルとして指定フォルダに自動保存。
+- 既存アプリから OpenAI Whisper API 互換 REST を呼ぶ（`POST /v1/audio/transcriptions`）。
+- モデル/VAD のダウンロード・管理（GUIの Model Manager）。
+  - API 起動時、必要な Whisper/VAD/話者分離モデルがローカルに無ければ自動でダウンロードし、設定画面から確認・削除できる。
+- Whisperモデルは SimulStreaming 用と Faster Whisper 用に区分して一覧表示し、モデル名からバックエンド名を省いた。既存のダウンロード済みモデルはそのまま利用できるが、他バックエンドを使う場合は各バックエンド用モデルを追加取得する。
+- モデル選択欄の右側で使用するバックエンドを直接選択できるようになった。SimulStreaming を選択した場合は商用利用に別途許諾が必要である旨の注意書きを表示する。
+- Faster Whisper バックエンドのモデル取得時は、ダウンロードしたスナップショットのパスを `latest` ファイルに記録し、起動時はこれを参照してモデルを特定する。`latest` や `snapshots` が見つからない場合は `.bin` ファイル探索にフォールバックし、手動配置モデルも読み込める。
+
+- 未ダウンロードのモデルを指定した場合でも、キャッシュディレクトリが存在しないことによるエラーは発生せず、必要に応じて自動ダウンロード処理に委ねられる。特に Faster Whisper バックエンドでは、モデルが未取得の場合でもモデル名を `--model` として渡すことで `Invalid model size` エラーを避けてダウンロードにフォールバックする。
+
+## アーキテクチャ
+- GUI 層（Tkinter）: `wrapper/cli/main.py` → `wrapper/app/gui.py`
+  - Start/Stop で 2 プロセス起動/停止
+    - Backend: `python -m wrapper.app.backend_launcher`（内部で `whisperlivekit.basic_server` を起動）
+      - 起動時に `torch.hub.load` をラップして `trust_repo=True` を既定化（Silero VAD 初回ダウンロードの互換性確保）
+    - API: `uvicorn wrapper.api.server:app`
+  - 録音パイプライン: 生PCM → FFmpeg で `audio/webm`(Opus) へ変換 → WebSocket `/asr` へストリーミング
+  - Web UI（upstream）をブラウザで開く導線あり
+  - ヘッダー右上に CUDA/FFmpeg の利用可否を表示し、最右にライセンスボタンを配置
+- Start/Stop API ボタンはヘッダー（タイトル右側）に配置。メインの2カラム設定画面はヘッダー左端の折りたたみボタンで表示/非表示を切替でき、状態は保存・復元される
+  - Start ボタン押下後はモデルのダウンロードおよびロード完了までアニメーション付きで「起動中」を表示し、Stop ボタン押下時も完全に停止するまで「停止中」を表示する
+  - 起動時のウィンドウサイズ: 高さは折りたたみ状態に応じて自動調整（未折りたたみ時は左カラムの自然高さに合わせた最大高、折りたたみ時はその状態の自然高）。横幅は初期算出幅の 1.2 倍で表示
+  - バックエンド起動直後は Tk の `after` で API 起動を遅延させるため、GUI スレッドをブロックしない。backend/api プロセスの終了コードを 1 秒間隔で監視し、異常終了時はログに exit code を追記してステータス・ボタンを即座に「停止」状態へ戻す。
+- 右カラムを Endpoints / Recorder / Logs の三段構成とし、ログ欄は Recorder の下部に配置。ステータス表示と進捗バーを廃止し、ログ欄は最低4行を維持しつつトランスクリプト欄と柔軟に高さを分配。トランスクリプト表示欄の縦幅は従来比でおよそ 2/3 に調整
+  - ウィンドウ拡大後に左右カラムが伸びても、縮小時に高さがウィンドウに追随して UI 全体が常に表示されるよう ScrollableFrame を改修。ウィンドウ最大高さは左カラムの自然高さに合わせて制限
+  - 以前の「ウィンドウ／ペインの最小サイズ固定」は撤廃し、自由なリサイズとスクロールで運用（小画面でのはみ出しを解消）
+  - 旧レイアウト（下部パネルにログを表示）は廃止し、環境変数での切替は不可
+  - GUIセクション（スクロール領域）はウィンドウ高さに追従し、はみ出す分はスクロールで閲覧可能（固定的な最小高さの強制は行わない）
+
+- API 層（FastAPI）: `wrapper/api/server.py`
+  - `POST /v1/audio/transcriptions`: 入力形式を判定し、16kHz/mono の wav/raw はそのまま、その他は FFmpeg で 16kHz/mono PCM 化 → backend `/asr` へWS中継 → テキスト連結返却
+  - 依存:
+  - upstream パッケージ `whisperlivekit`（モデル推論・WSサーバ・Web UI 等）
+  - `ffmpeg`（GUI録音のエンコード/REST入力のデコード）
+
+## I/O / 公開インターフェース
+- GUI: `python -m wrapper.cli.main`
+- WebSocket（upstream 提供）: `ws://<backend_host>:<backend_port>/asr`
+  - GUI の Recorder は `audio/webm`(Opus) を送信（raw PCM では送らない）。サーバ側で s16le/16kHz/mono に復号され処理される。
+  - バインドホストが `0.0.0.0` でもレコーダーは自動的に `127.0.0.1` へ接続し、外部公開時でもローカル収録が失敗しない。
+  - 録音停止時は「空バイト（b""）」を送信して EOF を明示。
+- REST API（Wrapper）: `POST http://<api_host>:<api_port>/v1/audio/transcriptions`
+  - multipart フォーム: `file=@sample.wav`, `model=whisper-1`
+  - 音声形式: 16kHz モノラル (wav/raw) を推奨。これらは再変換せずに処理され、その他の形式は ffmpeg により変換される。
+  - APIキー（任意）: `X-API-Key: <key>` または `Authorization: Bearer <key>`
+  - `WRAPPER_REQUIRE_API_KEY=1` を設定した場合、`/v1/audio/transcriptions` だけでなく `/openapi.json` `/docs` `/redoc` などのドキュメント系エンドポイントも同じヘッダーが必須となる（未設定または誤ったキーは 401 応答）。
+  - レスポンス例: `{ "text": "...", "model": "whisper-1" }`
+
+## 実行・設定手順（概要）
+1) Backend 起動: `python -m wrapper.app.backend_launcher --host 127.0.0.1 --port 8000 [...options]`
+2) Wrapper API 起動: `WRAPPER_BACKEND_HOST=127.0.0.1 WRAPPER_BACKEND_PORT=8000 uvicorn wrapper.api.server:app --host 127.0.0.1 --port 8001`
+3) GUI から Start / 録音 / 可視化 / 保存
+
+- 主要環境変数（GUI→APIへ引継ぎ）
+  - `WRAPPER_BACKEND_HOST` / `WRAPPER_BACKEND_PORT`
+  - `WRAPPER_BACKEND_SSL=1`（wss 接続を指定）
+  - `WRAPPER_REQUIRE_API_KEY=1`, `WRAPPER_API_KEY=<key>`
+  - `WRAPPER_WARMUP_FILE=<path>`（Faster Whisper ウォームアップ用音声ファイル。未指定の場合はラッパー同梱の `wrapper/assets/warmup/whisper_warmup_jfk.wav` を使用）
+
+## モデルキャッシュ / MSIX 配布時の取り扱い
+- GUI・CLI・バックエンドはいずれも `platformdirs.user_cache_path("WhisperLiveKit", "wrapper")` を基点とする `hf-cache`（Hugging Face）と
+  `torch-hub` ディレクトリを既定の保存先として利用する。アプリ本体が読み取り専用でもユーザー領域に展開されるため、MSIX として配布し
+  てもモデルのダウンロード先と読み込み元が一致する。
+- 環境変数で保存先を上書きできる。
+  - `WRAPPER_CACHE_DIR=<base>` を指定すると `<base>/hf-cache`, `<base>/torch-hub` をまとめて利用する。
+  - より細かく制御したい場合は `WRAPPER_HF_CACHE_DIR` / `WRAPPER_TORCH_CACHE_DIR` を直接指定できる。既に
+    `HUGGINGFACE_HUB_CACHE` / `HF_HOME` / `TORCH_HOME` が設定されている場合はその値を尊重し、ラッパー内部の参照も同じディレクトリに揃え
+    る。
+- 起動時に `HUGGINGFACE_HUB_CACHE`, `HF_HOME`, `TORCH_HOME`, `HF_HUB_DISABLE_SYMLINKS` が未設定なら自動的に補完し、GUI でのモデル
+  ダウンロード・バックエンド起動・CLI からの操作が同じキャッシュを使う。`HF_HUB_DISABLE_SYMLINKS=1` と
+  `snapshot_download(..., local_dir_use_symlinks=False)` の併用により、MSIX/Windows のシンボリックリンク制限下でも確実に物理ファイルが
+  配置される。
+- `preflight.materialize_speechbrain_files` は pyannote/speechbrain キャッシュに残る欠損や壊れたシンボリックリンクを検出し、ラッパー管理
+  の Hugging Face キャッシュから必要ファイルをコピーして実体化する。バックエンドは常に存在するパスのみを参照するため、パッケージ
+  配布時の読み込みエラーを防げる。
+- CLI (`python -m wrapper.cli.model_manager_cli`) も上記環境変数を読み取り、GUI と同じ場所にモデルを配置・削除する。
+- Faster Whisper バックエンドのウォームアップ用音声 `wrapper/assets/warmup/whisper_warmup_jfk.wav` をリポジトリに同梱し、パッケージング時
+  に MSIX のアプリデータへコピーする。GUI 初期化時に同梱ファイルのパスを解決して `--warmup-file` に渡すため、起動時に GitHub へアクセス
+  する必要がなくなる。必要に応じて `WRAPPER_WARMUP_FILE` で別ファイルに差し替え可能。
+
+## エラーハンドリング / ログ
+- バックエンド/API の標準出力と標準エラーはGUIのログ欄と同時にターミナルにも表示される。`PYTHONUNBUFFERED=1` と `-u` オプションによりバッファリングを無効化し、macOSでログが出力されない問題を解消。
+- backend/api プロセスの `poll()` を GUI が定期監視し、異常終了を検知した場合は exit code をログに追記して即座に停止処理を走らせる。
+- FFmpeg が無い: `500 ffmpeg_not_found`（API）、GUIログに表示
+- GUI から Start API を実行した際に FFmpeg が見つからない場合、警告ダイアログを表示して起動を中止する
+- 音声変換失敗: `400 ffmpeg_failed`（API）
+- WS 側の終了: サーバは結果送信後に `{ "type": "ready_to_stop" }` を返す。GUI は受信スレッドで反映。
+
+## セキュリティ / プライバシー
+- デフォルトはローカルバインド。外部公開する場合は TLS/認証/ファイアウォール等を考慮。
+- Wrapper API は任意で API キーを要求可能（GUI で設定）。API キーを有効化すると OpenAPI/Swagger/Redoc も同じヘッダーが必要になり、認証無しでは参照できない。
+
+## パフォーマンス目標
+- 低遅延の逐次文字起こし（数百ms〜程度のバッファリング）
+- モデル・HW に依存。高負荷の場合は `tiny/base/small` を推奨。
+
+## リリース計画（抜粋）
+- バイナリ配布（PyInstaller等）検討
+- API 認証/ダッシュボードの拡充
+- upstream 提案は `WRAPPER-DEV-LOG.md` にパッチ案として記録
+
+## トラブルシューティング: FFmpeg 入力形式の不一致（解消済）
+- 症状: 「Error writing to FFmpeg: Connection lost」等。
+- 原因: サーバ側 FFmpeg は `-i pipe:0` でヘッダから入力形式を自動判定。raw PCM を送ると判別不可で失敗。
+- 対応: GUI は FFmpeg で `audio/webm`(Opus) にエンコードして送信（本リポで実装済）。録音停止時は空バイトで EOF を明示。
+  - 参照: `wrapper/app/gui.py:_recording_worker`
+
+## トラブルシューティング: 「Diart backend requires diart」
+- 症状: GUI 起動時（Start API）に「Cannot start due to missing dependencies: Diart backend requires diart.」が表示される。
+- 前提: 話者分離（Diarization）を有効化し、バックエンドに `diart` を選択している場合にチェックが走る。
+- 原因: 実行中の Python 環境に `diart`（および関連依存 `pyannote.audio`, `rx`）がインストールされていない、または別環境に入っている。
+- 解決手順:
+  - 1) 現在GUIを起動している Python を特定する。
+    - 例: `which python`（Windowsは `where python`）、`python -V`
+  - 2) 同じ Python でモジュールを確認する。
+    - 例: `python -c "import diart, pkgutil; print('diart OK')"`
+  - 3) 未導入ならインストール（CPU/AMD環境の例）:
+    - `pip install -r wrapper/requirements-cpu-amd.txt`
+    - または最小構成: `pip install diart pyannote.audio rx`
+  - 4) それでも失敗する場合は、仮想環境の混在を疑い、GUI と同じ環境で再度インストールする（`python -m pip install ...` 形式を推奨）。
+- 備考:
+  - `wrapper/requirements-cpu-amd.txt` には `diart`, `pyannote.audio`, `rx` を含めています。NVIDIA 環境では `wrapper/requirements-nvidia.txt` を使用してください。
+  - `diart` のモデル取得には Hugging Face のネットワークアクセスが必要です（初回のみ）。
+
+## トラブルシューティング: Windowsで "speechbrain hyperparams.yaml" が見つからない
+- 症状: バックエンド起動時に `FileNotFoundError: ... speechbrain\hyperparams.yaml` が表示される。
+- 原因: Windows 環境では `pyannote.audio` が必要とする `hyperparams.yaml` や `custom.py` へのシンボリックリンク作成に失敗する場合がある。
+- 対応: 起動時にこれらファイルの存在を確認し、ラッパーの Model Manager で `speechbrain/spkrec-ecapa-voxceleb` を取得して必要ファイルをコピーするよう修正済み（不足分は Hub から直接取得）。シンボリックリンクは使用しない。
+
+## 依存関係のインストール（例）
+- CPU/AMD 環境: `pip install -r wrapper/requirements-cpu-amd.txt`
+- NVIDIA 環境: `pip install -r wrapper/requirements-nvidia.txt`
+- 追加オプション（任意）:
+  - VAD 有効時の `torchaudio` は Torch のバージョンに揃えてください（GUIが不足時に案内を表示）。
+  - Sortformer バックエンドを使う場合は CUDA + NVIDIA NeMo が必要です。
+
+## Submodule 管理（upstream の取り込み方）
+- 本リポは upstream をサブモジュールとして参照します（ローカル改変なし）。
+- 初回/取得後は以下を実行:
+  - `git submodule update --init --recursive`
+- 配置パス: `submodules/WhisperLiveKit`
+  - ランチャー `wrapper/app/backend_launcher.py` が `sys.path` に上記パスを自動追加します。
+  - そのため `pip install whisperlivekit` は不要です（requirements からも除外済み）。
+  - サブモジュールを更新する場合: `git -C submodules/WhisperLiveKit pull` または `git submodule update --remote --merge`
+
+## 主要ファイル
+- GUI: `wrapper/app/gui.py`（エントリ: `python -m wrapper.cli.main`）
+- API: `wrapper/api/server.py`
+- 設定テンプレート: `wrapper/config/`
+- ライセンス一覧: `wrapper/licenses.json`
+- ウォームアップ音声: `wrapper/assets/warmup/whisper_warmup_jfk.wav`（Faster Whisper 起動時の既定ウォームアップに利用）
+
+## テスト
+- `python wrapper/scripts/full_stack_integration_test.py`: GUI の「Start API」と同等の経路をスタブ環境で再現し、GUI から管理できるすべてのモデル種別（Whisper 各バックエンド、VAD、セグメンテーション、埋め込み）のダウンロード状態を検証してから REST 経路を確認する統合テスト。
+
+本仕様書と `WRAPPER-DEV-LOG.md` は、仕様変更・意思決定に合わせて更新します。
+## GUI の振る舞い（録音・文字起こし）
+- 処理中インジケータ: 録音開始後からバックエンド側での最終処理が完了するまで、録音開始ボタンの右側にスピナーを表示します。
+- 再開時の確認: 処理が継続中（停止後の後処理を含む）に「Start Recording」を押すと確認ダイアログを表示し、同意した場合は現在の処理を中止して新しいセッションをクリーンに開始します。
