@@ -208,6 +208,8 @@ TRANSLATIONS_JA = {
     "Download complete": "ダウンロード完了",
     "starting": "起動中",
     "running": "稼働中",
+    "waiting for backend": "バックエンド準備中",
+    "waiting for api": "API準備中",
     "stopped": "停止",
     "stopping": "停止中",
     "connecting": "接続中",
@@ -1001,6 +1003,10 @@ class WrapperGUI:
         self.backend_proc: subprocess.Popen | None = None
         self.api_proc: subprocess.Popen | None = None
         self._log_threads: list[threading.Thread] = []
+        self._api_ready: bool = False
+        self._backend_ready: bool = False
+        self._backend_probe_thread: threading.Thread | None = None
+        self._backend_probe_stop: threading.Event | None = None
 
         self._update_diarization_fields()
         self._update_hf_token_widgets()
@@ -1220,33 +1226,7 @@ class WrapperGUI:
                                 or ("uvicorn running on" in low)
                                 or ("started server process" in low)
                             ):
-                                def _ready():
-                                    try:
-                                        if not getattr(self, "_starting_api", False):
-                                            return
-                                        self._starting_api = False
-                                        # stop animation if running
-                                        try:
-                                            if getattr(self, "_starting_anim_id", None) is not None:
-                                                self.master.after_cancel(self._starting_anim_id)
-                                                self._starting_anim_id = None
-                                        except Exception:
-                                            pass
-                                        try:
-                                            self.start_btn.config(text="🚀 Start API")
-                                        except Exception:
-                                            pass
-                                        try:
-                                            self.stop_btn.config(text="🛑 Stop API")
-                                        except Exception:
-                                            pass
-                                        try:
-                                            self.status_var.set(self._t("running"))
-                                        except Exception:
-                                            pass
-                                    except Exception:
-                                        pass
-                                self.master.after(0, _ready)
+                                self.master.after(0, self._on_api_ready)
                     except Exception:
                         pass
                     self.master.after(0, self._append_log, source, line, is_stderr)
@@ -1445,12 +1425,144 @@ class WrapperGUI:
         except Exception:
             pass
 
+    def _update_startup_status(self) -> None:
+        if not getattr(self, "_starting_api", False):
+            return
+        waiting: list[str] = []
+        if not self._api_ready:
+            waiting.append(self._t("waiting for api"))
+        if not self._backend_ready:
+            waiting.append(self._t("waiting for backend"))
+        try:
+            if waiting:
+                self.status_var.set(f"{self._t('starting')} - {' / '.join(waiting)}")
+            else:
+                self.status_var.set(self._t("starting"))
+        except Exception:
+            pass
+
+    def _maybe_finish_startup(self) -> None:
+        if not getattr(self, "_starting_api", False):
+            return
+        if self._api_ready and self._backend_ready:
+            self._finish_startup()
+        else:
+            self._update_startup_status()
+
+    def _finish_startup(self) -> None:
+        self._cancel_starting_ui()
+        self._stop_backend_probe()
+        try:
+            self.status_var.set(self._t("running"))
+        except Exception:
+            pass
+        self._set_running_state(True)
+        try:
+            self._append_log("gui", "Startup complete; backend and API ready.\n")
+        except Exception:
+            pass
+
+    def _on_api_ready(self) -> None:
+        if not getattr(self, "_starting_api", False):
+            return
+        if self._api_ready:
+            return
+        self._api_ready = True
+        try:
+            self._append_log("gui", "Wrapper API reported ready.\n")
+        except Exception:
+            pass
+        self._maybe_finish_startup()
+
+    def _on_backend_ready(self) -> None:
+        if not getattr(self, "_starting_api", False):
+            return
+        if self._backend_ready:
+            return
+        self._backend_ready = True
+        try:
+            self._append_log("gui", "Backend readiness confirmed.\n")
+        except Exception:
+            pass
+        self._maybe_finish_startup()
+
+    def _start_backend_probe(self, url: str) -> None:
+        self._stop_backend_probe()
+        if not url:
+            self._backend_ready = True
+            self._maybe_finish_startup()
+            return
+        self._backend_ready = False
+        stop_event = threading.Event()
+        self._backend_probe_stop = stop_event
+
+        def _worker() -> None:
+            try:
+                from websockets.sync.client import connect
+            except Exception as exc:
+                def _skip() -> None:
+                    try:
+                        self._append_log("gui", f"Backend readiness probe skipped: {exc}\n")
+                    except Exception:
+                        pass
+                    self._backend_ready = True
+                    self._maybe_finish_startup()
+                self.master.after(0, _skip)
+                return
+            attempt = 0
+            while not stop_event.is_set():
+                if not getattr(self, "_starting_api", False):
+                    return
+                attempt += 1
+                try:
+                    with connect(url, open_timeout=10, close_timeout=3) as ws:
+                        try:
+                            ws.close()
+                        except Exception:
+                            pass
+                except Exception as exc:
+                    if stop_event.is_set() or not getattr(self, "_starting_api", False):
+                        return
+                    wait = min(1.5 ** min(attempt, 6), 5.0)
+                    if attempt == 1 or attempt % 3 == 0:
+                        self.master.after(0, lambda m=f"Backend not ready (attempt {attempt}): {exc}": self._append_log("gui", m + "\n"))
+                    self.master.after(0, self._update_startup_status)
+                    if stop_event.wait(wait):
+                        return
+                    continue
+                self.master.after(0, self._on_backend_ready)
+                return
+
+        thread = threading.Thread(target=_worker, daemon=True)
+        self._backend_probe_thread = thread
+        thread.start()
+        self._update_startup_status()
+
+    def _stop_backend_probe(self) -> None:
+        stop_event = getattr(self, "_backend_probe_stop", None)
+        if stop_event is not None:
+            try:
+                stop_event.set()
+            except Exception:
+                pass
+        thread = getattr(self, "_backend_probe_thread", None)
+        if thread and thread.is_alive() and thread is not threading.current_thread():
+            try:
+                thread.join(timeout=1.5)
+            except Exception:
+                pass
+        self._backend_probe_thread = None
+        self._backend_probe_stop = None
+
     def start_api(self):
         if self.api_proc or self.backend_proc:
             return
         # 起動前の依存関係チェック（VAD/話者分離など可否を事前確認）
         if not self._check_runtime_dependencies():
             return
+        self._api_ready = False
+        self._backend_ready = False
+        self._stop_backend_probe()
         self._begin_starting_ui()
         missing: list[str] = []
         model = self.model.get().strip()
@@ -1675,6 +1787,10 @@ class WrapperGUI:
             self._start_log_reader(self.backend_proc, "backend")
         except Exception:
             pass
+        try:
+            self._start_backend_probe(self.ws_url.get())
+        except Exception:
+            pass
         # Defer API launch slightly to avoid blocking the GUI thread
         api_env = base_env.copy()
         use_key = bool(self.use_api_key.get()) and bool(self.api_key.get().strip())
@@ -1734,7 +1850,6 @@ class WrapperGUI:
                 self._start_log_reader(self.api_proc, "api")
             except Exception:
                 pass
-            self._set_running_state(True)
             self._schedule_process_monitor()
 
         try:
@@ -1805,6 +1920,9 @@ class WrapperGUI:
         self._cleanup_processes(message)
 
     def _cleanup_processes(self, status_message: str) -> None:
+        self._stop_backend_probe()
+        self._api_ready = False
+        self._backend_ready = False
         self._cancel_pending_api_launch()
         self._cancel_process_monitor()
         if getattr(self, "_starting_api", False):
@@ -1848,6 +1966,9 @@ class WrapperGUI:
         except Exception:
             pass
         self._cancel_pending_api_launch()
+        self._stop_backend_probe()
+        self._api_ready = False
+        self._backend_ready = False
         if not (self.api_proc or self.backend_proc):
             self._cancel_process_monitor()
             return

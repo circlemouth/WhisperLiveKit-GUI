@@ -16,7 +16,14 @@ from pathlib import Path
 
 
 def _patch_torch_hub() -> None:
-    import torch.hub as hub  # type: ignore
+    try:
+        import torch.hub as hub  # type: ignore
+    except ModuleNotFoundError:  # pragma: no cover - optional dependency
+        print("[wrapper.backend_launcher] torch not available; skipping torch.hub trust patch.", file=sys.stderr, flush=True)
+        return
+    except Exception as exc:  # pragma: no cover - defensive
+        print(f"[wrapper.backend_launcher] failed to prepare torch.hub patch: {exc}", file=sys.stderr, flush=True)
+        return
 
     _orig_load = hub.load
 

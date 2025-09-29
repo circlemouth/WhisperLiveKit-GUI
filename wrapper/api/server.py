@@ -1,8 +1,10 @@
+import asyncio
 import json
 import os
 import subprocess
 import io
 import wave
+from dataclasses import dataclass
 from typing import List, Optional
 
 from fastapi import FastAPI, File, UploadFile, HTTPException, Form, Request
@@ -10,6 +12,32 @@ from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.exceptions import RequestValidationError
 
 import websockets
+
+_RAW_MAX_CONCURRENCY = os.getenv("WRAPPER_BACKEND_MAX_CONCURRENCY")
+try:
+    BACKEND_MAX_CONCURRENCY = max(1, int(_RAW_MAX_CONCURRENCY)) if _RAW_MAX_CONCURRENCY else 1
+except ValueError:
+    BACKEND_MAX_CONCURRENCY = 1
+
+_RAW_QUEUE_TIMEOUT = os.getenv("WRAPPER_BACKEND_QUEUE_TIMEOUT_SEC")
+try:
+    _QUEUE_TIMEOUT = float(_RAW_QUEUE_TIMEOUT) if _RAW_QUEUE_TIMEOUT is not None else None
+    if _QUEUE_TIMEOUT is not None and _QUEUE_TIMEOUT <= 0:
+        _QUEUE_TIMEOUT = None
+except ValueError:
+    _QUEUE_TIMEOUT = None
+
+
+@dataclass
+class BackendJob:
+    audio_bytes: bytes
+    future: asyncio.Future
+
+
+JOB_QUEUE: asyncio.Queue[BackendJob] = asyncio.Queue()
+_WORKERS_STARTED = False
+_WORKERS: List[asyncio.Task] = []
+_WORKER_LOCK: Optional[asyncio.Lock] = None
 
 BACKEND_HOST = os.getenv("WRAPPER_BACKEND_HOST", "localhost")
 BACKEND_PORT = os.getenv("WRAPPER_BACKEND_PORT", "8000")
@@ -56,6 +84,16 @@ def require_api_key_dep(request: Request) -> None:
 app = FastAPI(title="WhisperLiveKit Wrapper API")
 
 
+@app.on_event("startup")
+async def _startup_event() -> None:
+    await _ensure_backend_workers()
+
+
+@app.on_event("shutdown")
+async def _shutdown_event() -> None:
+    await _shutdown_backend_workers()
+
+
 @app.middleware("http")
 async def _api_key_middleware(request: Request, call_next):
     try:
@@ -82,6 +120,84 @@ def _openai_error_response(message: str, status_code: int) -> JSONResponse:
             "code": None,
         }
     })
+
+
+async def _ensure_backend_workers() -> None:
+    """Start backend worker tasks on demand."""
+
+    global _WORKERS_STARTED, _WORKER_LOCK
+    if _WORKERS_STARTED:
+        return
+
+    if _WORKER_LOCK is None:
+        _WORKER_LOCK = asyncio.Lock()
+
+    async with _WORKER_LOCK:
+        if _WORKERS_STARTED:
+            return
+        loop = asyncio.get_running_loop()
+        for idx in range(BACKEND_MAX_CONCURRENCY):
+            task = loop.create_task(_backend_worker(idx + 1))
+            _WORKERS.append(task)
+        _WORKERS_STARTED = True
+
+
+async def _shutdown_backend_workers() -> None:
+    """Cancel worker tasks during application shutdown."""
+
+    global _WORKERS_STARTED
+    if not _WORKERS_STARTED:
+        return
+    for task in _WORKERS:
+        task.cancel()
+    for task in _WORKERS:
+        try:
+            await task
+        except asyncio.CancelledError:
+            continue
+    _WORKERS.clear()
+    _WORKERS_STARTED = False
+
+
+async def _backend_worker(worker_id: int) -> None:
+    while True:
+        job = await JOB_QUEUE.get()
+        future = job.future
+        try:
+            if future.cancelled():
+                continue
+            texts, lines = await _stream_to_backend(job.audio_bytes)
+        except asyncio.CancelledError:
+            if not future.done():
+                future.set_exception(asyncio.CancelledError())
+            raise
+        except Exception as exc:  # noqa: BLE001
+            if not future.done():
+                future.set_exception(exc)
+        else:
+            if not future.done():
+                future.set_result((texts, lines))
+        finally:
+            JOB_QUEUE.task_done()
+
+
+async def _submit_backend_job(pcm_bytes: bytes) -> tuple[list[str], list[dict]]:
+    await _ensure_backend_workers()
+    loop = asyncio.get_running_loop()
+    future: asyncio.Future = loop.create_future()
+    job = BackendJob(audio_bytes=pcm_bytes, future=future)
+    JOB_QUEUE.put_nowait(job)
+
+    try:
+        if _QUEUE_TIMEOUT is None:
+            texts, lines = await future
+        else:
+            texts, lines = await asyncio.wait_for(future, timeout=_QUEUE_TIMEOUT)
+    except asyncio.TimeoutError as exc:
+        if not future.done():
+            future.cancel()
+        raise exc
+    return texts, lines
 
 
 @app.exception_handler(HTTPException)
@@ -327,10 +443,15 @@ async def transcribe(
         # Assume already PCM16/16kHz/mono; if not, backend FFmpeg will still decode but timing may be off
         to_send = _wrap_pcm16_as_wav(raw, 16000, 1)
 
-    # Stream to backend and collect results
+    # Queue backend processing so that audio submissions are handled sequentially
     try:
-        texts, lines = await _stream_to_backend(to_send)
-    except Exception as e:
+        texts, lines = await _submit_backend_job(to_send)
+    except asyncio.TimeoutError:
+        return _openai_error_response(
+            "Backend busy: queue wait time exceeded before processing could start.",
+            503,
+        )
+    except Exception as e:  # noqa: BLE001
         return _openai_error_response(f"Backend processing failed: {e}", 500)
 
     final_text = " ".join(t.strip() for t in texts if t).strip()
