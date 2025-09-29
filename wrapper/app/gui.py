@@ -1642,6 +1642,10 @@ class WrapperGUI:
         base_env["WRAPPER_BACKEND_PORT"] = b_port
         base_env["WRAPPER_API_HOST"] = a_host
         base_env["WRAPPER_API_PORT"] = a_port
+        queue_timeout = base_env.get("WRAPPER_BACKEND_QUEUE_TIMEOUT_SEC")
+        if not queue_timeout:
+            # 無制限待ちを既定とし、既存環境が値を指定している場合は尊重する
+            base_env["WRAPPER_BACKEND_QUEUE_TIMEOUT_SEC"] = "0"
         base_env["HUGGINGFACE_HUB_CACHE"] = str(model_manager.HF_CACHE_DIR)
         base_env["TORCH_HOME"] = str(model_manager.TORCH_CACHE_DIR)
         # Ensure child Python processes flush output immediately so logs appear in real time
