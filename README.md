@@ -79,6 +79,7 @@
   - `WRAPPER_BACKEND_SSL=1`（wss 接続を指定）
   - `WRAPPER_REQUIRE_API_KEY=1`, `WRAPPER_API_KEY=<key>`
   - `WRAPPER_WARMUP_FILE=<path>`（Faster Whisper ウォームアップ用音声ファイル。未指定の場合はラッパー同梱の `wrapper/assets/warmup/whisper_warmup_jfk.wav` を使用）
+  - `WRAPPER_BACKEND_QUEUE_TIMEOUT_SEC`（バックエンドジョブの待機上限秒。未設定または `0`/負値では無制限に待機し、GUI 既定は `0` に設定される）
 
 ## モデルキャッシュ / MSIX 配布時の取り扱い
 - GUI・CLI・バックエンドはいずれも `platformdirs.user_cache_path("WhisperLiveKit", "wrapper")` を基点とする `hf-cache`（Hugging Face）と
