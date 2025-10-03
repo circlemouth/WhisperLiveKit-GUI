@@ -353,6 +353,8 @@ class ScrollableFrame(ttk.Frame):
 class WrapperGUI:
     def __init__(self, master: tk.Tk):
         self.master = master
+        self._console_stdout = getattr(sys, "__stdout__", sys.stdout)
+        self._console_stderr = getattr(sys, "__stderr__", sys.stderr)
         lang = locale.getdefaultlocale()
         lang_code = lang[0] if lang and lang[0] else ""
         self._translations = TRANSLATIONS_JA if lang_code.startswith("ja") else {}
@@ -1203,42 +1205,100 @@ class WrapperGUI:
         except Exception:
             pass
 
+
+    def _relay_to_console(self, text: str, is_stderr: bool) -> None:
+        targets = []
+        for candidate in (
+            self._console_stderr if is_stderr else self._console_stdout,
+            getattr(sys, "__stderr__" if is_stderr else "__stdout__", None),
+            sys.stderr if is_stderr else sys.stdout,
+        ):
+            if candidate is None:
+                continue
+            if any(candidate is existing for existing in targets):
+                continue
+            targets.append(candidate)
+        for target in targets:
+            wrote = False
+            try:
+                target.write(text)
+                wrote = True
+            except UnicodeEncodeError:
+                encoding = getattr(target, "encoding", None) or "utf-8"
+                if hasattr(target, "buffer"):
+                    try:
+                        target.buffer.write(text.encode(encoding, errors="replace"))
+                        wrote = True
+                    except Exception:
+                        pass
+                if not wrote:
+                    try:
+                        sanitized = text.encode(encoding, errors="replace").decode(encoding, errors="replace")
+                        target.write(sanitized)
+                        wrote = True
+                    except Exception:
+                        pass
+            except Exception:
+                continue
+            if wrote:
+                try:
+                    target.flush()
+                except Exception:
+                    pass
+
     def _start_log_reader(self, proc: subprocess.Popen, source: str) -> None:
         if proc.stdout is None or proc.stderr is None:
             return
-        def _read_stream(stream, is_stderr: bool = False):
+
+        def _normalize_line(raw: object) -> str:
+            if isinstance(raw, str):
+                return raw
             try:
-                for line in iter(stream.readline, ''):
-                    if not line:
+                return raw.decode("utf-8", errors="replace")
+            except Exception:
+                return str(raw)
+
+        def _read_stream(stream, is_stderr: bool = False) -> None:
+            if stream is None:
+                return
+            try:
+                while True:
+                    raw_line = stream.readline()
+                    if not raw_line:
                         break
-                    print(
-                        line,
-                        end="",
-                        file=sys.stderr if is_stderr else sys.stdout,
-                        flush=True,
-                    )
-                    # Detect API readiness from uvicorn logs
+                    line = _normalize_line(raw_line)
                     try:
-                        if source == "api" and getattr(self, "_starting_api", False):
-                            low = line.lower()
-                            if (
-                                ("application startup complete" in low)
-                                or ("uvicorn running on" in low)
-                                or ("started server process" in low)
-                            ):
-                                self.master.after(0, self._on_api_ready)
+                        self._relay_to_console(line, is_stderr)
                     except Exception:
                         pass
-                    self.master.after(0, self._append_log, source, line, is_stderr)
+                    if source == "api" and getattr(self, "_starting_api", False):
+                        try:
+                            low = line.lower()
+                        except Exception:
+                            low = ""
+                        if (
+                            ("application startup complete" in low)
+                            or ("uvicorn running on" in low)
+                            or ("started server process" in low)
+                        ):
+                            try:
+                                self.master.after(0, self._on_api_ready)
+                            except Exception:
+                                pass
+                    try:
+                        self.master.after(0, self._append_log, source, line, is_stderr)
+                    except Exception:
+                        pass
             except Exception:
                 pass
+
         t_out = threading.Thread(target=_read_stream, args=(proc.stdout, False), daemon=True)
         t_err = threading.Thread(target=_read_stream, args=(proc.stderr, True), daemon=True)
-        t_out.start(); t_err.start()
+        t_out.start()
+        t_err.start()
         self._log_threads.extend([t_out, t_err])
 
     # 左カラムの二段化ロジックは廃止（最小幅で保護）
-
     # 右側エンドポイントは1行固定（サブフレーム内でボタン/エントリを横並び）
 
     def _schedule_max_height_update(self) -> None:

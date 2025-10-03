@@ -1193,6 +1193,16 @@
 - 次アクション: MSIX ビルドスクリプトで `wrapper/assets/warmup` のコピーを明示確認し、必要なら追加のインストーラ検証を行う。
 
 
+## 2025-10-21 (GUIログのコンソール同期修正)
+- 背景／スコープ：GUIログビュー導入後、ターミナル側で UnicodeEncodeError が発生すると子プロセス出力が途中で停止する事象を確認。
+- 決定事項：`wrapper/app/gui.py` のログ読み取りスレッドで元の stdout/stderr を保持し、安全に複製する `_relay_to_console` を実装。エンコード例外時は `errors="replace"` でフォールバックしつつ GUI への転送を継続。
+- 根拠：Windows PowerShell 等で cp932 非対応文字を含むログを `print` 送出すると `UnicodeEncodeError` が発生し、以降の取り込みが止まるため。
+- 変更範囲：`wrapper/app/gui.py` の `_start_log_reader` を再構成し、GUI ログと実コンソール出力の双方へ例外に強い形で中継。
+- 未解決事項：FFmpeg など別系統プロセスの stderr 取り込みは従来どおり未対応。必要なら後続で拡張。
+- 次アクション：`python -m wrapper.cli.main` を起動し、多言語ログ（ASCII/日本語/絵文字）を含む backend 出力で再発しないか手動確認を予定。
+- リスク：大量ログ時に `self.master.after` キューが詰まる懸念は継続。必要に応じてバッチ処理などの緩和策を検討。
+
+
 ## 2025-09-29
 
 - 決定事項: ラッパーAPIのトランスクリプション処理をジョブキュー + ワーカー方式で逐次化し、WRAPPER_BACKEND_MAX_CONCURRENCY と WRAPPER_BACKEND_QUEUE_TIMEOUT_SEC で同時実行数と待機時間を調整できるようにした。
