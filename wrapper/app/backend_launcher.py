@@ -39,22 +39,40 @@ _patch_torch_hub()
 
 # Ensure upstream submodule is importable as `whisperlivekit`
 def _ensure_upstream_on_path() -> None:
-    """Add the WhisperLiveKit submodule to sys.path if needed.
-
-    Looks for `submodules/WhisperLiveKit` (git submodule path) from repo root
-    and appends it to `sys.path` so that `import whisperlivekit` works
-    without installing from PyPI.
-    """
-    try:
-        import whisperlivekit  # noqa: F401
-        return
-    except Exception:
-        pass
+    """Ensure the packaged submodule is preferred over any legacy copy."""
 
     repo_root = Path(__file__).resolve().parents[2]
-    candidate = repo_root / "submodules" / "WhisperLiveKit"
-    if candidate.exists():
-        sys.path.insert(0, str(candidate))
+    legacy_path = (repo_root / "whisperlivekit").resolve()
+    upstream_path = (repo_root / "submodules" / "WhisperLiveKit").resolve()
+
+    def _path_matches(entry: str, target: Path) -> bool:
+        try:
+            return Path(entry).resolve() == target
+        except Exception:
+            return False
+
+    # Drop legacy path from sys.path so it cannot shadow the submodule.
+    sys.path = [p for p in sys.path if not _path_matches(p, legacy_path)]
+
+    # Remove already-imported modules that originated from the legacy path.
+    for name in list(sys.modules.keys()):
+        if name != "whisperlivekit" and not name.startswith("whisperlivekit."):
+            continue
+        module = sys.modules.get(name)
+        module_file = getattr(module, "__file__", None)
+        if not module_file:
+            continue
+        try:
+            module_root = Path(module_file).resolve()
+        except Exception:
+            continue
+        if module_root == legacy_path or legacy_path in module_root.parents:
+            sys.modules.pop(name, None)
+
+    if upstream_path.exists():
+        upstream_str = str(upstream_path)
+        if not any(_path_matches(p, upstream_path) for p in sys.path):
+            sys.path.insert(0, upstream_str)
 
 
 _ensure_upstream_on_path()
