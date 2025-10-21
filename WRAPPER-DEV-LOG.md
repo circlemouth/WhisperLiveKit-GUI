@@ -11,3 +11,9 @@
 - なお改善せず：`python -m wrapper.cli.main` 実行時のログが依然として `LocalCache\Local\wrapper\WhisperLiveKit\Cache` を指しており、修正コードが読み込まれていないか、別モジュールによる再上書きが疑われる。
 - 次アクション：実行時に `[wrapper.model_manager] cache root ->` が `~/.cache/WhisperLiveKitWrapper` へ切り替わるまで追跡し、必要なら旧キャッシュを手動で移行・削除する手順を README に追記する。
 - リスク／課題：Windows Store 版 Python 環境でしか再現しないため、自動テストで網羅できず、モジュール import 順序や外部環境変数に強く依存する可能性が残る。
+
+## 2025-11-03 (キャッシュルート強制移行実装)
+- 決定事項：長大な Windows Store 版 Python のキャッシュパスが検出された場合は、`~/.cache/WhisperLiveKitWrapper` 以下へ必ずフォールバックし、旧ディレクトリ内の Hugging Face / Torch / Wrapper キャッシュを移行する。
+- 根拠：`wrapper/app/model_manager.py` でフォールバック発生時に移行処理と `WRAPPER_CACHE_MIGRATED_FROM` 環境変数を設定するよう実装。これによりログで確実に新パスへ切り替わったか追跡できる。
+- 未解決事項：移行後の旧ディレクトリ削除は手動。ACL や読み取り専用属性により移行できなかったファイルが残る可能性があり、stderr ログで警告するに留める。
+- 次アクション：Windows Store 環境で GUI/CLI 起動ログが新ディレクトリを指すか再確認し、必要なら追加の移行ガイドを整備する。
