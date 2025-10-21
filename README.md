@@ -78,6 +78,17 @@
   - `WRAPPER_BACKEND_HOST` / `WRAPPER_BACKEND_PORT`
   - `WRAPPER_BACKEND_SSL=1`（wss 接続を指定）
   - `WRAPPER_REQUIRE_API_KEY=1`, `WRAPPER_API_KEY=<key>`
+
+## キャッシュディレクトリと移行
+- 既定のキャッシュルートは常に `~/.cache/WhisperLiveKitWrapper` を基点とし、
+  Windows Store 版 Python が指す `LocalCache\Local\wrapper\WhisperLiveKit\Cache`
+  のような長大パスは自動的にフォールバックされる。
+- フォールバック時は旧ディレクトリに存在するモデル／VAD キャッシュを新ディ
+  レクトリへ自動移行する。移行元は `WRAPPER_CACHE_MIGRATED_FROM` 環境変数でロ
+  グに残るため、不要になった旧ディレクトリを手動で削除できる。
+- Hugging Face (`HF_HOME`/`HUGGINGFACE_HUB_CACHE`) および `TORCH_HOME` のキャッシュ
+  も同様に短いパスへ統一され、既存内容は移行される。上書きしたい場合は各環
+  境変数を明示設定する。
   - `WRAPPER_WARMUP_FILE=<path>`（Faster Whisper ウォームアップ用音声ファイル。未指定の場合はラッパー同梱の `wrapper/assets/warmup/whisper_warmup_jfk.wav` を使用）
   - `WRAPPER_BACKEND_QUEUE_TIMEOUT_SEC`（バックエンドジョブの待機上限秒。未設定または `0`/負値では無制限に待機し、GUI 既定は `0` に設定される）
 

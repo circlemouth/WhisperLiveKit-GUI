@@ -46,8 +46,12 @@ _MAX_CACHE_BASE_LEN = 120
 _FALLBACK_CACHE_ROOT = Path.home() / ".cache" / "WhisperLiveKitWrapper"
 
 
-def _shorten_if_needed(path: Path, *, fallback: Path) -> Path:
-    """Return a cache path that stays within Windows MAX_PATH limits."""
+def _shorten_if_needed(path: Path, *, fallback: Path) -> tuple[Path, bool]:
+    """Return a cache path that stays within Windows MAX_PATH limits.
+
+    Returns a tuple of ``(selected_path, fallback_used)`` so callers can
+    migrate or log when a long Windows Store path was detected.
+    """
     try:
         candidate = path.expanduser()
     except Exception:
@@ -55,34 +59,86 @@ def _shorten_if_needed(path: Path, *, fallback: Path) -> Path:
     candidate_str = str(candidate)
     candidate_norm = candidate_str.replace("\\", "/").lower()
     if "packages/pythonsoftwarefoundation.python." in candidate_norm:
-        return fallback
+        return fallback, True
     if len(candidate_str) > _MAX_CACHE_BASE_LEN:
-        return fallback
-    return candidate
+        return fallback, True
+    return candidate, False
 
 
-_CACHE_ROOT = _path_from_env("WRAPPER_CACHE_DIR")
-if _CACHE_ROOT is None:
+def _maybe_migrate_cache(src: Path, dest: Path) -> None:
+    """Move existing cache contents from ``src`` into ``dest`` if possible."""
+
+    try:
+        src = src.expanduser()
+    except Exception:
+        pass
+    try:
+        dest = dest.expanduser()
+    except Exception:
+        pass
+
+    if dest == src:
+        return
+
+    if not src.exists():
+        return
+
+    # Windows Store 版 Python のキャッシュは移行後に不要となるため、内容のみを
+    # 新ディレクトリへ移動する。エラーは致命的ではないため握りつぶす。
+    for entry in src.iterdir():
+        target = dest / entry.name
+        if target.exists():
+            continue
+        try:
+            shutil.move(str(entry), target)
+        except Exception as exc:
+            print(
+                f"[wrapper.model_manager] cache migrate warning: {entry} -> {target}: {exc}",
+                file=sys.stderr,
+            )
+
+
+_CACHE_ROOT_ENV = _path_from_env("WRAPPER_CACHE_DIR")
+if _CACHE_ROOT_ENV is None:
     candidate_cache = user_cache_path("WhisperLiveKit", "wrapper")
 else:
-    candidate_cache = _CACHE_ROOT
-_CACHE_ROOT = _ensure_dir(_shorten_if_needed(candidate_cache, fallback=_FALLBACK_CACHE_ROOT))
+    candidate_cache = _CACHE_ROOT_ENV
+
+_CACHE_ROOT, _cache_used_fallback = _shorten_if_needed(
+    candidate_cache, fallback=_FALLBACK_CACHE_ROOT
+)
+_CACHE_ROOT = _ensure_dir(_CACHE_ROOT)
+if _cache_used_fallback and candidate_cache:
+    _maybe_migrate_cache(Path(candidate_cache), _CACHE_ROOT)
+    os.environ["WRAPPER_CACHE_MIGRATED_FROM"] = str(candidate_cache)
 
 
-_HF_CACHE = _path_from_env("WRAPPER_HF_CACHE_DIR", "HUGGINGFACE_HUB_CACHE", "HF_HOME")
-if _HF_CACHE is None:
+_HF_CACHE_ENV = _path_from_env("WRAPPER_HF_CACHE_DIR", "HUGGINGFACE_HUB_CACHE", "HF_HOME")
+if _HF_CACHE_ENV is None:
     candidate_hf = _CACHE_ROOT / "hf-cache"
 else:
-    candidate_hf = _HF_CACHE
-HF_CACHE_DIR = _ensure_dir(_shorten_if_needed(candidate_hf, fallback=_CACHE_ROOT / "hf-cache"))
+    candidate_hf = _HF_CACHE_ENV
+
+HF_CACHE_DIR, _hf_used_fallback = _shorten_if_needed(
+    candidate_hf, fallback=_CACHE_ROOT / "hf-cache"
+)
+HF_CACHE_DIR = _ensure_dir(HF_CACHE_DIR)
+if _hf_used_fallback and candidate_hf:
+    _maybe_migrate_cache(Path(candidate_hf), HF_CACHE_DIR)
 
 
-_TORCH_CACHE = _path_from_env("WRAPPER_TORCH_CACHE_DIR", "TORCH_HOME")
-if _TORCH_CACHE is None:
+_TORCH_CACHE_ENV = _path_from_env("WRAPPER_TORCH_CACHE_DIR", "TORCH_HOME")
+if _TORCH_CACHE_ENV is None:
     candidate_torch = _CACHE_ROOT / "torch-hub"
 else:
-    candidate_torch = _TORCH_CACHE
-TORCH_CACHE_DIR = _ensure_dir(_shorten_if_needed(candidate_torch, fallback=_CACHE_ROOT / "torch-hub"))
+    candidate_torch = _TORCH_CACHE_ENV
+
+TORCH_CACHE_DIR, _torch_used_fallback = _shorten_if_needed(
+    candidate_torch, fallback=_CACHE_ROOT / "torch-hub"
+)
+TORCH_CACHE_DIR = _ensure_dir(TORCH_CACHE_DIR)
+if _torch_used_fallback and candidate_torch:
+    _maybe_migrate_cache(Path(candidate_torch), TORCH_CACHE_DIR)
 
 os.environ["WRAPPER_CACHE_DIR"] = str(_CACHE_ROOT)
 os.environ["WRAPPER_HF_CACHE_DIR"] = str(HF_CACHE_DIR)
