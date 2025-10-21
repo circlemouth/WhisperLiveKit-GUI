@@ -3,17 +3,14 @@ from __future__ import annotations
 import inspect
 import os
 import shutil
+import sys
 from pathlib import Path
 from typing import Callable, Optional
 
 from platformdirs import user_cache_path
 
-try:
-    from huggingface_hub import snapshot_download
-    from huggingface_hub.utils import tqdm as hf_tqdm
-except Exception:  # pragma: no cover - optional dependency
-    snapshot_download = None
-    hf_tqdm = None
+snapshot_download = None
+hf_tqdm = None
 
 # Determine cache roots taking existing environment into account. This keeps
 # MSIX パッケージなど書き込み制限のある環境でも、ダウンロードとロード元が同じ
@@ -45,30 +42,64 @@ def _ensure_dir(path: Path) -> Path:
         return path
 
 
+_MAX_CACHE_BASE_LEN = 120
+_FALLBACK_CACHE_ROOT = Path.home() / ".cache" / "WhisperLiveKitWrapper"
+
+
+def _shorten_if_needed(path: Path, *, fallback: Path) -> Path:
+    """Return a cache path that stays within Windows MAX_PATH limits."""
+    try:
+        candidate = path.expanduser()
+    except Exception:
+        candidate = path
+    candidate_str = str(candidate)
+    candidate_norm = candidate_str.replace("\\", "/").lower()
+    if "packages/pythonsoftwarefoundation.python." in candidate_norm:
+        return fallback
+    if len(candidate_str) > _MAX_CACHE_BASE_LEN:
+        return fallback
+    return candidate
+
+
 _CACHE_ROOT = _path_from_env("WRAPPER_CACHE_DIR")
 if _CACHE_ROOT is None:
-    _CACHE_ROOT = user_cache_path("WhisperLiveKit", "wrapper")
-_CACHE_ROOT = _ensure_dir(_CACHE_ROOT)
+    candidate_cache = user_cache_path("WhisperLiveKit", "wrapper")
+else:
+    candidate_cache = _CACHE_ROOT
+_CACHE_ROOT = _ensure_dir(_shorten_if_needed(candidate_cache, fallback=_FALLBACK_CACHE_ROOT))
 
 
 _HF_CACHE = _path_from_env("WRAPPER_HF_CACHE_DIR", "HUGGINGFACE_HUB_CACHE", "HF_HOME")
 if _HF_CACHE is None:
-    _HF_CACHE = _CACHE_ROOT / "hf-cache"
-HF_CACHE_DIR = _ensure_dir(_HF_CACHE)
+    candidate_hf = _CACHE_ROOT / "hf-cache"
+else:
+    candidate_hf = _HF_CACHE
+HF_CACHE_DIR = _ensure_dir(_shorten_if_needed(candidate_hf, fallback=_CACHE_ROOT / "hf-cache"))
 
 
 _TORCH_CACHE = _path_from_env("WRAPPER_TORCH_CACHE_DIR", "TORCH_HOME")
 if _TORCH_CACHE is None:
-    _TORCH_CACHE = _CACHE_ROOT / "torch-hub"
-TORCH_CACHE_DIR = _ensure_dir(_TORCH_CACHE)
+    candidate_torch = _CACHE_ROOT / "torch-hub"
+else:
+    candidate_torch = _TORCH_CACHE
+TORCH_CACHE_DIR = _ensure_dir(_shorten_if_needed(candidate_torch, fallback=_CACHE_ROOT / "torch-hub"))
 
-os.environ.setdefault("WRAPPER_CACHE_DIR", str(_CACHE_ROOT))
-os.environ.setdefault("WRAPPER_HF_CACHE_DIR", str(HF_CACHE_DIR))
-os.environ.setdefault("WRAPPER_TORCH_CACHE_DIR", str(TORCH_CACHE_DIR))
-os.environ.setdefault("HUGGINGFACE_HUB_CACHE", str(HF_CACHE_DIR))
-os.environ.setdefault("HF_HOME", str(HF_CACHE_DIR))
-os.environ.setdefault("TORCH_HOME", str(TORCH_CACHE_DIR))
+os.environ["WRAPPER_CACHE_DIR"] = str(_CACHE_ROOT)
+os.environ["WRAPPER_HF_CACHE_DIR"] = str(HF_CACHE_DIR)
+os.environ["WRAPPER_TORCH_CACHE_DIR"] = str(TORCH_CACHE_DIR)
+os.environ["HUGGINGFACE_HUB_CACHE"] = str(HF_CACHE_DIR)
+os.environ["HF_HOME"] = str(HF_CACHE_DIR)
+os.environ["TORCH_HOME"] = str(TORCH_CACHE_DIR)
 os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS", "1")
+print(f"[wrapper.model_manager] cache root -> {os.environ['WRAPPER_CACHE_DIR']}", file=sys.stderr)
+print(f"[wrapper.model_manager] HF cache -> {os.environ['WRAPPER_HF_CACHE_DIR']}", file=sys.stderr)
+
+try:
+    from huggingface_hub import snapshot_download  # type: ignore
+    from huggingface_hub.utils import tqdm as hf_tqdm  # type: ignore
+except Exception:  # pragma: no cover - optional dependency
+    snapshot_download = None
+    hf_tqdm = None
 
 _SNAPSHOT_KWARGS: dict[str, object] = {}
 if snapshot_download is not None:

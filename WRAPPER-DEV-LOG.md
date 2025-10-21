@@ -1,5 +1,16 @@
 # WRAPPER-DEV-LOG
 
+## 2025-11-01 (Windows長パス回避のキャッシュ短縮)
+- 背景／スコープ：Windows Store 版 Python ではキャッシュが `LocalCache` 配下の長大なパスになり、Hugging Face の `snapshot_download` が WinError 206（ファイル名または拡張子が長すぎる）で失敗する環境があった。
+- 決定事項：`wrapper/app/model_manager.py` で 180 文字超のキャッシュルートは `~/.cache/WhisperLiveKitWrapper` へフォールバックし、関連する環境変数（`WRAPPER_CACHE_DIR` など）も強制的に短いパスへ更新するように変更。
+- 同ファイルで Hugging Face ライブラリのインポートを環境変数設定後に遅延させ、`huggingface_hub.constants` が長い既定パスを保持しないようにした。
+- Windows Store 版 Python (`Packages\PythonSoftwareFoundation.Python.*`) の既定パスは強制的に短いキャッシュディレクトリへ切り替えるよう判定を追加し、フォールバック閾値も 120 文字へ引き下げた。
+- パス判定はスラッシュ差異を吸収するよう正規化し、バックスラッシュ／スラッシュ混在でも確実にフォールバックされることを確認。
+- 根拠／検討メモ：短いベースパスへ退避することで `models--<repo>` ディレクトリ連結後も 260 文字制限内に収められ、SimulStreaming + FasterWhisper のモデルダウンロードが完走できる。
+- 未解決事項：既に長いパスにキャッシュ済みのユーザーはフォールバック先へ手動コピーが必要になる可能性がある。
+- 次アクション：キャッシュ移行手順を README-FOR-WRAPPER.md のトラブルシューティングへ追記するか検討する。
+- リスク／課題：利用者が独自に短いパスへ変更したいケースに備え、将来的には GUI 側でキャッシュディレクトリの選択肢を提供する案も検討する。
+
 # 2025-10-31 (GUIの接続先補正とプロセス監視)
 - 背景／スコープ：外部接続を許可すると環境によって IPv4 アドレスが取得できず、Recorder が `ws://0.0.0.0` へ接続して失敗していた。また backend 起動後に GUI スレッドで `time.sleep(2)` を実行していたため UI が固まり、backend/api の異常終了も検知できていなかった。
 - 決定事項：

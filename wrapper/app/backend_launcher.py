@@ -37,6 +37,43 @@ def _patch_torch_hub() -> None:
 
 _patch_torch_hub()
 
+
+def _patch_simulstreaming_fast_encoder() -> None:
+    """Allow SimulStreaming to reuse FasterWhisper with wrapper-managed .pt files."""
+    try:
+        import faster_whisper  # type: ignore
+    except ModuleNotFoundError:  # pragma: no cover - optional dependency
+        return
+    except Exception as exc:  # pragma: no cover - defensive
+        print(f"[wrapper.backend_launcher] failed to prepare faster-whisper patch: {exc}", file=sys.stderr, flush=True)
+        return
+
+    original_cls = faster_whisper.WhisperModel
+
+    class _WrapperWhisperModel(original_cls):  # type: ignore[misc]
+        def __init__(self, model_size_or_path, *args, **kwargs):
+            try:
+                candidate = Path(model_size_or_path)  # type: ignore[arg-type]
+            except TypeError:
+                pass
+            else:
+                if candidate.suffix.lower() == ".pt":
+                    model_size_or_path = candidate.stem
+            super().__init__(model_size_or_path, *args, **kwargs)
+
+    faster_whisper.WhisperModel = _WrapperWhisperModel  # type: ignore[assignment]
+
+    try:
+        import faster_whisper.transcribe as _fw_transcribe  # type: ignore
+    except Exception:  # pragma: no cover - best effort
+        return
+
+    if getattr(_fw_transcribe, "WhisperModel", None) is original_cls:
+        _fw_transcribe.WhisperModel = _WrapperWhisperModel  # type: ignore[assignment]
+
+
+_patch_simulstreaming_fast_encoder()
+
 # Ensure upstream submodule is importable as `whisperlivekit`
 def _ensure_upstream_on_path() -> None:
     """Ensure the packaged submodule is preferred over any legacy copy."""
